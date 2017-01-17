@@ -1,7 +1,7 @@
 # Fun with WebGL 2.0 - Youtube Tutorial Series
 
 **Youtube Playlist** : 
-N/A
+https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF
 
 **Purpose**:
 This is the code repository for all the lessons of my youtube series. This hopefully make it easier for users to learn by downloading the specific lesson source to play around with to get a better understanding of how it works.
