@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Modal.js"></script>
+
+		<script>
+			var gl,						//Global Reference to our extended GL context
+				gVertCnt = 0,			//TODO : Temporarly storing Vertice Count globally until we have our mesh function in later lessons.
+				uPointSizeLoc = -1,		//TODO : Temp storing globbally until we have a VAO object setup
+				uAngle = 0,
+				gRLoop,					//Global Ref to our Render Loop
+				gShader = null,
+				gModal = null;
+
+			window.addEventListener("load",function(){
+				//............................................				
+				//Get our extended GL Context Object
+				gl = GLInstance("glcanvas").fSetSize(500,500).fClear();
+
+				//............................................
+				//SHADER STEPS
+				gShader = new TestShader(gl);
+
+				//............................................
+				//Set Up Data Buffers
+				var mesh = gl.fCreateMeshVAO("dots",null,[0,0,0, 0.1,0.1,0, 0.1,-0.1,0, -0.1,-0.1,0, -0.1,0.1,0]);
+				mesh.drawMode = gl.POINTS; //Most often the draw mode will be triangles, but in this instance we need Points
+				
+				//There is many instances when we want a single mesh object shared between many 
+				//modals, for example trees. One mesh with many transforms technically.
+				gModal = new Modal(mesh);	
+
+				//............................................
+				//Set Up For Drawing
+				RLoop = new RenderLoop(onRender).start();
+			});
+
+			var gPointSize	= 0,
+				gPSizeStep	= 3,
+				gAngle		= 0,
+				gAngleStep	= (Math.PI / 180.0) * 90;	//90 degrees in Radians
+
+			function onRender(dt){
+				//gPointSize += gPSizeStep * dt;
+				//var size = (Math.sin(gPointSize) * 10.0) + 30.0; 
+				//gl.uniform1f(uPointSizeLoc,size);						//Store data to the shader's uniform variable uPointSize
+
+				//gAngle += gAngleStep * dt;								//Update the angle at the rate of AngleStep Per Second
+				//gl.uniform1f(uAngle,gAngle);							//Pass new angle value to the shader.
+
+				//gl.fClear();
+				//gl.drawArrays(gl.POINTS, 0, gVertCnt);					//Draw the points
+
+				gl.fClear();
+
+				//Crazy chaining plus something most people dont do, setting and getting a value in a single stroke,
+				// but I think its fun even if people find it unreadable.
+				gShader.activate().set(
+					(Math.sin( (gPointSize += gPSizeStep * dt) ) * 10.0) + 30.0		//Setting Point Size
+					,(gAngle += gAngleStep * dt)									//Setting Angle
+				).renderModal(gModal);
+			}
+
+			class TestShader extends Shader{
+				constructor(gl){
+					var vertSrc = ShaderUtil.domShaderSrc("vertex_shader"),
+						fragSrc = ShaderUtil.domShaderSrc("fragment_shader");
+					super(gl,vertSrc,fragSrc);	//Call the base class constructor which will setup most of what we need
+
+					//Our shader uses custom uniforms, this is the time to get its location for future use.
+					this.uniformLoc.uPointSize	= gl.getUniformLocation(this.program,"uPointSize");
+					this.uniformLoc.uAngle		= gl.getUniformLocation(this.program,"uAngle");
+
+					gl.useProgram(null); //Done setting up shader
+				}
+
+				//Simple function that passes in Angle and Pointsize uniform data to the shader program.
+				set(size,angle){
+					this.gl.uniform1f(this.uniformLoc.uPointSize,size);
+					this.gl.uniform1f(this.uniformLoc.uAngle,angle);
+					return this;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div>
+		<canvas id="glcanvas"></canvas>
+	</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		in vec3 a_position;
+		
+		uniform mediump float uPointSize;
+		uniform float uAngle;
+
+		void main(void){
+			gl_PointSize = uPointSize;
+			//gl_Position = vec4(a_position, 1.0);
+			gl_Position = vec4(
+				cos(uAngle) * 0.8 + a_position.x,
+				sin(uAngle) * 0.8 + a_position.y,
+				a_position.z, 1.0 );
+		}
+	</script>
+
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		uniform float uPointSize;
+
+		out vec4 finalColor;
+		
+		void main(void){
+			float c = (40.0 - uPointSize) / 20.0; 
+			finalColor = vec4(c, c, c, 1.0);
+		}
+	</script>
+
+</body>
+</html>
