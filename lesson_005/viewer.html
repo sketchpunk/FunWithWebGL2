@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="Math.js"></script>
+		<script src="shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Transform.js"></script>
+		<script src="Modal.js"></script>
+		<script src="Primatives.js"></script>
+
+		<script>
+			var gl, gRLoop,	gShader, gModal;
+
+			window.addEventListener("load",function(){
+				//Main Setup
+				gl = GLInstance("glcanvas").fSetSize(500,500).fClear();
+				gShader = new TestShader(gl,[ 0.8,0.8,0.8,  1,0,0,  0,1,0,  0,0,1 ]); //Gray,Red,Green,Blue
+				
+				//Setup our modal
+				gModal = new Modal(Primatives.GridAxis.createMesh(gl))
+					.setScale(0.4,0.4,0.4)
+					.setRotation(0,0,45)
+					.setPosition(0.8,0.8,0);
+
+				//Start Rendering
+				RLoop = new RenderLoop(onRender).start();
+			});
+
+			function onRender(dt){
+				gl.fClear();
+
+				var p = gModal.transform.position,				//Just an pointer to transform position, make code smaller 
+					angle = Math.atan2(p.y,p.x)  + (1*dt),		//Calc the current angle plus 1 degree per second rotation
+					radius = Math.sqrt(p.x * p.x + p.y * p.y),	//Calc the distance from origin.
+					scale = Math.max(0.2,  Math.abs(Math.sin(angle)) * 1.2  );   //Just messing with numbers and seeing what happens :)
+
+				//-- Code Style One : Traditional -- 
+				//gModal.setScale(scale,scale,1)
+				//gModal.setPosition( radius * Math.cos(angle), radius * Math.sin(angle), 0 );
+				//gModal.transform.rotation.z += 15 * dt;
+				//gModal.transform.rotation.x += 30 * dt;
+				//gModal.transform.rotation.y += 60 * dt;
+				//gShader.activate().renderModal(gModal.preRender());
+
+				//-- Code Style Two : Chaining --
+				gShader.activate().renderModal(
+					gModal	.setScale( scale, scale/4, 1)
+							.setPosition( radius * Math.cos(angle), radius * Math.sin(angle), 0 )
+							.addRotation( 30 * dt, 60 * dt, 15 * dt )
+							.preRender()
+				);
+			}
+
+			class TestShader extends Shader{
+				constructor(gl,aryColor){
+					var vertSrc = ShaderUtil.domShaderSrc("vertex_shader"),
+						fragSrc = ShaderUtil.domShaderSrc("fragment_shader");
+					super(gl,vertSrc,fragSrc);
+
+					//Our shader uses custom uniforms 
+					var uColor	= gl.getUniformLocation(this.program,"uColor");
+					gl.uniform3fv(uColor, aryColor);
+
+					gl.useProgram(null); //Done setting up shader
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div>
+		<canvas id="glcanvas"></canvas>
+	</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		in vec3 a_position;	//Standard position data.
+		layout(location=4) in float a_color;	//Will hold the 4th custom position of the custom position buffer.
+
+		uniform mat4 uMVMatrix; 
+		uniform vec3 uColor[4];	//Color Array
+
+		out lowp vec4 color;	//Color to send to fragment shader.
+		
+		void main(void){
+			color = vec4(uColor[ int(a_color) ],1.0); //Using the 4th float as a color index.
+			gl_Position = uMVMatrix * vec4(a_position, 1.0);
+		}
+	</script>
+
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		in vec4 color;
+		out vec4 finalColor;
+		
+		void main(void){ finalColor = color; }
+	</script>
+
+</body>
+</html>
