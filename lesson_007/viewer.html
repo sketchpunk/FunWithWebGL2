@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="Math.js"></script>
+		<script src="shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Transform.js"></script>
+		<script src="Modal.js"></script>
+		<script src="Primatives.js"></script>
+		<script src="Camera.js"></script>
+		<script src="Shaders_Extra.js"></script>
+
+		<script>
+			var gl, gRLoop,	gShader, gModal, gCamera, gCameraCtrl;
+			var gGridShader, gGridModal;
+			var gModal2;
+
+			window.addEventListener("load",function(){
+				//Main Setup
+				gl = GLInstance("glcanvas").fFitScreen(0.95,0.9).fClear(); //
+				
+				gCamera = new Camera(gl);
+				gCamera.transform.position.set(0,1,3);
+				gCameraCtrl = new CameraController(gl,gCamera);
+
+				//Setup Grid
+				gGridShader = new GridAxisShader(gl,gCamera.projectionMatrix);
+				gGridModal = Primatives.GridAxis.createModal(gl,true);
+
+				//Setup Test Shader, Modal, Meshes
+				gShader = new TestShader(gl,gCamera.projectionMatrix);
+				gModal = Primatives.MultiQuad.createModal(gl);
+
+				//gModal = Primatives.Quad.createModal(gl);
+				//gModal.setPosition(0,1,0).setScale(0.2,0.2,0.2);
+
+				//gModal2 = new Modal(gl.mMeshCache["Quad"]); //Extra, Show 2 modals sharing one mesh
+
+				//Start Rendering
+				RLoop = new RenderLoop(onRender,30).start();
+			});
+
+			function onRender(dt){
+				gCamera.updateViewMatrix();
+				gl.fClear();
+				
+				gGridShader.activate()
+					.setCameraMatrix(gCamera.viewMatrix)
+					.renderModal( gGridModal.preRender() );
+
+				gShader.activate()
+					.setCameraMatrix(gCamera.viewMatrix)
+					.renderModal( gModal.preRender() );
+					//.renderModal( gModal2.preRender() );
+			}
+
+			class TestShader extends Shader{
+				constructor(gl,pMatrix){
+					var vertSrc = ShaderUtil.domShaderSrc("vertex_shader"),
+						fragSrc = ShaderUtil.domShaderSrc("fragment_shader");
+					super(gl,vertSrc,fragSrc);
+
+					//Standrd Uniforms
+					this.setPerspective(pMatrix);
+					gl.useProgram(null); //Done setting up shader
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div>
+		<canvas id="glcanvas"></canvas>
+	</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		in vec3 a_position;	//Standard position data.
+		in vec2 a_uv;
+
+		uniform mat4 uPMatrix;
+		uniform mat4 uMVMatrix;
+		uniform mat4 uCameraMatrix;
+
+		out vec2 uv;
+
+		void main(void){
+			uv = a_uv;
+			gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position, 1.0); 
+		}
+	</script>
+
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in vec2 uv;
+
+		out vec4 finalColor;
+		void main(void){
+			//Square Border
+			float c = (uv.x <= 0.1 || uv.x >=0.9 || uv.y <= 0.1 || uv.y >= 0.9)? 0.0 : 1.0;
+			finalColor = vec4(c,c,c,1.0-c);
+
+			//Circle
+			/*
+			vec2 delta = uv - vec2(0.5,0.5); //delta position from center;
+			float dist = 0.5 - sqrt(delta.x*delta.x + delta.y*delta.y);
+
+			float border = 0.01;
+			float a = 0.0;
+			if(dist > border) a = 1.0;
+			else if(dist > 0.0) a = dist / border;
+
+			finalColor = vec4(0.0,0.0,0.0,a);
+			*/
+		}
+	</script>
+
+</body>
+</html>
