@@ -1,11 +1,9 @@
-# Fun with WebGL 2.0 - Youtube Tutorial Series
+# Fun with WebGL 2.0 - 007 - Quads
 
-**Youtube Playlist** : 
-https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF
-
-**Purpose**:
-This is the code repository for all the lessons of my youtube series. This hopefully make it easier for users to learn by downloading the specific lesson source to play around with to get a better understanding of how it works.
+**Description**:
+In today's lesson we start filling up our 3d space with new objects to render. We're moving onto using triangles to create a fundamental 3d shape, the quad.  This is the most simplest shape we can create but its also the one shape that is the most versatile in our toolbox. Heres just a few things you can do with a quad: render tons of grass,  display text since each letter is a textured quad, texture quads in particle effects. Beyond that we explore different ways to render multiple objects on screen, eventually settling on batch creation of quads into a single vertice array that allows use to use a single draw call to render hundreds of quads in one go.
 
 ### Links
-* [SketchPunk Labs Blog](http://sketchpunklabs.tumblr.com/)
-* [Support SketchPunk Labs @ Patreon](https://www.patreon.com/sketchpunk)
+* [Lession Live Demo](http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_007/demo.html)
+* [Lesson on Youtube](https://www.youtube.com/watch?v=ZkHHjNec3l0)
+* [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
