@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="Math.js"></script>
+		<script src="shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Transform.js"></script>
+		<script src="Modal.js"></script>
+		<script src="Primatives.js"></script>
+		<script src="Camera.js"></script>
+		<script src="Shaders_Extra.js"></script>
+
+		<script>
+			var gl, gRLoop,	gShader, gModal, gCamera, gCameraCtrl;
+			var gGridShader, gGridModal;
+			var gModal2;
+
+			window.addEventListener("load",function(){
+				//Main Setup
+				gl = GLInstance("glcanvas").fFitScreen(0.65,0.6).fClear();
+				
+				gCamera = new Camera(gl);
+				gCamera.transform.position.set(0,1,3);
+				gCameraCtrl = new CameraController(gl,gCamera);
+
+				//....................................
+				//Load up resources
+				gl.fLoadTexture("tex001",document.getElementById("imgTex"));
+
+				//....................................
+				//Setup Grid
+				gGridShader = new GridAxisShader(gl,gCamera.projectionMatrix);
+				gGridModal = Primatives.GridAxis.createModal(gl,false);
+
+				//....................................
+				//Setup Test Shader, Modal, Meshes
+				gShader = new TestShader(gl,gCamera.projectionMatrix)
+					.setTexture(gl.mTextureCache["tex001"]);
+
+				gModal = Primatives.MultiQuad.createModal(gl);
+				gModal.setPosition(0,0.6,0);
+
+				//....................................
+				//Start Rendering
+				RLoop = new RenderLoop(onRender,30).start();
+				//onRender(0);
+			});
+
+			function onRender(dt){
+				gCamera.updateViewMatrix();
+				gl.fClear();
+				
+				gGridShader.activate()
+					.setCameraMatrix(gCamera.viewMatrix)
+					.renderModal( gGridModal.preRender() );
+
+				gShader.activate().preRender()				//add preRender to the chain
+					.setCameraMatrix(gCamera.viewMatrix)
+					.renderModal( gModal.preRender() );
+
+			}
+
+			class TestShader extends Shader{
+				constructor(gl,pMatrix){
+					var vertSrc = ShaderUtil.domShaderSrc("vertex_shader"),
+						fragSrc = ShaderUtil.domShaderSrc("fragment_shader");
+					super(gl,vertSrc,fragSrc);
+
+					//Standrd Uniforms
+					this.setPerspective(pMatrix);
+					
+					this.mainTexture = -1; //Store Our Texture ID
+					gl.useProgram(null); //Done setting up shader
+				}
+
+				setTexture(texID){ this.mainTexture = texID; return this; }
+
+				//Override
+				preRender(){
+					//Setup Texture
+					this.gl.activeTexture(this.gl.TEXTURE0);
+					this.gl.bindTexture(this.gl.TEXTURE_2D, this.mainTexture);
+					this.gl.uniform1i(this.uniformLoc.mainTexture,0); //Our predefined uniformLoc.mainTexture is uMainTex, Prev Lessons we made ShaderUtil.getStandardUniformLocations() function in Shaders.js to get its location.
+
+					return this;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div>
+		<canvas id="glcanvas"></canvas>
+	</div>
+	<img src="UV_Grid_Lrg.jpg" id="imgTex" style="display:none;">
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		in vec3 a_position;	//Standard position data.
+		in vec2 a_uv;
+
+		uniform mat4 uPMatrix;
+		uniform mat4 uMVMatrix;
+		uniform mat4 uCameraMatrix;
+
+		out highp vec2 texCoord;  //Interpolate UV values to the fragment shader
+		
+		void main(void){
+			texCoord = a_uv;
+			gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position, 1.0); 
+		}
+	</script>
+
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		
+		in highp vec2 texCoord;		//What pixel to pull from the texture
+		uniform sampler2D uMainTex;	//Holds the texture we loaded to the GPU
+		
+		out vec4 finalColor;
+		void main(void){			//Confusing that UV's coords are S,T but in all honestly it works just like X,Y
+			finalColor = texture(uMainTex, vec2(texCoord.s, texCoord.t));  //Get the color of the pixel at that UV location
+		}
+	</script>
+
+</body>
+</html>
