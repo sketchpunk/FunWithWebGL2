@@ -5,6 +5,7 @@ Today we will learn how an OBJ file is generated with blender and how to use jav
 
 ### Links
 * [Lesson Live Demo : Cube](https://sketchpunk.github.io/funwithwebgl/lesson_011/viewer.html)
+* [Lesson Live Demo : Pirate Girl](https://sketchpunk.github.io/funwithwebgl/lesson_011/viewer_pirate.html)
 * [Lesson on Youtube](https://youtu.be/0duMYbBPPMU)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 
