@@ -4,7 +4,7 @@
 In today's lesson we're going to learn how to use 6 textures to build a 3d textures (cube map). This will allow us to use the cube from the previous lesson to build a sky box in our virtual world. As a bonus we're going to load up a day and night cubemap and blend between them to creating the basics of a day and night cycle that can be used in a game.
 
 ### Links
-* [Lesson Live Demo](http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_010/demo.html)
+* [Lesson Live Demo](https://sketchpunk.github.io/funwithwebgl/lesson_010/viewer.html)
 * [Lesson on Youtube](https://youtu.be/77IxXXNThok)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 
