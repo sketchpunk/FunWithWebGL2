@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="Math.js"></script>
+		<script src="Shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Transform.js"></script>
+		<script src="Modal.js"></script>
+		<script src="Primatives.js"></script>
+		<script src="Camera.js"></script>
+		<script src="Shaders_Extra.js"></script>
+		<script src="ObjLoader.js"></script>
+
+		<script>
+			var gl, gRLoop,	gShader, gModal, gCamera, gCameraCtrl;
+			var gGridShader, gGridModal;
+			var gModal2;
+
+			window.addEventListener("load",function(){
+				//Main Setup
+				gl = GLInstance("glcanvas").fFitScreen(0.65,0.6).fClear();
+				
+				gCamera = new Camera(gl);
+				gCamera.transform.position.set(0,1,3);
+				gCameraCtrl = new CameraController(gl,gCamera);
+
+				//....................................
+				//Load up resources
+				gl.fLoadTexture("tex001",document.getElementById("imgTex"));
+
+
+				//....................................
+				//Setup Grid
+				gGridShader = new GridAxisShader(gl,gCamera.projectionMatrix);
+				gGridModal = Primatives.GridAxis.createModal(gl,false);
+
+				//....................................
+				//Setup Test Shader, Modal, Meshes
+				gShader = new TestShader(gl,gCamera.projectionMatrix)
+					.setTexture(gl.mTextureCache["tex001"]);
+
+				gModal = Primatives.Cube.createModal(gl);
+				gModal.setPosition(0,0.6,0);
+
+				gModal2 = new Modal( ObjLoader.domToMesh("objCube","obj_file",true) )
+				gModal2.setPosition(0,0.6,0).setScale(0.5,0.5,0.5);
+
+				gSkymap = new Modal(Primatives.Cube.createMesh(gl,"Skymap",10,10,10,0,0,0));
+				gSkyMapShader = new SkymapShader(gl,gCamera.projectionMatrix
+					,gl.mTextureCache["skybox01"]
+					,gl.mTextureCache["skybox02"]
+				);
+
+
+				//....................................
+				//Start Rendering
+				RLoop = new RenderLoop(onRender,30).start();
+				//onRender(0);
+			});
+
+			function onRender(dt){
+				gCamera.updateViewMatrix();
+				gl.fClear();
+				
+				/*
+				gSkyMapShader.activate().preRender()
+					.setCameraMatrix(gCamera.getTranslatelessMatrix())
+					.setTime(performance.now())
+					.renderModal(gSkymap);
+				*/
+				gGridShader.activate()
+					.setCameraMatrix(gCamera.viewMatrix)
+					.renderModal( gGridModal.preRender() );
+
+				gShader.activate().preRender()
+					.setCameraMatrix(gCamera.viewMatrix)
+					//.renderModal( gModal.preRender() )
+					.renderModal( gModal2.preRender() );
+			}
+
+			class TestShader extends Shader{
+				constructor(gl,pMatrix){
+					var vertSrc = ShaderUtil.domShaderSrc("vertex_shader"),
+						fragSrc = ShaderUtil.domShaderSrc("fragment_shader");
+					super(gl,vertSrc,fragSrc);
+
+					//Standrd Uniforms
+					this.setPerspective(pMatrix);
+					this.mainTexture = -1; //Store Our Texture ID
+					gl.useProgram(null); //Done setting up shader
+				}
+
+				setTexture(texID){ this.mainTexture = texID; return this; }
+
+				//Override
+				preRender(){
+					//Setup Texture
+					this.gl.activeTexture(this.gl.TEXTURE0);
+					this.gl.bindTexture(this.gl.TEXTURE_2D, this.mainTexture);
+					this.gl.uniform1i(this.uniformLoc.mainTexture,0); //Our predefined uniformLoc.mainTexture is uMainTex, Prev Lessons we made ShaderUtil.getStandardUniformLocations() function in Shaders.js to get its location.
+
+					return this;
+				}
+			}
+
+			class SkymapShader extends Shader{
+				constructor(gl,pMatrix,dayTex,nightTex){
+					var vertSrc = ShaderUtil.domShaderSrc("sky_vshader"),
+						fragSrc = ShaderUtil.domShaderSrc("sky_fshader");
+					super(gl,vertSrc,fragSrc);
+
+					//Custom Uniforms
+					this.uniformLoc.time = gl.getUniformLocation(this.program,"uTime");
+					this.uniformLoc.dayTex = gl.getUniformLocation(this.program,"uDayTex");
+					this.uniformLoc.nightTex = gl.getUniformLocation(this.program,"uNightTex");
+
+					//Standrd Uniforms
+					this.setPerspective(pMatrix);
+					this.texDay = dayTex;
+					this.texNight = nightTex;
+					gl.useProgram(null); //Done setting up shader
+				}
+
+				setTime(t){ this.gl.uniform1f(this.uniformLoc.time,t); return this; }
+
+				//Override
+				preRender(){
+					//Setup Texture
+					this.gl.activeTexture(this.gl.TEXTURE0);
+					this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, this.texDay);
+					this.gl.uniform1i(this.uniformLoc.dayTex,0);
+
+					this.gl.activeTexture(this.gl.TEXTURE1);
+					this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, this.texNight);
+					this.gl.uniform1i(this.uniformLoc.nightTex,1);
+					return this;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div>
+		<canvas id="glcanvas"></canvas>
+	</div>
+	<img src="../shared/UV_Grid_Lrg.jpg" id="imgTex" style="display:none;">
+	<img src="../shared/miramar_back.png" id="cube01_back" style="display:none;">
+	<img src="../shared/miramar_front.png" id="cube01_front" style="display:none;">
+	<img src="../shared/miramar_bottom.png" id="cube01_bottom" style="display:none;">
+	<img src="../shared/miramar_left.png" id="cube01_left" style="display:none;">
+	<img src="../shared/miramar_right.png" id="cube01_right" style="display:none;">
+	<img src="../shared/miramar_top.png" id="cube01_top" style="display:none;">
+
+	<img src="../shared/grimmnight_back.png" id="cube02_back" style="display:none;">
+	<img src="../shared/grimmnight_front.png" id="cube02_front" style="display:none;">
+	<img src="../shared/grimmnight_bottom.png" id="cube02_bottom" style="display:none;">
+	<img src="../shared/grimmnight_left.png" id="cube02_left" style="display:none;">
+	<img src="../shared/grimmnight_right.png" id="cube02_right" style="display:none;">
+	<img src="../shared/grimmnight_top.png" id="cube02_top" style="display:none;">
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		in vec3 a_position;	//Making it a vec4, the w component is used as color index from uColor
+		in vec3 a_norm;
+		in vec2 a_uv;
+
+		uniform mat4 uPMatrix;
+		uniform mat4 uMVMatrix;
+		uniform mat4 uCameraMatrix;
+
+		out highp vec2 texCoord;  //Interpolate UV values to the fragment shader
+		
+		void main(void){
+			texCoord = a_uv;
+			gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position.xyz, 1.0); 
+		}
+	</script>
+
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		
+		in highp vec2 texCoord;		//What pixel to pull from the texture
+		uniform sampler2D uMainTex;	//Holds the texture we loaded to the GPU
+		
+		out vec4 finalColor;
+		void main(void){
+			finalColor = texture(uMainTex,texCoord);
+		}
+	</script>
+
+	<script id="sky_vshader" type="x-shader/x-vertex">#version 300 es
+		in vec4 a_position;	
+		in vec2 a_uv;
+
+		uniform mat4 uPMatrix;
+		uniform mat4 uMVMatrix;
+		uniform mat4 uCameraMatrix;
+	
+		out highp vec3 texCoord;  //Interpolate UV values to the fragment shader
+		
+		void main(void){
+			texCoord = a_position.xyz;
+			gl_Position = uPMatrix * uCameraMatrix * vec4(a_position.xyz, 1.0); 
+		}
+	</script>
+
+	<script id="sky_fshader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		
+		in highp vec3 texCoord;
+		uniform samplerCube uDayTex;
+		uniform samplerCube uNightTex;
+		uniform float uTime;
+		
+		out vec4 finalColor;
+		void main(void){
+			finalColor = mix( texture(uDayTex, texCoord), texture(uNightTex, texCoord), abs(sin(uTime * 0.0005)) );
+		}
+	</script>
+
+
+<script id="obj_file" type="text/plain">
+# Blender v2.76 (sub 0) OBJ File: 'cube.blend'
+# www.blender.org
+mtllib cube.mtl
+o Cube
+v 1.000000 -1.000000 -1.000000
+v 1.000000 -1.000000 1.000000
+v -1.000000 -1.000000 1.000000
+v -1.000000 -1.000000 -1.000000
+v 1.000000 1.000000 -0.999999
+v 0.999999 1.000000 1.000001
+v -1.000000 1.000000 1.000000
+v -1.000000 1.000000 -1.000000
+vt 1.000000 1.000000
+vt 0.000000 1.000000
+vt 0.000000 0.000000
+vt 1.000000 0.000000
+vn 0.000000 -1.000000 0.000000
+vn 0.000000 1.000000 0.000000
+vn 1.000000 0.000000 0.000000
+vn -0.000000 0.000000 1.000000
+vn -1.000000 -0.000000 -0.000000
+vn 0.000000 0.000000 -1.000000
+usemtl Material
+s off
+f 2/1/1 3/2/1 4/3/1
+f 8/2/2 7/3/2 6/4/2
+f 5/1/3 6/2/3 2/3/3
+f 6/1/4 7/2/4 3/3/4
+f 3/4/5 7/1/5 8/2/5
+f 1/3/6 4/4/6 8/1/6
+f 1/4/1 2/1/1 4/3/1
+f 5/1/2 8/2/2 6/4/2
+f 1/4/3 5/1/3 2/3/3
+f 2/4/4 6/1/4 3/3/4
+f 4/3/5 3/4/5 8/2/5
+f 5/2/6 1/3/6 8/1/6
+</script>
+
+</body>
+</html>
