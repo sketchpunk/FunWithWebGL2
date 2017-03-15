@@ -1,4 +1,11 @@
 //###########################################################################################
+class MathUtil{
+	//Normalize x value to x range, then normalize to lerp the z range.
+	static Map(x, xMin,xMax, zMin,zMax){ return (x - xMin) / (xMax - xMin) * (zMax-zMin) + zMin; }
+}
+
+
+//###########################################################################################
 class Vector3{
 	constructor(x,y,z){	this.x = x || 0.0;	this.y = y || 0.0;	this.z = z || 0.0; }
 

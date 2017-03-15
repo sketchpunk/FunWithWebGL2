@@ -1,7 +1,15 @@
 class ObjLoader{
-	static domToMesh(meshName,elmID,flipYUV){ 
+	static domToMesh(meshName,elmID,flipYUV,keepRawData){ 
 		var d = ObjLoader.parseFromDom(elmID,flipYUV);
-		return gl.fCreateMeshVAO(meshName,d[0],d[1],d[2],d[3],3);
+		var mesh = gl.fCreateMeshVAO(meshName,d[0],d[1],d[2],d[3],3);
+
+		if(keepRawData){ //Have the option to save the data to use for normal debugging or modifying. TODO
+			mesh.aIndex	= d[0];
+			mesh.aVert	= d[1];
+			mesh.aNorm	= d[2];
+		}
+
+		return mesh;
 	}
 
 	static parseFromDom(elmID,flipYUV){ return ObjLoader.parseObjText(document.getElementById(elmID).innerHTML,flipYUV); }
