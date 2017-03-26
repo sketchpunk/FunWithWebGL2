@@ -8,17 +8,17 @@
 			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
 		</style>
 
-		<script src="gl.js"></script>
-		<script src="Math.js"></script>
-		<script src="Shaders.js"></script>
-		<script src="RenderLoop.js"></script>
-		<script src="Transform.js"></script>
-		<script src="Modal.js"></script>
-		<script src="Primatives.js"></script>
-		<script src="Camera.js"></script>
-		<script src="Debug.js"></script>
-		<script src="GridFloor.js"></script>
-		<script src="Resources.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/gl.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Math.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Shaders.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/RenderLoop.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Transform.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Modal.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Primatives.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Camera.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Debug.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/GridFloor.js"></script>
+		<script src="http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/Resources.js"></script>
 
 		<script>
 			var gl, gRLoop,	gShader, gModel, gCamera, gCameraCtrl;
@@ -39,8 +39,8 @@
 				//....................................
 				//Load up resources
 				Resources.setup(gl,onReady).loadTexture(
-					"mask_a","mask_square.png",
-					"mask_b","mask_cornercircles.png"
+					"mask_a","http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/mask_square.png",
+					"mask_b","http://rawgit.com/sketchpunk/FunWithWebGL2/master/lesson_014/mask_cornercircles.png"
 				).start();
 			});
 
