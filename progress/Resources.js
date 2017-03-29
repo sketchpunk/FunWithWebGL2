@@ -20,6 +20,12 @@ class Resources{
 		}
 		return this;
 	}
+	static loadVideoTexture(name,src){
+		for(var i=0; i < arguments.length; i+=2){
+			Resources.Queue.push({type:"vid",name:arguments[i],src:arguments[i+1]});
+		}
+		return this;
+	}
 
 	//===================================================
 	// Manage Queue
@@ -41,6 +47,25 @@ class Resources{
 				img.onabort = img.onerror = Resources.onDownloadError;
 				img.src = itm.src;
 				break;
+			case "vid":
+				var vid = document.createElement("video");
+				vid.style.display = "none";
+				document.body.appendChild(vid);
+
+    			//vid.addEventListener("canplaythrough", videoReady, true); //When enough video is available to start playing
+    			//vid.addEventListener("ended", videoComplete, true);			//WHen video is done.
+
+				vid.queueData = itm;
+				vid.addEventListener("loadeddata",Resources.onDownloadSuccess,false);
+				vid.onabort = vid.onerror = Resources.onDownloadError;
+				vid.autoplay = true;
+				vid.loop = true;
+				vid.src = itm.src;
+				vid.load();
+				vid.play();
+
+				Resources.Videos[itm.name] = vid;
+				break;
 		}
 	}
 
@@ -48,7 +73,7 @@ class Resources{
 	// Event Handlers
 	static onDownloadSuccess(){
 		//Its an image, lets load it up as a texture in gl.
-		if( this instanceof Image ){
+		if( this instanceof Image || this.tagName == "VIDEO"){
 			var dat = this.queueData;
 			Resources.gl.fLoadTexture(dat.name,this);
 		}
@@ -64,3 +89,6 @@ class Resources{
 Resources.Queue = [];
 Resources.onComplete = null;
 Resources.gl = null;
+
+Resources.Images = [];
+Resources.Videos = [];

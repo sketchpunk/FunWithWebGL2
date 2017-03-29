@@ -38,7 +38,7 @@
 
 				//....................................
 				//Load up resources
-				Resources.setup(gl,onReady).loadTexture("atlas","atlas_mindcraft.png").start();
+				Resources.setup(gl,onReady).loadVideoTexture("vid","shark_3d_360.mp4").start();
 			});
 
 			//==================================================
@@ -48,35 +48,18 @@
 				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
 					.prepareUniforms("uPMatrix","mat4"
 									,"uMVMatrix","mat4"
-									,"uCameraMatrix","mat4"
-									,"uFaces","2fv")
-					.prepareTextures("uAltas","atlas")
+									,"uCameraMatrix","mat4")
+					.prepareTextures("uTex","vid")
 					.setUniforms("uPMatrix",gCamera.projectionMatrix);
-								//,"uFaces", [8,0, 8,0, 8,0, 10,0, 8,0, 9,0] ); //Front,Back,Left,Bottom,Right,Top
 
-				//gModel = Primatives.Cube.createModal(gl,"Cube",true)
-				//		.setPosition(0,0.6,0);//.setScale(0.7,0.7,0.7);
-
-				var cubemesh = Primatives.Cube.createMesh(gl,"Cube",1,1,1,0,0,0,false);
-				for(var i=0; i < 6; i++){
-					var model = new Modal(cubemesh).setPosition( (i%3)*2 , 0.6 , Math.floor(i/3) * -2);
-					gCubes.push(model);
-				}
+				gModel = Primatives.Cube.createModal(gl,"Cube",true)
+						.setPosition(0,0.6,0);//.setScale(0.7,0.7,0.7);
 
 				//....................................
 				gRLoop.start();
 				//onRender(0);
 			}
 
-			var gCubes = [];
-			var texMap = [
-				[3,0, 3,0, 3,0, 2,0, 3,0, 2,9],			//GrassDirt
-				[4,1, 4,1, 4,1, 5,1, 4,1, 5,1],			//Log
-				[11,1, 10,1, 10,1, 9,1, 10,1, 9,1],		//Chest
-				[7,7, 6,7, 6,7, 6,7, 6,7, 6,6],			//Pumpkin
-				[8,8, 8,8, 8,8, 9,8, 8,8, 9,8],			//WaterMelon
-				[8,0, 8,0, 8,0, 10,0, 8,0, 9,0]			//TNT
-			];
 
 			//==================================================
 			//Main Render Loop
@@ -88,14 +71,12 @@
 				gCamera.updateViewMatrix();
 				gGridFloor.render(gCamera);
 
+				gl.fUpdateTexture("vid",Resources.Videos["vid"],false,true);
+
 				//................................
 				//Draw Out models
-				gShader.preRender("uCameraMatrix",gCamera.viewMatrix);
-					//.renderModel(gModel.preRender(),false);
-
-				for(var i=0; i < gCubes.length; i++){
-					gShader.setUniforms("uFaces",texMap[i]).renderModel( gCubes[i].preRender() );
-				}
+				gShader.preRender("uCameraMatrix",gCamera.viewMatrix)
+					.renderModel(gModel.preRender(),false);
 			}
 		</script>
 	</head>
@@ -110,27 +91,20 @@
 		uniform mat4 uPMatrix;
 		uniform mat4 uMVMatrix;
 		uniform mat4 uCameraMatrix;
-		uniform vec2[6] uFaces;
 		out highp vec2 vUV;
-
-		const float size = 1.0/16.0;
 		
 		void main(void){
-			int f = int(a_position.w);
-			float u = uFaces[f].x * size + a_uv.x * size;
-			float v = uFaces[f].y * size + a_uv.y * size;
-			vUV = vec2(u,v);
-
+			vUV = vec2(a_uv.x,a_uv.y * 0.5);
 			gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position.xyz, 1.0); 
 		}
 	</script>
 	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
 		precision mediump float;
-		uniform sampler2D uAltas;
+		uniform sampler2D uTex;
 		in highp vec2 vUV;
 		out vec4 outColor;
 
-		void main(void){ outColor = texture(uAltas,vUV); }
+		void main(void){ outColor = texture(uTex,vUV); }
 	</script>
 </body>
 </html>
