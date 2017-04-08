@@ -19,11 +19,10 @@
 		<script src="Debug.js"></script>
 		<script src="GridFloor.js"></script>
 		<script src="Resources.js"></script>
-		<script src="Terrain.js"></script>
-		<script src="Perlin.js"></script>
+		<script src="vr.js"></script>
 
 		<script>
-			var gl, gRLoop,	gShader, gModel, gCamera, gCameraCtrl;
+			var gl, gRLoop,	gShader, gModel, gCamera, gCameraCtrl, gVR;
 			var gGridFloor, mDebugVerts, mDebugLine;
 
 			window.addEventListener("load",function(){
@@ -35,18 +34,30 @@
 				gCamera.transform.position.set(0,1,3);
 				gCameraCtrl = new CameraController(gl,gCamera);
 
+				//gVR = new VR(gl,gCamera.projectionMatrix);
+
 				gGridFloor = new GridFloor(gl);
-				gRLoop = new RenderLoop(onRender,30);
+				gRLoop = new RenderLoop(onRender); //TODO Need checks if VR isn't enabled then we can't use it for frame requests
 
 				//....................................
 				//Load up resources
 				//Resources.setup(gl,onReady).loadVideoTexture("vid","shark_3d_360.mp4").start();
-				onReady();
+				//TODO Rebuild Resources to use promises so can add to Promises.all.
+
+				var vrPromise = VRInit(gl).then( (hmd)=>{ 
+					gVR = hmd;
+					gRLoop.setFrameCaller(gVR); //To push frames to the HMD, the HMD's frame request function needs to be used instead of the window one.
+				},(err)=>{ console.log("VR Init Error : " + err); });
+				
+				Promise.all([vrPromise]).then(()=>{ onReady(); });
 			});
 
 			//==================================================
 			//When Main System is setup and all resources are downloaded.
 			function onReady(){
+				//Setup Global Keypress event Handler
+				document.addEventListener("keypress",function(e){ if(e.keyCode == 32) gVR.fTogglePresenting(); });
+
 				//Setup Test Shader, Modal, Meshes
 				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
 					.prepareUniforms("uPMatrix","mat4"
@@ -54,16 +65,10 @@
 									,"uCameraMatrix","mat4")
 					.setUniforms("uPMatrix",gCamera.projectionMatrix);
 
-				gModel = Terrain.createModel(gl,true);
-
-				mDebugLine = new LineDebugger(gl)
-					.addColor("#00FF00")
-					.addMeshNormal(0,0.3,gModel.mesh)
-					.finalize();
+				gModel = Primatives.Cube.createModal(gl,"Cube",true).setPosition(0,0.05,0.5).setScale(0.1,0.1,0.1);
 
 				//....................................
 				gRLoop.start();
-				//onRender(0);
 			}
 
 
@@ -73,16 +78,14 @@
 				//................................
 				//Main Elements to draw to the frame
 				gl.fClear();
-
-				gCamera.updateViewMatrix();
-				gGridFloor.render(gCamera);
-
+				gVR.fUpdate();
+	
 				//................................
 				//Draw Out models
-				gShader.preRender("uCameraMatrix",gCamera.viewMatrix)
-					.renderModel(gModel.preRender(),false);
+				gGridFloor.renderVR(gVR);
+				gShader.preRender().renderModelVR(gModel.preRender(),gVR);
 
-				//mDebugLine.render(gCamera);
+				if(gVR.isPresenting) gVR.submitFrame();
 			}
 		</script>
 	</head>

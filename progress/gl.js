@@ -214,6 +214,8 @@ function GLInstance(canvasID){
 		//when updating the canvas size, must reset the viewport of the canvas 
 		//else the resolution webgl renders at will not change
 		this.viewport(0,0,w,h);
+		this.fWidth = w;	//Need to save Width and Height to resize viewport for WebVR
+		this.fHeight = h;
 		return this;
 	}
 

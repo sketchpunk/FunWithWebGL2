@@ -1,0 +1,43 @@
+
+VR
+- Need to be able to pass in VR data for left/right view & proj matrix for rendering objects, Need to change viewport
+- Renderloop needs a better way to switch main object that calls for frame updates.
+- View & Projection Uniform names needs to be global and available for each renderable
+
+
+SHADERS
+- Group objects by shader so possible to render as much with as little repeat steps as possible.
+- Replace preRender with beginRender & endRender
+- Maybe make GL settings an array, push the ones that needs changing then when done undoes change back to original settings
+	Might need to make global default settings for specific gl things.
+
+
+TRANSFORMATION STACK
+- Transform Class will be a base class
+- Each transform will have a child list and a parent reference.
+- Save transform data as arrays maybe?
+- Have setter functions like setPosition(x,y,z) to change the overall values, addPosition(x,y,z) to add/subtract from position.
+- Every transform tracks its local transforms, but also up the parent tree to know its world transform.
+
+
+OTHER
+- Parent-Child Transformation Stack
+- Maybe think about making a Main Renderer Object??? Instead of shaders
+
+
+POSSIBLE FUTURE VIDEO IDEAS
+- VR : Build RoomScale Box
+- VR : Track Vive Controllers, Shoot squares into space
+- Cube to Sphere (Great for planet making and smoother skymaps)
+- Create King Kai's Planet with nothing but Procedural Generated Meshes (Planet,House,Road,Trees)
+- Select and Move objects in 3D Space
+- Customizable Splines (Also use them as paths)
+- Voxel Chunk
+- Particles
+- More advanced terrains
+- Water
+- Simple Physics Engine (Gravity, Velocity (with drag maybe) and Colliders)
+- Character Controller (start with controlling a ball on terrain)
+- Gamepad Input
+- Build a Shader Testing tool like ShaderFrog
+- Skeletal Animations (This one will be uber hard but awesome sauce of capable of doing it)

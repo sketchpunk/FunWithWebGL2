@@ -10,12 +10,12 @@ rloop = new RenderLoop(function(dt){
 class RenderLoop{
 	constructor(callback,fps){
 		var oThis = this;
-		this.msLastFrame = null;	//The time in Miliseconds of the last frame.
-		this.callBack = callback;	//What function to call for each frame
-		this.isActive = false;		//Control the On/Off state of the render loop
-		this.fps = 0;				//Save the value of how fast the loop is going.
+		this.msLastFrame	= null;		//The time in Miliseconds of the last frame.
+		this.callBack		= callback;	//What function to call for each frame
+		this.isActive		= false;	//Control the On/Off state of the render loop
+		this.fps			= 0;		//Save the value of how fast the loop is going.
+		this.frameCaller	= window;	//Normally we'll call window's requestAnimationFrame, but for VR we need to use its HMD reference for that call.
 
-		//if(!fps && fps > 0){ //Build a run method that limits the framerate
 		if(fps != undefined && fps > 0){ //Build a run method that limits the framerate
 			this.msFpsLimit = 1000/fps; //Calc how many milliseconds per frame in one second of time.
 			this.run = function(){
@@ -30,7 +30,8 @@ class RenderLoop{
 					oThis.callBack(deltaTime);
 				}
 
-				if(oThis.isActive) window.requestAnimationFrame(oThis.run);
+				//if(oThis.isActive) window.requestAnimationFrame(oThis.run);
+				if(oThis.isActive) oThis.frameCaller.requestAnimationFrame(oThis.run);
 			}
 		}else{ //Else build a run method thats optimised as much as possible.
 			this.run = function(){
@@ -43,7 +44,8 @@ class RenderLoop{
 				oThis.msLastFrame	= msCurrent;
 
 				oThis.callBack(deltaTime);
-				if(oThis.isActive) window.requestAnimationFrame(oThis.run);
+				//if(oThis.isActive) window.requestAnimationFrame(oThis.run);
+				if(oThis.isActive) oThis.frameCaller.requestAnimationFrame(oThis.run);
 			}
 		}
 	}
@@ -51,9 +53,12 @@ class RenderLoop{
 	start(){
 		this.isActive = true;
 		this.msLastFrame = performance.now();
-		window.requestAnimationFrame(this.run);
+		//window.requestAnimationFrame(this.run);
+		this.frameCaller.requestAnimationFrame(this.run);
 		return this;
 	}
 
 	stop(){ this.isActive = false; }
+
+	setFrameCaller(fc){ this.frameCaller = fc; }
 }

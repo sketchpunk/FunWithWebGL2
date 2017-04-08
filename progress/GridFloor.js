@@ -61,6 +61,33 @@ class GridFloor{
 		this.gl.useProgram(null);
 	}
 
+	renderVR(vr){
+		//Update Transform Matrix (Modal View)
+		this.transform.updateMatrix();
+
+		//Prepare Shader
+		this.gl.useProgram(this.mShader);
+		this.gl.bindVertexArray(this.mesh.vao);
+
+		//Push Uniforms
+		this.gl.uniformMatrix4fv(this.mUniformModelV, false, this.transform.getViewMatrix()); 
+
+		//Draw Left Side
+		this.gl.viewport(0,0,this.gl.fWidth * 0.5,this.gl.fHeight);
+		this.gl.uniformMatrix4fv(this.mUniformProj, false, vr.fFrameData.leftProjectionMatrix); 
+		this.gl.uniformMatrix4fv(this.mUniformCamera, false, vr.fFrameData.leftViewMatrix);
+		this.gl.drawArrays(this.mesh.drawMode, 0, this.mesh.vertexCount);
+
+		//Draw Right Side
+		gl.viewport(this.gl.fWidth * 0.5, 0,this.gl.fWidth * 0.5, this.gl.fHeight);
+		this.gl.uniformMatrix4fv(this.mUniformProj, false, vr.fFrameData.rightProjectionMatrix); 
+		this.gl.uniformMatrix4fv(this.mUniformCamera, false, vr.fFrameData.rightViewMatrix);
+		this.gl.drawArrays(this.mesh.drawMode, 0, this.mesh.vertexCount);
+
+		//Cleanup
+		this.gl.bindVertexArray(null);
+	}
+
 	createMesh(gl,incAxis){
 		//Dynamiclly create a grid
 		var verts = [],
