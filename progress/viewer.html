@@ -36,27 +36,30 @@
 
 				//gVR = new VR(gl,gCamera.projectionMatrix);
 
-				gGridFloor = new GridFloor(gl);
-				gRLoop = new RenderLoop(onRender); //TODO Need checks if VR isn't enabled then we can't use it for frame requests
+				gGridFloor = new VRGrid(gl);
+				gRLoop = new RenderLoop(onRender,10); //TODO Need checks if VR isn't enabled then we can't use it for frame requests
 
 				//....................................
 				//Load up resources
 				//Resources.setup(gl,onReady).loadVideoTexture("vid","shark_3d_360.mp4").start();
 				//TODO Rebuild Resources to use promises so can add to Promises.all.
 
+				/*
 				var vrPromise = VRInit(gl).then( (hmd)=>{ 
 					gVR = hmd;
 					gRLoop.setFrameCaller(gVR); //To push frames to the HMD, the HMD's frame request function needs to be used instead of the window one.
 				},(err)=>{ console.log("VR Init Error : " + err); });
 				
 				Promise.all([vrPromise]).then(()=>{ onReady(); });
+				*/
+				onReady();
 			});
 
 			//==================================================
 			//When Main System is setup and all resources are downloaded.
 			function onReady(){
 				//Setup Global Keypress event Handler
-				document.addEventListener("keypress",function(e){ if(e.keyCode == 32) gVR.fTogglePresenting(); });
+				//document.addEventListener("keypress",function(e){ if(e.keyCode == 32) gVR.fTogglePresenting(); });
 
 				//Setup Test Shader, Modal, Meshes
 				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
@@ -65,7 +68,7 @@
 									,"uCameraMatrix","mat4")
 					.setUniforms("uPMatrix",gCamera.projectionMatrix);
 
-				gModel = Primatives.Cube.createModal(gl,"Cube",true).setPosition(0,0.05,0.5).setScale(0.1,0.1,0.1);
+				//gModel = Primatives.Cube.createModal(gl,"Cube",true).setPosition(0,0.05,0.5).setScale(0.1,0.1,0.1);
 
 				//....................................
 				gRLoop.start();
@@ -78,14 +81,16 @@
 				//................................
 				//Main Elements to draw to the frame
 				gl.fClear();
-				gVR.fUpdate();
+				//gVR.fUpdate();
+				gCamera.updateViewMatrix();
 	
 				//................................
 				//Draw Out models
-				gGridFloor.renderVR(gVR);
-				gShader.preRender().renderModelVR(gModel.preRender(),gVR);
+				//gGridFloor.renderVR(gVR);
+				gGridFloor.render(gCamera);
+				//gShader.preRender().renderModelVR(gModel.preRender(),gVR);
 
-				if(gVR.isPresenting) gVR.submitFrame();
+				//if(gVR.isPresenting) gVR.submitFrame();
 			}
 		</script>
 	</head>
