@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="Math.js"></script>
+		<script src="Shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Transform.js"></script>
+		<script src="Modal.js"></script>
+		<script src="Primatives.js"></script>
+		<script src="Camera.js"></script>
+		<script src="Debug.js"></script>
+		<script src="GridFloor.js"></script>
+		<script src="Resources.js"></script>
+		<script src="vr.js"></script>
+
+		<script>
+			var gl, gRLoop,	gShader, gModel, gCamera, gCameraCtrl, gVR;
+			var gGridFloor, mDebugVerts, mDebugLine;
+
+			window.addEventListener("load",function(){
+				//....................................
+				//System Setup
+				gl = GLInstance("glcanvas").fFitScreen(0.95,0.9).fClear();
+				
+				//gCamera = new Camera(gl);
+				//gCamera.transform.position.set(0,1,3);
+				//gCameraCtrl = new CameraController(gl,gCamera);
+
+				gRLoop = new RenderLoop(onRender);
+
+				//....................................
+				//Load up resources
+				//Resources.setup(gl,onReady).loadVideoTexture("vid","shark_3+_360.mp4").start();
+				//TODO Rebuild Resources to use promises so can add to Promises.all.
+
+				var vrPromise = VRInit(gl).then( (hmd)=>{ 
+					gVR = hmd;
+					gRLoop.setFrameCaller(gVR); //To push frames to the HMD, the HMD's frame request function needs to be used instead of the window one.
+				},(err)=>{ console.log("VR Init Error : " + err); });
+				
+				Promise.all([vrPromise]).then(()=>{ onReady(); });
+			});
+
+			//==================================================
+			//When Main System is setup and all resources are downloaded.
+			function onReady(){
+				//Setup Global Keypress event Handler
+				document.addEventListener("keypress",function(e){
+					//if(e.keyCode == 32) gVR.fTogglePresenting(); 
+					switch(e.keyCode){
+						case 32: gVR.fTogglePresenting(); break; //Space
+						//case 114: gVR.resetPose(); break;
+					}
+				});
+
+				var stageSize = gVR.fGetStageSize();
+				gGridFloor = new VRGrid(gl,stageSize[0],stageSize[1]);
+
+				//Setup Test Shader, Modal, Meshes
+				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
+					.prepareUniforms("uPMatrix","mat4"
+									,"uMVMatrix","mat4"
+									,"uCameraMatrix","mat4");
+					//.setUniforms("uPMatrix",gCamera.projectionMatrix);
+
+				gModel = Primatives.Cube.createModal(gl,"Cube",true).setPosition(0.8,0.05,0.5).setScale(0.1,0.1,0.1);
+
+				//....................................
+				gRLoop.start();
+			}
+
+
+			//==================================================
+			//Main Render Loop
+			function onRender(dt){
+				//................................
+				//Main Elements to draw to the frame
+				gl.fClear();
+				gVR.fUpdate();
+				//gCamera.updateViewMatrix();
+
+				//................................
+				//Draw Out models
+				//gGridFloor.render(gCamera);
+				gGridFloor.renderVR(gVR);
+				gShader.preRender().renderModelVR(gModel.preRender(),gVR);
+
+				if(gVR.isPresenting) gVR.submitFrame();
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="glcanvas"></canvas></div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		in vec4 a_position;
+		in vec3 a_norm;
+		in vec2 a_uv;
+
+		uniform mat4 uPMatrix;
+		uniform mat4 uMVMatrix;
+		uniform mat4 uCameraMatrix;
+
+		out highp vec2 vUV;
+		out highp vec3 posWorld;
+		//out float diffuseAngle;
+
+		//const vec3 posLight = vec3(4.0,3.0,2.0);
+
+		void main(void){
+			//diffuseAngle = max(dot(a_norm, normalize(posLight-a_position.xyz)), 0.0);
+			posWorld = (uMVMatrix *  vec4(a_position.xyz, 1.0)).xyz;
+			
+			vUV = a_uv;
+			gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in highp vec3 posWorld;
+		//in float diffuseAngle;
+		out vec4 outColor;
+
+		const vec3 posLight = vec3(4.0,3.0,2.0);
+		const vec3 lightColor = vec3(0.0,1.0,0.0);
+		const vec3 baseColor = vec3(1.0,0.0,0.0);
+
+		void main(void){
+			vec3 genNorm = normalize(cross(dFdx(posWorld), dFdy(posWorld)));  //Calc new Normals based on World Pos
+			float diffAngle = max(dot(genNorm, normalize(posLight-posWorld)), 0.0);	//Calc angle of line
+			outColor = vec4(baseColor + lightColor * diffAngle,1.0); 
+
+			//vec3 finalColor = lightColor * diffuseAngle + baseColor;
+			//outColor = vec4(finalColor,1.0); //vec4(0.0,0.0,0.0,1.0);
+		}
+	</script>
+</body>
+</html>
