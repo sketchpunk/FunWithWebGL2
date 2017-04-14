@@ -1,7 +1,12 @@
 //###########################################################################################
 class MathUtil{
 	//Normalize x value to x range, then normalize to lerp the z range.
-	static Map(x, xMin,xMax, zMin,zMax){ return (x - xMin) / (xMax - xMin) * (zMax-zMin) + zMin; }
+	static map(x, xMin,xMax, zMin,zMax){ return (x - xMin) / (xMax - xMin) * (zMax-zMin) + zMin; }
+
+	static smoothStep(edge1, edge2, val){ //https://en.wikipedia.org/wiki/Smoothstep
+  		var x = Math.max(0, Math.min(1, (val-edge1)/(edge2-edge1)));
+  		return x*x*(3-2*x);
+	}
 }
 
 
@@ -31,7 +36,6 @@ class Vector3{
 	getFloatArray(){ return new Float32Array([this.x,this.y,this.z]);}
 	clone(){ return new Vector3(this.x,this.y,this.z); }
 }
-
 
 //###########################################################################################
 class Matrix4{
@@ -99,7 +103,6 @@ class Matrix4{
 	    out[15] = 0;
 	}
 
-
 	static ortho(out, left, right, bottom, top, near, far) {
 		var lr = 1 / (left - right),
 			bt = 1 / (bottom - top),
@@ -121,7 +124,6 @@ class Matrix4{
 		out[14] = (far + near) * nf;
 		out[15] = 1;
 	};
-
 
 	//https://github.com/toji/gl-matrix/blob/master/src/gl-matrix/mat4.js
 	//make the rows into the columns
@@ -204,6 +206,101 @@ class Matrix4{
 		return out;
 	}
 
+	//https://github.com/toji/gl-matrix/blob/master/src/gl-matrix/mat4.js
+	static fromRotationTranslation(out, q, v){
+	    // Quaternion math
+		var x = q[0], y = q[1], z = q[2], w = q[3],
+			x2 = x + x,
+			y2 = y + y,
+			z2 = z + z,
+
+			xx = x * x2,
+			xy = x * y2,
+			xz = x * z2,
+			yy = y * y2,
+			yz = y * z2,
+			zz = z * z2,
+			wx = w * x2,
+			wy = w * y2,
+			wz = w * z2;
+
+		out[0] = 1 - (yy + zz);
+		out[1] = xy + wz;
+		out[2] = xz - wy;
+		out[3] = 0;
+		out[4] = xy - wz;
+		out[5] = 1 - (xx + zz);
+		out[6] = yz + wx;
+		out[7] = 0;
+		out[8] = xz + wy;
+		out[9] = yz - wx;
+		out[10] = 1 - (xx + yy);
+		out[11] = 0;
+		out[12] = v[0];
+		out[13] = v[1];
+		out[14] = v[2];
+		out[15] = 1;
+		return out;
+	}
+
+	static getTranslation(out, mat){
+  		out[0] = mat[12];
+  		out[1] = mat[13];
+  		out[2] = mat[14];
+  		return out;
+	}
+
+	static getScaling(out, mat){
+		var m11 = mat[0],
+			m12 = mat[1],
+			m13 = mat[2],
+			m21 = mat[4],
+			m22 = mat[5],
+			m23 = mat[6],
+			m31 = mat[8],
+			m32 = mat[9],
+			m33 = mat[10];
+		out[0] = Math.sqrt(m11 * m11 + m12 * m12 + m13 * m13);
+		out[1] = Math.sqrt(m21 * m21 + m22 * m22 + m23 * m23);
+		out[2] = Math.sqrt(m31 * m31 + m32 * m32 + m33 * m33);
+		return out;
+	}
+
+	//Returns a quaternion representing the rotational component of a transformation matrix. If a matrix is built with
+ 	//fromRotationTranslation, the returned quaternion will be the same as the quaternion originally supplied
+	static getRotation(out, mat){
+		// Algorithm taken from http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/index.htm
+		var trace = mat[0] + mat[5] + mat[10],
+			S = 0;
+
+		if(trace > 0){
+			S = Math.sqrt(trace + 1.0) * 2;
+			out[3] = 0.25 * S;
+			out[0] = (mat[6] - mat[9]) / S;
+			out[1] = (mat[8] - mat[2]) / S; 
+			out[2] = (mat[1] - mat[4]) / S; 
+		}else if( (mat[0] > mat[5]) & (mat[0] > mat[10]) ){ 
+			S = Math.sqrt(1.0 + mat[0] - mat[5] - mat[10]) * 2;
+			out[3] = (mat[6] - mat[9]) / S;
+			out[0] = 0.25 * S;
+			out[1] = (mat[1] + mat[4]) / S; 
+			out[2] = (mat[8] + mat[2]) / S; 
+		}else if(mat[5] > mat[10]){ 
+			S = Math.sqrt(1.0 + mat[5] - mat[0] - mat[10]) * 2;
+			out[3] = (mat[8] - mat[2]) / S;
+			out[0] = (mat[1] + mat[4]) / S; 
+			out[1] = 0.25 * S;
+			out[2] = (mat[6] + mat[9]) / S; 
+		}else{ 
+			S = Math.sqrt(1.0 + mat[10] - mat[0] - mat[5]) * 2;
+			out[3] = (mat[1] - mat[4]) / S;
+			out[0] = (mat[8] + mat[2]) / S;
+			out[1] = (mat[6] + mat[9]) / S;
+			out[2] = 0.25 * S;
+		}
+		return out;
+	}
+
 	//....................................................................
 	//Static Operation
 
@@ -266,7 +363,6 @@ class Matrix4{
 	    out[15] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
 	    return out;	
 	}
-
 
 	//....................................................................
 	//Static Transformation

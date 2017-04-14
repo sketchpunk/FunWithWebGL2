@@ -137,7 +137,7 @@ class ShaderBuilder{
 		//Draw Left Side
 		this.gl.viewport(0,0,this.gl.fWidth * 0.5,this.gl.fHeight);
 		this.gl.uniformMatrix4fv(this.mUniformList["uPMatrix"].loc, false, vr.fFrameData.leftProjectionMatrix); 
-		this.gl.uniformMatrix4fv(this.mUniformList["uCameraMatrix"].loc, false, vr.fFrameData.leftViewMatrix);
+		this.gl.uniformMatrix4fv(this.mUniformList["uCameraMatrix"].loc, false, vr.fGetEyeMatrix(0));
 
 		if(model.mesh.indexCount) this.gl.drawElements(model.mesh.drawMode, model.mesh.indexCount, gl.UNSIGNED_SHORT, 0); 
 		else this.gl.drawArrays(model.mesh.drawMode, 0, model.mesh.vertexCount);		
@@ -145,7 +145,7 @@ class ShaderBuilder{
 		//Draw Right Side
 		gl.viewport(this.gl.fWidth * 0.5, 0,this.gl.fWidth * 0.5, this.gl.fHeight);
 		this.gl.uniformMatrix4fv(this.mUniformList["uPMatrix"].loc, false, vr.fFrameData.rightProjectionMatrix); 
-		this.gl.uniformMatrix4fv(this.mUniformList["uCameraMatrix"].loc, false, vr.fFrameData.rightViewMatrix);
+		this.gl.uniformMatrix4fv(this.mUniformList["uCameraMatrix"].loc, false, vr.fGetEyeMatrix(1));
 		
 		if(model.mesh.indexCount) this.gl.drawElements(model.mesh.drawMode, model.mesh.indexCount, gl.UNSIGNED_SHORT, 0); 
 		else this.gl.drawArrays(model.mesh.drawMode, 0, model.mesh.vertexCount);
@@ -215,7 +215,6 @@ class Shader{
 		return this;
 	}
 }
-
 
 class ShaderUtil{
 	//-------------------------------------------------

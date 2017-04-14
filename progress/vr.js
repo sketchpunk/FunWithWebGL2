@@ -31,13 +31,23 @@ function VRInstance(gl,dVR,resolve,reject){
 	hmd.depthFar		= 1024.0;							//How far things care visible before getting clipped.
 	hmd.fFrameData		= new VRFrameData();				//Object that will hold the position information from the HMD on request.
 	hmd.fRenderWidth	= Math.max(leftEye.renderWidth,rightEye.renderWidth) * 2; //Size of Eye Resolutions to change canvas rendering to match
-	hmd.fRenderHeight	= Math.max(leftEye.renderHeight,rightEye.renderHeight);						
+	hmd.fRenderHeight	= Math.max(leftEye.renderHeight,rightEye.renderHeight);
+
+	//Cache Matrix needed to move the Left/Right ViewModal Matrix into Standing/Sitting Space (move head above y=0)
+	hmd.fStageViewMatrix = Matrix4.identity();
+	if(hmd.stageParameters){
+		Matrix4.invert(hmd.fStageViewMatrix, hmd.stageParameters.sittingToStandingTransform);
+	}else{
+		//If no stage information exists, pretend the user is some average height in meters for the view matrix.
+		Matrix4.translate(hmd.fStageViewMatrix,0,1.65,0); //1.65 meters = 5' 4" Feet Tall
+		Matrix4.invert(hmd.fStageViewMatrix);
+	}
 
 	//...................................................
 	//\\\ METHODS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 	//Call once per frame to get the latest position data from the HMD.
-	hmd.fUpdate = function(){ this.getFrameData(this.fFrameData); };
+	hmd.fUpdate = function(){ this.getFrameData(this.fFrameData); return this; }; //NEW------- Just Return This
 
 	hmd.fTogglePresenting = function(){
 		if(!this.isPresenting) this.fStartPresenting();
@@ -57,6 +67,35 @@ function VRInstance(gl,dVR,resolve,reject){
 			()=>{ console.log("VR Presenting is has ended.")},
 			(err)=>{ console.log("Failure to end VR Presenting."); if(err && err.message) console.log(err.message); }
 		);
+	}
+
+	hmd.fGetStageSize = function(){
+		if(this.stageParameters) return [this.stageParameters.sizeX,this.stageParameters.sizeZ];
+		return [0,0];
+	}
+
+	hmd.fGetEyeMatrix = function(eye){
+		var m = new Float32Array(16);
+
+		if(eye == 0) Matrix4.mult(m, this.fFrameData.leftViewMatrix, this.fStageViewMatrix);	//Left Eye ViewMatrix
+		else Matrix4.mult(m, this.fFrameData.rightViewMatrix, this.fStageViewMatrix);			//Right Eye ViewMatrix
+
+		return m;
+	}
+
+	//Transform Position
+	hmd.getPoseMatrix = function(){
+		var mat = new Float32Array(16);
+
+		var rot = (this.fFrameData.pose.orientation)? this.fFrameData.pose.orientation : [0,0,0,1],  //Rotation is in quaternion;
+			pos = (this.fFrameData.pose.position)? this.fFrameData.pose.position : [0,0,0];
+
+		Matrix4.fromRotationTranslation(mat, rot, pos); //Create Head Tracking Matrix in the local space from when the device turned on.
+        Matrix4.invert(mat);							//Turn it into like a Camera matrix
+		Matrix4.mult(mat, mat, this.fStageViewMatrix);	//Move to Sitting/Standing Space
+        Matrix4.invert(mat);							//Turn everything back from a Camera Matrix
+
+        return mat;
 	}
 
 	//...................................................
@@ -82,46 +121,58 @@ function VRInstance(gl,dVR,resolve,reject){
 	resolve(hmd);
 }
 
+
+var OPT_TOP			= 1,
+	OPT_TOP_GRID	= 2,
+	OPT_SIDE		= 4,
+	OPT_SIDE_GRID	= 8,
+	OPT_BOT_GRID	= 16;
+
 class VRGrid{
-	constructor(gl){
+	constructor(gl,xSize,zSize){
+		var opt = OPT_SIDE | OPT_BOT_GRID | OPT_SIDE_GRID | OPT_TOP | OPT_TOP_GRID;
+
 		this.transform = new Transform();
 		this.gl = gl;
-		this.createMesh(gl)
+		
+		this.createMesh(gl,xSize,zSize,opt);
 		this.createShader();
+
+		this.StageFadeRange = 0.5;
+		this.StageXSize = xSize;
+		this.StageZSize = zSize;
+		this.StageXSizeHalf = xSize / 2;	//Use this for math in each frame, so just cache the values for less work
+		this.StageZSizeHalf = zSize / 2;
+		this.StageXRange = this.StageXSizeHalf * this.StageFadeRange;
+		this.StageZRange = this.StageZSizeHalf * this.StageFadeRange;
 	}
 
 	createShader(){
 		var vShader = '#version 300 es\n' +
 			'in vec3 a_position;' +
-			//'layout(location=4) in float a_color;' +
 			'uniform mat4 uPMatrix;' +
 			'uniform mat4 uMVMatrix;' +
 			'uniform mat4 uCameraMatrix;' +
-			//'uniform vec3 uColorAry[4];' +
-			//'out lowp vec4 color;' +
 			'void main(void){' +
-				//'color = vec4(uColorAry[ int(a_color) ],1.0);' +
 				'gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position, 1.0);' +
 			'}';
 		var fShader = '#version 300 es\n' +
 			'precision mediump float;' +
-			//'in vec4 color;' +
 			'out vec4 finalColor;' +
-			'const float xMax = 1.7;' +
-			'const float zMax = 1.7;' +
-			'const float borderSize = 0.8;' +
+			'uniform float uAlpha;' +
 			'void main(void){ ' +
-			'float xAlpha = smoothstep(xMax-borderSize,xMax,1.2); ' +
-			'finalColor = vec4(0.0,0.0,0.0,xAlpha); '+
+			'finalColor = vec4(0.0,0.0,0.0,uAlpha); '+
 			'}';
 
 		//........................................
 		this.mShader		= ShaderUtil.createProgramFromText(this.gl,vShader,fShader,true);
-		//this.mUniformColor	= this.gl.getUniformLocation(this.mShader,"uColorAry");
+		this.mUniformAlpha	= this.gl.getUniformLocation(this.mShader,"uAlpha");
 		this.mUniformProj	= this.gl.getUniformLocation(this.mShader,"uPMatrix");
 		this.mUniformCamera	= this.gl.getUniformLocation(this.mShader,"uCameraMatrix");
 		this.mUniformModelV	= this.gl.getUniformLocation(this.mShader,"uMVMatrix");
 
+		this.gl.useProgram(this.mShader);
+		this.gl.uniform1f(this.mUniformAlpha,"1.0");
 		//........................................
 		//Save colors in the shader. Should only need to render once.
 		//this.gl.useProgram(this.mShader);
@@ -157,41 +208,49 @@ class VRGrid{
 		//Update Transform Matrix (Modal View)
 		this.transform.updateMatrix();
 
+		//Get the current position of the Hmd related to the center of the stage
+		var pos = [0,0,0]; //xyz
+		Matrix4.getTranslation(pos,gVR.getPoseMatrix());
+
+		var x = this.StageXSizeHalf - Math.abs(pos[0]), //How Far from the edges of the stage are we.
+			z = this.StageZSizeHalf - Math.abs(pos[2]),
+			a = 0;
+
+		if(x > z) a = MathUtil.smoothStep(this.StageXSizeHalf,this.StageXRange, x);
+		else if(z > x) a = MathUtil.smoothStep(this.StageZSizeHalf, this.StageZRange, z);
+		//console.log(a);
+
 		//Prepare Shader
 		this.gl.useProgram(this.mShader);
 		this.gl.bindVertexArray(this.mesh.vao);
+		this.gl.enable(this.gl.BLEND);
 
 		//Push Uniforms
 		this.gl.uniformMatrix4fv(this.mUniformModelV, false, this.transform.getViewMatrix()); 
+		this.gl.uniform1f(this.mUniformAlpha,a);
 
 		//Draw Left Side
 		this.gl.viewport(0,0,this.gl.fWidth * 0.5,this.gl.fHeight);
 		this.gl.uniformMatrix4fv(this.mUniformProj, false, vr.fFrameData.leftProjectionMatrix); 
-		this.gl.uniformMatrix4fv(this.mUniformCamera, false, vr.fFrameData.leftViewMatrix);
+		this.gl.uniformMatrix4fv(this.mUniformCamera, false, vr.fGetEyeMatrix(0)); //vr.fFrameData.leftViewMatrix
 		this.gl.drawArrays(this.mesh.drawMode, 0, this.mesh.vertexCount);
 
 		//Draw Right Side
 		gl.viewport(this.gl.fWidth * 0.5, 0,this.gl.fWidth * 0.5, this.gl.fHeight);
 		this.gl.uniformMatrix4fv(this.mUniformProj, false, vr.fFrameData.rightProjectionMatrix); 
-		this.gl.uniformMatrix4fv(this.mUniformCamera, false, vr.fFrameData.rightViewMatrix);
+		this.gl.uniformMatrix4fv(this.mUniformCamera, false, vr.fGetEyeMatrix(1)); //vr.fFrameData.rightViewMatrix
 		this.gl.drawArrays(this.mesh.drawMode, 0, this.mesh.vertexCount);
 
 		//Cleanup
 		this.gl.bindVertexArray(null);
+		this.gl.disable(this.gl.BLEND);
 	}
 
-	createMesh(gl){
-		var OPT_TOP			= 1,
-			OPT_TOP_GRID	= 2,
-			OPT_SIDE		= 4,
-			OPT_SIDE_GRID	= 8,
-			OPT_BOT_GRID	= 16;
+	createMesh(gl,xSize,zSize,opt){
+		xSize = xSize || 1.0;
+		zSize = zSize || 1.0;
 
-		var opt = OPT_SIDE | OPT_BOT_GRID | OPT_TOP; //OPT_SIDE | OPT_BOT_GRID | OPT_SIDE_GRID | OPT_TOP | OPT_TOP_GRID;
-
-		var xSize = 2.4,					//X Width Size
-			zSize = 1.6,					//Z Width Size
-			ySize = 1.0,					//Y Height Size
+		var ySize = 1.8288,					//Y Height Size - 1.8288 meters = 6 Feet
 			incSize = 0.2,					//Space between lines
 			xHalf = xSize / 2.0,			//Calc Half way points in our sizes
 			zHalf = zSize / 2.0,
@@ -253,10 +312,10 @@ class VRGrid{
 		}
 
 		if(opt_side){	//Vertical Border Lines
-			verts.push(-xHalf,0,-zHalf,	-xHalf,ySize,-zHalf,);	//Left Back
-			verts.push(xHalf,0,-zHalf,	xHalf,ySize,-zHalf,);	//Right Back
-			verts.push(-xHalf,0,zHalf,	-xHalf,ySize,zHalf,);	//Left Front
-			verts.push(xHalf,0,zHalf,	xHalf,ySize,zHalf,);	//Right Front
+			verts.push(-xHalf,0,-zHalf,	-xHalf,ySize,-zHalf);	//Left Back
+			verts.push(xHalf,0,-zHalf,	xHalf,ySize,-zHalf);	//Right Back
+			verts.push(-xHalf,0,zHalf,	-xHalf,ySize,zHalf);	//Left Front
+			verts.push(xHalf,0,zHalf,	xHalf,ySize,zHalf);	//Right Front
 		}
 
 		//-----------------------------------
