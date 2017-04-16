@@ -34,13 +34,13 @@ function VRInstance(gl,dVR,resolve,reject){
 	hmd.fRenderHeight	= Math.max(leftEye.renderHeight,rightEye.renderHeight);
 
 	//Cache Matrix needed to move the Left/Right ViewModal Matrix into Standing/Sitting Space (move head above y=0)
-	hmd.fStageViewMatrix = Matrix4.identity();
+	hmd.fStageViewMatrixInv = Matrix4.identity();
 	if(hmd.stageParameters){
-		Matrix4.invert(hmd.fStageViewMatrix, hmd.stageParameters.sittingToStandingTransform);
+		Matrix4.invert(hmd.fStageViewMatrixInv, hmd.stageParameters.sittingToStandingTransform);
 	}else{
 		//If no stage information exists, pretend the user is some average height in meters for the view matrix.
-		Matrix4.translate(hmd.fStageViewMatrix,0,1.65,0); //1.65 meters = 5' 4" Feet Tall
-		Matrix4.invert(hmd.fStageViewMatrix);
+		Matrix4.translate(hmd.fStageViewMatrixInv,0,1.65,0); //1.65 meters = 5' 4" Feet Tall
+		Matrix4.invert(hmd.fStageViewMatrixInv);
 	}
 
 	//...................................................
@@ -77,8 +77,8 @@ function VRInstance(gl,dVR,resolve,reject){
 	hmd.fGetEyeMatrix = function(eye){
 		var m = new Float32Array(16);
 
-		if(eye == 0) Matrix4.mult(m, this.fFrameData.leftViewMatrix, this.fStageViewMatrix);	//Left Eye ViewMatrix
-		else Matrix4.mult(m, this.fFrameData.rightViewMatrix, this.fStageViewMatrix);			//Right Eye ViewMatrix
+		if(eye == 0) Matrix4.mult(m, this.fFrameData.leftViewMatrix, this.fStageViewMatrixInv);	//Left Eye ViewMatrix
+		else Matrix4.mult(m, this.fFrameData.rightViewMatrix, this.fStageViewMatrixInv);		//Right Eye ViewMatrix
 
 		return m;
 	}
@@ -92,7 +92,8 @@ function VRInstance(gl,dVR,resolve,reject){
 
 		Matrix4.fromRotationTranslation(mat, rot, pos); //Create Head Tracking Matrix in the local space from when the device turned on.
         Matrix4.invert(mat);							//Turn it into like a Camera matrix
-		Matrix4.mult(mat, mat, this.fStageViewMatrix);	//Move to Sitting/Standing Space
+		Matrix4.mult(mat, mat, this.fStageViewMatrixInv);	//Move to Sitting/Standing Space
+		//Matrix4.mult(mat, mat, this.stageParameters.sittingToStandingTransform);	//Move to Sitting/Standing Space		
         Matrix4.invert(mat);							//Turn everything back from a Camera Matrix
 
         return mat;
@@ -130,7 +131,7 @@ var OPT_TOP			= 1,
 
 class VRGrid{
 	constructor(gl,xSize,zSize){
-		var opt = OPT_SIDE | OPT_BOT_GRID | OPT_SIDE_GRID | OPT_TOP | OPT_TOP_GRID;
+		var opt = OPT_SIDE | OPT_BOT_GRID | OPT_TOP; //OPT_SIDE | OPT_BOT_GRID | OPT_SIDE_GRID | OPT_TOP | OPT_TOP_GRID;
 
 		this.transform = new Transform();
 		this.gl = gl;

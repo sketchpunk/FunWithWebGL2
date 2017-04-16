@@ -30,9 +30,9 @@
 				//System Setup
 				gl = GLInstance("glcanvas").fFitScreen(0.95,0.9).fClear();
 				
-				//gCamera = new Camera(gl);
-				//gCamera.transform.position.set(0,1,3);
-				//gCameraCtrl = new CameraController(gl,gCamera);
+				gCamera = new Camera(gl);
+				gCamera.transform.position.set(0,1,3);
+				gCameraCtrl = new CameraController(gl,gCamera);
 
 				gRLoop = new RenderLoop(onRender);
 
@@ -68,8 +68,8 @@
 				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
 					.prepareUniforms("uPMatrix","mat4"
 									,"uMVMatrix","mat4"
-									,"uCameraMatrix","mat4");
-					//.setUniforms("uPMatrix",gCamera.projectionMatrix);
+									,"uCameraMatrix","mat4")
+					.setUniforms("uPMatrix",gCamera.projectionMatrix);
 
 				gModel = Primatives.Cube.createModal(gl,"Cube",true).setPosition(0.8,0.05,0.5).setScale(0.1,0.1,0.1);
 
@@ -85,15 +85,25 @@
 				//Main Elements to draw to the frame
 				gl.fClear();
 				gVR.fUpdate();
-				//gCamera.updateViewMatrix();
+				gCamera.updateViewMatrix();
 
+				//var pos = [0,0,0]; //xyz
+				//Matrix4.getTranslation(pos,gVR.getPoseMatrix());
+
+				gModel.transform.matView.raw = gVR.getPoseMatrix();
+				gModel.transform.matView.vscale(gModel.transform.scale);
+				//console.log(pos);
 				//................................
 				//Draw Out models
 				//gGridFloor.render(gCamera);
-				gGridFloor.renderVR(gVR);
-				gShader.preRender().renderModelVR(gModel.preRender(),gVR);
+				//gGridFloor.renderVR(gVR);
+				//gShader.preRender().renderModelVR(gModel.preRender(),gVR);
 
-				if(gVR.isPresenting) gVR.submitFrame();
+				gGridFloor.render(gCamera);
+				//gShader.preRender("uCameraMatrix",gCamera.viewMatrix).renderModel(gModel.preRender());
+				gShader.preRender("uCameraMatrix",gCamera.viewMatrix).renderModel(gModel);
+
+				//if(gVR.isPresenting) gVR.submitFrame();
 			}
 		</script>
 	</head>
@@ -113,12 +123,17 @@
 		out highp vec3 posWorld;
 		//out float diffuseAngle;
 
+		out lowp vec3 color;
 		//const vec3 posLight = vec3(4.0,3.0,2.0);
 
 		void main(void){
 			//diffuseAngle = max(dot(a_norm, normalize(posLight-a_position.xyz)), 0.0);
-			posWorld = (uMVMatrix *  vec4(a_position.xyz, 1.0)).xyz;
+			//posWorld = (uMVMatrix *  vec4(a_position.xyz, 1.0)).xyz;
 			
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else color = vec3(0.6,0.6,0.6);
+
 			vUV = a_uv;
 			gl_Position = uPMatrix * uCameraMatrix * uMVMatrix * vec4(a_position.xyz, 1.0);
 		}
@@ -127,6 +142,7 @@
 		precision mediump float;
 		in highp vec2 vUV;
 		in highp vec3 posWorld;
+		in lowp vec3 color;
 		//in float diffuseAngle;
 		out vec4 outColor;
 
@@ -135,12 +151,14 @@
 		const vec3 baseColor = vec3(1.0,0.0,0.0);
 
 		void main(void){
-			vec3 genNorm = normalize(cross(dFdx(posWorld), dFdy(posWorld)));  //Calc new Normals based on World Pos
-			float diffAngle = max(dot(genNorm, normalize(posLight-posWorld)), 0.0);	//Calc angle of line
-			outColor = vec4(baseColor + lightColor * diffAngle,1.0); 
+			//vec3 genNorm = normalize(cross(dFdx(posWorld), dFdy(posWorld)));  //Calc new Normals based on World Pos
+			//float diffAngle = max(dot(genNorm, normalize(posLight-posWorld)), 0.0);	//Calc angle of line
+			//outColor = vec4(baseColor + lightColor * diffAngle,1.0); 
 
 			//vec3 finalColor = lightColor * diffuseAngle + baseColor;
 			//outColor = vec4(finalColor,1.0); //vec4(0.0,0.0,0.0,1.0);
+
+			outColor = vec4(color,1.0);
 		}
 	</script>
 </body>
