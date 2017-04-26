@@ -41,3 +41,97 @@ POSSIBLE FUTURE VIDEO IDEAS
 - Gamepad Input
 - Build a Shader Testing tool like ShaderFrog
 - Skeletal Animations (This one will be uber hard but awesome sauce of capable of doing it)
+
+
+
+https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/get
+https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/set
+
+Fungal
+Fungus
+FunGL
+
+Transform
+	.scale = [1,1,1] set:get
+	.position = [0,0,0] set:get
+	.rotation = [0,0,0,1] set:get Quaternion
+	.isMatrixUpdated = false
+	
+	.matLocal = Matrix4.identity()
+	.matWorld = Matrix4.identity()
+	.getInvertedMatrix()	//Checks isUpdated
+	.getForward() //Checks isUpdated
+	.getTop()
+	.getLeft()
+
+	.update() //Update's Matrix
+	.updateWorldMatrix(matWorld) //Update the children;
+	
+	.parentNode = null;
+	.setParent() //Checks current parent to remove itself before going to new parent. //Maybe create get:set for this
+	.nodes = []
+	.addNode()
+	.removeNode()
+
+
+Fungi.Setup()
+Fungi.gl = GLInstance();
+
+//Data Cache
+Fungi.Res.Meshes = [];
+Fungi.Res.Textures = [];
+Fungi.Res.Videos = [];
+Fungi.Res.Shaders = [];
+Fungi.Scene = new Fungi.Core.Scene();
+Fungi.ActiveCamera
+
+//Constants
+Fungi.UB_TRANSFORM_NAME = "UB_Transform";
+Fungi.UB_TRANSFORM_IND = 0;
+
+//Might Not Need it.
+Fungi.DEFAULT_CULL_FACE = true;
+Fungi.DEFAULT_BLEND = false;
+Fungi.DEFAULT_DEPTH_TEST = true;
+
+Fungi.Shaders.Builder
+Fungi.Shaders.Util
+Fungi.Shaders.UBO
+
+Fungi.Primitives.Quad
+Fungi.Primitives.Cube
+Fungi.Primitives.Plane
+
+Fungi.TransformCls
+Fungi.RenderableCls
+Fungi.CameraCls
+Fungi.LightSourceCls
+Fungi.SceneCls
+Fungi.ResourceLoader
+
+Fungi.VR.Camera
+
+
+
+Renderable : Transform
+	.visible = true  //Control if should be rendered.
+	.
+Camera : Transform
+	.matProjection = Matrix4.identity()
+
+VRCamera : Transform
+	.matProjection
+
+LightSource : Transform
+	.lightColor = Float32Array(9)
+
+AppManager
+	.setup()
+		//Setup RenderLoop, Default Camera, Scene, Resource Downloads
+	.renderLoop = null
+	.onRender()
+	.onReady()
+	.activeCamera = null
+	.glContext = null
+	.scene = new Scene()
+	.lineDebugger = new LineDebugger()

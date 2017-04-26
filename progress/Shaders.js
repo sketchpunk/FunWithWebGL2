@@ -25,8 +25,24 @@ class ShaderBuilder{
 		
 		var loc = 0;
 		for(var i=0; i < arguments.length; i+=2){
-			loc = gl.getUniformLocation(this.program,arguments[i]);
+			loc = this.gl.getUniformLocation(this.program,arguments[i]);
 			if(loc != null) this.mUniformList[arguments[i]] = {loc:loc,type:arguments[i+1]};
+		}
+		return this;
+	}
+
+	prepareUniformBlocks(ubo,blockIndex){
+		var ind = 0;
+		for(var i=0; i < arguments.length; i+=2){
+			//ind = this.gl.getUniformBlockIndex(this.program,arguments[i].blockName); //TODO This function does not return block index, need to pass that value in param
+			//console.log("Uniform Block Index",ind,ubo.blockName,ubo.blockPoint);
+
+			this.gl.uniformBlockBinding(this.program, arguments[i+1], arguments[i].blockPoint);
+			
+			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_DATA_SIZE)); //Get Size of Uniform Block
+			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES));
+			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_ACTIVE_UNIFORMS));
+			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_BINDING));
 		}
 		return this;
 	}
@@ -40,7 +56,7 @@ class ShaderBuilder{
 			tex = this.gl.mTextureCache[arguments[i+1]];
 			if(tex === undefined){ console.log("Texture not found in cache " + arguments[i+1]); continue; }
 
-			loc = gl.getUniformLocation(this.program,arguments[i]);
+			loc = this.gl.getUniformLocation(this.program,arguments[i]);
 			if(loc != null) this.mTextureList.push({loc:loc,tex:tex});
 		}
 		return this;
@@ -114,7 +130,7 @@ class ShaderBuilder{
 		if(model.mesh.doBlending || this.doBlending) this.gl.enable(this.gl.BLEND);
 
 		if(model.mesh.indexCount) this.gl.drawElements(model.mesh.drawMode, model.mesh.indexCount, gl.UNSIGNED_SHORT, 0); 
-		else this.gl.drawArrays(model.mesh.drawMode, 0, model.mesh.vertexCount);
+		else this.gl.drawArrays(model.mesh.drawMode, 0, model.mesh.vertexCount); 
 
 		//Cleanup
 		this.gl.bindVertexArray(null);
@@ -154,63 +170,6 @@ class ShaderBuilder{
 		this.gl.bindVertexArray(null);
 		if(model.mesh.noCulling || this.noCulling) this.gl.enable(this.gl.CULL_FACE);
 		if(model.mesh.doBlending || this.doBlending) this.gl.disable(this.gl.BLEND);
-
-		return this;
-	}
-}
-
-
-class Shader{
-	constructor(gl,vertShaderSrc,fragShaderSrc){
-		this.program = ShaderUtil.createProgramFromText(gl,vertShaderSrc,fragShaderSrc,true);
-
-		if(this.program != null){
-			this.gl = gl;
-			gl.useProgram(this.program);
-			this.attribLoc = ShaderUtil.getStandardAttribLocations(gl,this.program);
-			this.uniformLoc = ShaderUtil.getStandardUniformLocations(gl,this.program);
-		}
-
-		//Note :: Extended shaders should deactivate shader when done calling super and setting up custom parts in the constructor.
-	}
-
-	//...................................................
-	//Methods
-	activate(){ this.gl.useProgram(this.program); return this; }
-	deactivate(){ this.gl.useProgram(null); return this; }
-
-	setPerspective(matData){	this.gl.uniformMatrix4fv(this.uniformLoc.perspective, false, matData); return this; }
-	setModalMatrix(matData){	this.gl.uniformMatrix4fv(this.uniformLoc.modalMatrix, false, matData); return this; }
-	setCameraMatrix(matData){	this.gl.uniformMatrix4fv(this.uniformLoc.cameraMatrix, false, matData); return this; }
-
-	//function helps clean up resources when shader is no longer needed.
-	dispose(){
-		//unbind the program if its currently active
-		if(this.gl.getParameter(this.gl.CURRENT_PROGRAM) === this.program) this.gl.useProgram(null);
-		this.gl.deleteProgram(this.program);
-	}
-
-	//...................................................
-	//RENDER RELATED METHODS
-
-	//Setup custom properties
-	preRender(){} //abstract method, extended object may need need to do some things before rendering.
-
-	//Handle rendering a modal
-	renderModal(modal){
-		this.setModalMatrix(modal.transform.getViewMatrix());	//Set the transform, so the shader knows where the modal exists in 3d space
-		this.gl.bindVertexArray(modal.mesh.vao);				//Enable VAO, this will set all the predefined attributes for the shader
-
-		if(modal.mesh.noCulling) this.gl.disable(this.gl.CULL_FACE);
-		if(modal.mesh.doBlending) this.gl.enable(this.gl.BLEND);
-
-		if(modal.mesh.indexCount) this.gl.drawElements(modal.mesh.drawMode, modal.mesh.indexCount, gl.UNSIGNED_SHORT, 0); 
-		else this.gl.drawArrays(modal.mesh.drawMode, 0, modal.mesh.vertexCount);
-
-		//Cleanup
-		this.gl.bindVertexArray(null);
-		if(modal.mesh.noCulling) this.gl.enable(this.gl.CULL_FACE);
-		if(modal.mesh.doBlending) this.gl.disable(this.gl.BLEND);
 
 		return this;
 	}
@@ -326,3 +285,127 @@ class ShaderUtil{
 		};
 	}
 }
+
+class UBO{
+	constructor(gl,blockName,blockPoint,bufSize,aryCalc){
+		//Build name indexed array of Buffer Components for quick access when updating.
+		this.items = [];	//Key Indexed array of structs that define each component
+		this.keys = [];		//The order is important for the struct, keep the order of the uniform names with this array.
+		
+		for(var i=0; i < aryCalc.length; i++){
+			this.items[aryCalc[i].name]	= {offset: aryCalc[i].offset,dataLen: aryCalc[i].dataLen,chunkLen:aryCalc[i].chunkLen};
+			this.keys[i]				= aryCalc[i].name;
+		}
+		
+		//Save some extra bits of data
+		this.gl = gl;
+		this.blockName = blockName;
+		this.blockPoint = blockPoint;
+
+		//Create Buffer to store the struct data.
+		this.buf = gl.createBuffer();									//Create Standard Buffer
+		gl.bindBuffer(gl.UNIFORM_BUFFER,this.buf);						//Bind it for work
+		gl.bufferData(gl.UNIFORM_BUFFER,bufSize,gl.DYNAMIC_DRAW);		//Allocate Space needed
+		gl.bindBuffer(gl.UNIFORM_BUFFER,null);							//Unbind
+		gl.bindBufferBase(gl.UNIFORM_BUFFER, blockPoint, this.buf);		//Assign to Block Point
+	}
+
+	update(name,data){
+		//If not float32array, make it so
+		if(! (data instanceof Float32Array)){
+			if(Array.isArray(data))	data = new Float32Array(data);		//already an array, just convert to float32
+			else 					data = new Float32Array([data]);	//Single value most likely,Turn to -> Array -> Float32Ary
+		}
+
+		this.gl.bindBuffer(this.gl.UNIFORM_BUFFER,this.buf);
+		this.gl.bufferSubData(this.gl.UNIFORM_BUFFER, this.items[name].offset, data, 0, null);
+		this.gl.bindBuffer(this.gl.UNIFORM_BUFFER,null);
+		return this;
+	}
+
+	static create(gl,blockName,blockPoint,ary){
+		var bufSize = UBO.calculate(ary);
+		UBO.Cache[blockName] = new UBO(gl,blockName,blockPoint,bufSize,ary);
+		UBO.debugVisualize(UBO.Cache[blockName]);
+	}
+
+	static getSize(type){
+		switch(type){
+			case "mat4": return 16*4;
+			case "mat3": return 16*3;
+			case "vec2": return 8;
+			case "f": case "i": case "b": return 4;
+			case "vec3": case "vec4": return 16;
+			default: return 0;
+		}
+	}
+
+	static calculate(ary){
+		var chunk = 16,	//Data size in Bytes, UBO using layout std140 needs to build out the struct in chunks of 16 bytes.
+			tsize = 0,	//Temp Size, How much of the chunk is available after removing the data size from it
+			offset = 0,	//Offset in the buffer allocation
+			size = 0;	//Data Size of the current type
+
+		for(var i=0; i < ary.length; i++){
+			//When dealing with arrays, Each element takes up 16 bytes regardless of type.
+			if(!ary[i].arylen || ary[i].arylen == 0) size = UBO.getSize(ary[i].type);
+			else size = ary[i].arylen * 16;
+
+
+			tsize = chunk-size;	//How much of the chunk exists after taking the size of the data.
+
+			//Chunk has been overdrawn when it already has some data resurved for it.
+			if(tsize < 0 && chunk < 16){
+				offset += chunk;						//Add Remaining Chunk to offset...
+				if(i > 0) ary[i-1].chunkLen += chunk;	//So the remaining chunk can be used by the last variable
+				chunk = 16;								//Reset Chunk
+			}else if(tsize < 0 && chunk == 16){ 
+				//Do nothing incase data length is >= to unused chunk size.
+				//Do not want to change the chunk size at all when this happens.
+			}else if(tsize== 0)	chunk = 16;				//If evenly closes out the chunk, reset
+			else 				chunk -= size;	//Chunk isn't filled, just remove a piece
+
+			//Add some data of how the chunk will exist in the buffer.
+			ary[i].offset = offset;
+			ary[i].chunkLen = size;
+			ary[i].dataLen = size;
+
+			offset += size;
+		}
+
+		//Check if the final offset is divisiable by 16, if not add remaining chunk space to last element.
+		if(offset % 16 != 0){
+			ary[ary.length-1].chunkLen += chunk;
+			offset += chunk;
+		}
+
+		console.log("UBO Buffer Size ",offset);
+		return offset;
+	}
+
+	static debugVisualize(ubo){
+		var str = "",
+			chunk = 0,
+			tchunk = 0,
+			itm = null;
+
+		for(var i=0; i < ubo.keys.length; i++){
+			itm = ubo.items[ubo.keys[i]];
+			console.log(ubo.keys[i],itm);
+
+			chunk = itm.chunkLen / 4;
+			for(var x = 0; x < chunk; x++){
+				str += (x==0 || x == chunk-1)? "|."+i+"." : "|...";	//Display the index
+				tchunk++;
+				if(tchunk % 4 == 0) str += "| ~ ";
+			}
+		}
+
+		if(tchunk % 4 != 0) str += "|";
+
+		console.log(str);
+		//for(var i=0; i < ary.length; i++) console.log(ary[i]);
+	}
+}
+
+UBO.Cache = [];
