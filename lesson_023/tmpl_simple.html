@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.CameraMouseCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+
+		<script>
+			var gCamera,gCameraCtrl,gRenderList,gRLoop,gDebugLine;
+			var gLblFPS;
+
+			window.addEventListener("load",function(){
+				//.......................................................
+				//Setup and Preperations
+				Fungi.Init("FungiCanvas").fClearColor("FFFFFF").fFitScreen(1,1).fClear();
+
+				//.......................................................
+				//Setup Camera
+				var uboTransform = Fungi.Shaders.UBO.createTransformUBO();
+				gCamera = new Fungi.CameraOrbit().setPosition(0,0.5,5).setEulerDegrees(-15,45,0);
+				gCameraCtrl = new Fungi.CameraMouseCtrl(gCamera);
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(uboTransform,0);
+
+				var mat = Fungi.Shaders.Material.create("MatDomShader","DomShader");
+				mat.useCulling = false;
+
+				//.......................................................
+				//Prepare our Renderables
+				var renCube = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				renCube.visible = true;
+
+
+				gDebugLine = Fungi.Debug.Lines.getRenderable();
+				
+				var p1 = new Fungi.Maths.Vec3(),
+					p2 = new Fungi.Maths.Vec3();
+
+				p2.copy( renCube.top(p1) ).add(renCube.position);
+				p1.multi(0.5).add(renCube.position);
+				gDebugLine.addVector(p1,p2,"00ff00");
+				
+				p2.copy( renCube.left(p1) ).add(renCube.position);
+				p1.multi(0.5).add(renCube.position);
+				gDebugLine.addVector(p1,p2,"ff0000");
+
+				p2.copy( renCube.forward(p1) ).add(renCube.position);
+				p1.multi(0.5).add(renCube.position);
+				gDebugLine.addVector(p1,p2,"0000ff");
+
+				gDebugLine.update();
+
+				gRenderList = [ Fungi.Debug.GridFloor.getRenderable(), renCube, gDebugLine ];
+				
+				//.......................................................
+				//Create and Start Render Loop
+				gRLoop = new Fungi.RenderLoop(onRender).start();
+
+				gLblFPS = document.getElementById("lblFPS");
+				setInterval(function(){ gLblFPS.innerHTML = gRLoop.fps; },200);
+			});
+
+			function onRender(dt){
+				//.......................................................
+				//Run Frame Updates
+				gCamera.update();//.setDegY(20 * dt).update();
+
+				//.......................................................
+				//Start Rendering
+				Fungi.gl.fClear();
+				Fungi.Render(gRenderList);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+<!--
+	Textures -> Models -> Shaders -> Materials -> Renderables
+	
+	<[CONFIG]>
+	{ name:"ShaderOne", uniblocks:["UBOTransform",0], uniforms:["uModelMatrix","mat4"], tex:[] }
+	<[MATERIAL]>
+	[
+		{name:"Material1",shader:"ShaderOne",useCulling:true,useBlend:false,useModelMat:true,useNormalMat:false,drawMode:gl.TRIANGLES,
+			uniforms:[ {name:"uColor",type="vec3",value="1.0,0.0,0.0"} ]
+		}
+	]
+	<[VERTEX]>
+	#version 300 es
+	<[FRAGMENT]>
+	#version 300 es
+-->
+</body>
+</html>
