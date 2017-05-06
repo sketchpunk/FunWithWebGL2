@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:1px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		</style>
+
+		<script src="gl.js"></script>
+		<script src="Math.js"></script>
+		<script src="Shaders.js"></script>
+		<script src="RenderLoop.js"></script>
+		<script src="Transform.js"></script>
+		<script src="Modal.js"></script>
+		<script src="Primatives.js"></script>
+		<script src="Camera.js"></script>
+		<script src="Debug.js"></script>
+		<script src="GridFloor.js"></script>
+		<script src="Resources.js"></script>
+
+		<script>
+			var gl, gRLoop,	gShader, gModel, gCamera, gCameraCtrl;
+			var gGridFloor, mDebugVerts, mDebugLine;
+
+			window.addEventListener("load",function(){
+				//....................................
+				//System Setup
+				gl = GLInstance("glcanvas").fFitScreen(0.95,0.9).fClear();
+				
+				gCamera = new Camera(gl);
+				gCamera.transform.position.set(0,1,3);
+				gCameraCtrl = new CameraController(gl,gCamera);
+
+				gGridFloor = new GridFloor(gl);
+				gRLoop = new RenderLoop(onRender);
+
+				UBO.create(gl,"MatTransform",1,[
+					/*Scenario A : FLOAT - VEC3*/
+					{name:"float1",type:"f"},
+					{name:"vec32",type:"vec3"},
+
+					/*Scenario B : VEC3 - FLOAT
+					{name:"vec32",type:"vec3"},
+					{name:"float1",type:"f"},
+					*/
+
+					/*Scenario C : VEC3 - VEC3 - FLOAT
+					{name:"vec31",type:"vec3"},
+					{name:"vec32",type:"vec3"},
+					{name:"float1",type:"f"},
+					*/
+					/*Scenario D : FLOAT - FLOAT
+					{name:"float1",type:"f"},
+					{name:"float2",type:"f"},
+					*/
+					/*Scenario E : VEC3
+					{name:"vec",type:"vec3"},
+					*/
+					/*
+					{name:"matProjection",type:"mat4"},
+					{name:"matCameraView",type:"mat4"}
+					*/
+
+					/*
+					{name:"float01",type:"f"},
+					{name:"float02",type:"f"},
+					{name:"float03",type:"f"},
+					{name:"matProj",type:"mat3"},
+					{name:"float04",type:"f"},
+					{name:"float05",type:"f"},
+					{name:"vec3",type:"vec3"},
+					{name:"float06",type:"f"},
+					*/
+
+					/*
+					{name:"float",type:"f",arylen:0},
+					{name:"vector",type:"vec3",arylen:0},
+					{name:"matrix",type:"mat4",arylen:0},
+					{name:"ary",type:"f",arylen:3},
+					{name:"boolean",type:"b",arylen:0},
+					{name:"integer",type:"i",arylen:0},
+					*/
+				]);
+
+
+				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
+					.prepareUniformBlocks(UBO.Cache["MatTransform"],0);
+
+				//UBO.Cache["MatTransform"].update("matProjection",gCamera.projectionMatrix);
+
+				//....................................
+				//Load up resources
+				//var resPromise = Resources.setup(gl).loadVideoTexture("vid","shark_3+_360.mp4").start(true);
+				//Promise.all([resPromise]).then(()=>{ onReady(); });
+
+				//onReady();
+			});
+
+			//==================================================
+			//When Main System is setup and all resources are downloaded.
+			function onReady(){
+				//Setup Test Shader, Modal, Meshes
+				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
+					.prepareUniforms("uMVMatrix","mat4")//,"uCameraMatrix","mat4""uPMatrix","mat4"
+					.prepareUniformBlocks(UBO.Cache["MatTransform"],0)
+					//.setUniforms("uPMatrix",gCamera.projectionMatrix);
+
+				var cubeMesh = Primatives.Cube.createMesh(gl,"Cube",1,1,1,0,0,0,false);
+				gModel = new Modal(cubeMesh).setPosition(0,0.5,0);
+				
+				//....................................
+				gRLoop.start();
+			}
+
+			//==================================================
+			//Main Render Loop
+			function onRender(dt){
+				//................................
+				//Main Elements to draw to the frame
+				gl.fClear();
+				gCamera.updateViewMatrix();
+				UBO.Cache["MatTransform"].update("matCameraView",gCamera.viewMatrix);
+
+				//................................
+				//Draw Out models
+				gGridFloor.render(gCamera);
+				gShader.preRender().renderModel(gModel.preRender()); //"uCameraMatrix",gCamera.viewMatrix
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="glcanvas"></canvas></div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		//layout(std140, column_major) uniform;
+
+		uniform MatTransform{
+			//mat4 matProjection;
+			//mat4 matCameraView;
+			
+			/*Scenario A*/
+			float a;
+			vec3 b;
+			
+			/*Scenario B
+			vec3 b;
+			float a;
+			*/
+			/*Scenario C
+			vec3 c;
+			vec3 b;
+			float a;
+			*/
+			/*Scenario D
+			float b;
+			float a;
+			*/
+			/*Scenario E
+			vec3 b;
+			*/
+		};
+
+		uniform mat4 uPMatrix;
+		uniform mat4 uMVMatrix;
+		uniform mat4 uCameraMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			//gl_Position = matProjection * matCameraView * uMVMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+</body>
+</html>
