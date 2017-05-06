@@ -1,7 +1,7 @@
-# Fun with WebGL 2.0 - 022.1 - Float:Vec3 NEQ Vec3:Float
+# Fun with WebGL 2.0 - 023 - Viva La Fungi
 
 **Description**:
-A follow up to the previous lesson about Uniform Buffer Objects. There is a exception to the rule that I was not aware of and this video is about that including code changes and how to test the new code.
+After 22 lesson, our code base is a mess. So i spent some time and refactored everything that has been done into a properly structure api framework that we can use and develop further as we continue this series. So this video is just an overview of the changes and restructing of all the code. In the end I decided to give this new engine the name Fungi.
 
 ### Links
 * [Lesson on Youtube](https://youtu.be/bdIZ2ZloXEA)
