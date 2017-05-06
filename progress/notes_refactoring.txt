@@ -1,3 +1,6 @@
+www.realtimerendering.com/blog/webgl-2-basics/
+https://github.com/shrekshao/minimal-gltf-loader
+
 
 VR
 - Need to be able to pass in VR data for left/right view & proj matrix for rendering objects, Need to change viewport

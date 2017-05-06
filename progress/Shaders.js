@@ -39,7 +39,7 @@ class ShaderBuilder{
 
 			this.gl.uniformBlockBinding(this.program, arguments[i+1], arguments[i].blockPoint);
 			
-			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_DATA_SIZE)); //Get Size of Uniform Block
+			console.log("PREPARE UNIFORM BLOCK ",this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_DATA_SIZE)); //Get Size of Uniform Block
 			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES));
 			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_ACTIVE_UNIFORMS));
 			//console.log(this.gl.getActiveUniformBlockParameter(this.program, 0, this.gl.UNIFORM_BLOCK_BINDING));
@@ -329,14 +329,15 @@ class UBO{
 		UBO.debugVisualize(UBO.Cache[blockName]);
 	}
 
-	static getSize(type){
+	static getSize(type){ //[Alignment,Size]
 		switch(type){
-			case "mat4": return 16*4;
-			case "mat3": return 16*3;
-			case "vec2": return 8;
-			case "f": case "i": case "b": return 4;
-			case "vec3": case "vec4": return 16;
-			default: return 0;
+			case "f": case "i": case "b": return [4,4];
+			case "mat4": return [64,64]; //16*4
+			case "mat3": return [48,48]; //16*3
+			case "vec2": return [8,8];
+			case "vec3": return [16,12]; //Special Case
+			case "vec4": return [16,16];
+			default: return [0,0];
 		}
 	}
 
@@ -344,40 +345,43 @@ class UBO{
 		var chunk = 16,	//Data size in Bytes, UBO using layout std140 needs to build out the struct in chunks of 16 bytes.
 			tsize = 0,	//Temp Size, How much of the chunk is available after removing the data size from it
 			offset = 0,	//Offset in the buffer allocation
-			size = 0;	//Data Size of the current type
+			size;		//Data Size of the current type
 
 		for(var i=0; i < ary.length; i++){
 			//When dealing with arrays, Each element takes up 16 bytes regardless of type.
 			if(!ary[i].arylen || ary[i].arylen == 0) size = UBO.getSize(ary[i].type);
-			else size = ary[i].arylen * 16;
+			else size = [ary[i].arylen * 16,ary[i].arylen * 16];
 
-
-			tsize = chunk-size;	//How much of the chunk exists after taking the size of the data.
+			tsize = chunk-size[0];	//How much of the chunk exists after taking the size of the data.
 
 			//Chunk has been overdrawn when it already has some data resurved for it.
 			if(tsize < 0 && chunk < 16){
 				offset += chunk;						//Add Remaining Chunk to offset...
 				if(i > 0) ary[i-1].chunkLen += chunk;	//So the remaining chunk can be used by the last variable
 				chunk = 16;								//Reset Chunk
-			}else if(tsize < 0 && chunk == 16){ 
+			}else if(tsize < 0 && chunk == 16){
 				//Do nothing incase data length is >= to unused chunk size.
 				//Do not want to change the chunk size at all when this happens.
-			}else if(tsize== 0)	chunk = 16;				//If evenly closes out the chunk, reset
-			else 				chunk -= size;	//Chunk isn't filled, just remove a piece
+			}else if(tsize == 0){ //If evenly closes out the chunk, reset
+				
+				if(ary[i].type == "vec3" && chunk == 16) chunk -= size[1];	//If Vec3 is the first var in the chunk, subtract size since size and alignment is different.
+				else chunk = 16;
+
+			}else chunk -= size[1];	//Chunk isn't filled, just remove a piece
 
 			//Add some data of how the chunk will exist in the buffer.
-			ary[i].offset = offset;
-			ary[i].chunkLen = size;
-			ary[i].dataLen = size;
+			ary[i].offset	= offset;
+			ary[i].chunkLen	= size[1];
+			ary[i].dataLen	= size[1];
 
-			offset += size;
+			offset += size[1];
 		}
 
 		//Check if the final offset is divisiable by 16, if not add remaining chunk space to last element.
-		if(offset % 16 != 0){
-			ary[ary.length-1].chunkLen += chunk;
-			offset += chunk;
-		}
+		//if(offset % 16 != 0){
+			//ary[ary.length-1].chunkLen += 16 - offset % 16;
+			//offset += 16 - offset % 16;
+		//}
 
 		console.log("UBO Buffer Size ",offset);
 		return offset;

@@ -37,11 +37,32 @@
 				gRLoop = new RenderLoop(onRender);
 
 				UBO.create(gl,"MatTransform",1,[
-					/**/
+					/*Scenario A : FLOAT - VEC3*/
+					{name:"float1",type:"f"},
+					{name:"vec32",type:"vec3"},
+
+					/*Scenario B : VEC3 - FLOAT
+					{name:"vec32",type:"vec3"},
+					{name:"float1",type:"f"},
+					*/
+
+					/*Scenario C : VEC3 - VEC3 - FLOAT
+					{name:"vec31",type:"vec3"},
+					{name:"vec32",type:"vec3"},
+					{name:"float1",type:"f"},
+					*/
+					/*Scenario D : FLOAT - FLOAT
+					{name:"float1",type:"f"},
+					{name:"float2",type:"f"},
+					*/
+					/*Scenario E : VEC3
+					{name:"vec",type:"vec3"},
+					*/
+					/*
 					{name:"matProjection",type:"mat4"},
 					{name:"matCameraView",type:"mat4"}
-					
-					
+					*/
+
 					/*
 					{name:"float01",type:"f"},
 					{name:"float02",type:"f"},
@@ -63,14 +84,18 @@
 					*/
 				]);
 
-				UBO.Cache["MatTransform"].update("matProjection",gCamera.projectionMatrix);
+
+				gShader = new ShaderBuilder(gl,"vertex_shader","fragment_shader")
+					.prepareUniformBlocks(UBO.Cache["MatTransform"],0);
+
+				//UBO.Cache["MatTransform"].update("matProjection",gCamera.projectionMatrix);
 
 				//....................................
 				//Load up resources
 				//var resPromise = Resources.setup(gl).loadVideoTexture("vid","shark_3+_360.mp4").start(true);
 				//Promise.all([resPromise]).then(()=>{ onReady(); });
 
-				onReady();
+				//onReady();
 			});
 
 			//==================================================
@@ -109,15 +134,36 @@
 	<div><canvas id="glcanvas"></canvas></div>
 
 	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
-		in vec4 a_position;
-		in vec3 a_norm;
-		in vec2 a_uv;
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
 
 		//layout(std140, column_major) uniform;
 
 		uniform MatTransform{
-			mat4 matProjection;
-			mat4 matCameraView;
+			//mat4 matProjection;
+			//mat4 matCameraView;
+			
+			/*Scenario A*/
+			float a;
+			vec3 b;
+			
+			/*Scenario B
+			vec3 b;
+			float a;
+			*/
+			/*Scenario C
+			vec3 c;
+			vec3 b;
+			float a;
+			*/
+			/*Scenario D
+			float b;
+			float a;
+			*/
+			/*Scenario E
+			vec3 b;
+			*/
 		};
 
 		uniform mat4 uPMatrix;
@@ -133,7 +179,7 @@
 			else color = vec3(0.6,0.6,0.6);
 
 			vUV = a_uv;
-			gl_Position = matProjection * matCameraView * uMVMatrix * vec4(a_position.xyz, 1.0);
+			//gl_Position = matProjection * matCameraView * uMVMatrix * vec4(a_position.xyz, 1.0);
 		}
 	</script>
 	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
