@@ -165,6 +165,8 @@ var Fungi = (function(){
 			var x = Math.max(0, Math.min(1, (val-edge1)/(edge2-edge1)));
 			return x*x*(3-2*x);
 		}
+
+		//static viewportSpace(xCanvas,yCanvas){ return [ xCanvas*2 / gl.fWidth - 1,  1 - yCanvas*2/ gl.fHeight ]; }
 	}
 
 
@@ -188,42 +190,49 @@ var Fungi = (function(){
 
 		//----------------------------------------------
 		//region Setters/Getters
-			/*
+			
 
 			//R  T  F  T    
 			//00 04 08 12
 			//01 05 09 13
 			//02 06 10 14
 			//03 07 11 15
-			right(d){	return this._getDirection(0,1,2,d);	}
-			top(d){		return this._getDirection(4,5,6,d);	}
-			forward(d){	return this._getDirection(8,9,10,d);}
-			_getDirection(xi,yi,zi,d){
+			left(v,d){		return this._getDirection(0,1,2,d,v);	}
+			up(v,d){		return this._getDirection(4,5,6,d,v);	}
+			forward(v,d){	return this._getDirection(8,9,10,d,v);	}
+			_getDirection(xi,yi,zi,d,v){
 				this.updateMatrix();
-				d = d || 1; //Distance
+				if(d == undefined) d = 1; //Distance
+				//d = d || 1; //Distance
+				v = v || new Vec3();
+
 				var x = this.localMatrix[xi], y = this.localMatrix[yi], z = this.localMatrix[zi],
 					m =  Math.sqrt( x*x + y*y + z*z );
-				return [ x/m*d, y/m*d, z/m*d ];
+
+				v[0] = x/m*d;
+				v[1] = y/m*d;
+				v[2] = z/m*d;
+				return v;
 			}
-			*/
+			/*			
 			forward(v){
 				v = v || new Vec3(); v.set(0,0,1);
 				Quaternion.multiVec3(v,this.rotation,v);
-				return v;
+				return v.normalize();
 			}
 
-			top(v){
+			up(v){
 				v = v || new Vec3(); v.set(0,1,0);
 				Quaternion.multiVec3(v,this.rotation,v);
-				return v;
+				return v.normalize();
 			}
 
 			left(v){
 				v = v || new Vec3(); v.set(1,0,0);
 				Quaternion.multiVec3(v,this.rotation,v);
-				return v;
+				return v.normalize();
 			}
-
+			*/
 			get parent(){ this._parent; }
 			set parent(p){
 				if(this._parent != null){
@@ -274,6 +283,10 @@ var Fungi = (function(){
 			this.vao = vao;
 			this.visible = true;
 			this.material = Fungi.Res.Materials[matName];
+		}
+		draw(){
+			if(this.vao.isIndexed)	gl.drawElements(this.material.drawMode, this.vao.count, gl.UNSIGNED_SHORT, 0); 
+			else					gl.drawArrays(this.material.drawMode, 0, this.vao.count);
 		}
 	}
 
@@ -384,6 +397,7 @@ var Fungi = (function(){
 			}
 
 			clone(){ return new Vec3().set(this.x,this.y,this.z); }
+			
 			copy(v){
 				this[0] = v[0]; this[1] = v[1]; this[2] = v[2];
 				this.isModified = true;
@@ -1270,7 +1284,7 @@ var Fungi = (function(){
 			var ind = 0;
 			for(var i=0; i < arguments.length; i+=2){
 				//ind = this.gl.getUniformBlockIndex(this.program,arguments[i].blockName); //TODO This function does not return block index, need to pass that value in param
-				console.log("Uniform Block Index",ind,ubo.blockName,ubo.blockPoint);
+				//console.log("Uniform Block Index",ind,ubo.blockName,ubo.blockPoint);
 
 				gl.uniformBlockBinding(this.program, arguments[i+1], arguments[i].blockPoint);
 				
@@ -1330,11 +1344,11 @@ var Fungi = (function(){
 		dispose(){
 			//unbind the program if its currently active
 			if(this.gl.getParameter(this.gl.CURRENT_PROGRAM) === this.program) this.gl.useProgram(null);
-			this.gl.deleteProgram(this.program);
+			gl.deleteProgram(this.program);
 		}
 
 		preRender(){
-			this.gl.useProgram(this.program); //Save a function call and just activate this shader program on preRender
+			gl.useProgram(this.program); //Save a function call and just activate this shader program on preRender
 
 			//If passing in arguments, then lets push that to setUniforms for handling. Make less line needed in the main program by having preRender handle Uniforms
 			if(arguments.length > 0) this.setUniforms.apply(this,arguments);
@@ -1344,11 +1358,11 @@ var Fungi = (function(){
 			//TODO, After done rendering need to deactivate the texture slots
 			if(this._TextureList.length > 0){
 				var texSlot;
-				for(var i=0; i < this.mTextureList.length; i++){
-					texSlot = this.gl["TEXTURE" + i];
-					this.gl.activeTexture(texSlot);
-					this.gl.bindTexture(this.gl.TEXTURE_2D,this._TextureList[i].tex);
-					this.gl.uniform1i(this._TextureList[i].loc,i);
+				for(var i=0; i < this._TextureList.length; i++){
+					texSlot = gl["TEXTURE" + i];
+					gl.activeTexture(texSlot);
+					gl.bindTexture(gl.TEXTURE_2D,this._TextureList[i].tex);
+					gl.uniform1i(this._TextureList[i].loc,i);
 				}
 			}
 
@@ -1439,6 +1453,7 @@ var Fungi = (function(){
 		}
 	}
 
+	//Uniform Buffer Object
 	class UBO{
 		constructor(blockName,blockPoint,bufSize,aryCalc){
 			//Build name indexed array of Buffer Components for quick access when updating.
@@ -1482,7 +1497,7 @@ var Fungi = (function(){
 		static create(blockName,blockPoint,ary){
 			var bufSize = UBO.calculate(ary);
 			Fungi.Res.Ubo[blockName] = new UBO(blockName,blockPoint,bufSize,ary);
-			UBO.debugVisualize(Fungi.Res.Ubo[blockName]);
+			//UBO.debugVisualize(Fungi.Res.Ubo[blockName]);
 			return Fungi.Res.Ubo[blockName];
 		}
 
@@ -1552,7 +1567,7 @@ var Fungi = (function(){
 
 			for(var i=0; i < ubo.keys.length; i++){
 				itm = ubo.items[ubo.keys[i]];
-				console.log(ubo.keys[i],itm);
+				//console.log(ubo.keys[i],itm);
 
 				chunk = itm.chunkLen / 4;
 				for(var x = 0; x < chunk; x++){
@@ -1569,6 +1584,7 @@ var Fungi = (function(){
 		}
 	}
 
+	//Vertex Array Object
 	class VAO{
 		static create(out){
 			out.buffers = [];
@@ -1655,6 +1671,86 @@ var Fungi = (function(){
 		}
 	}
 
+	//FrameBuffer Object
+	class FBO{
+		static create(out){
+			out.id = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, out.id);
+			return this;
+		}
+
+		static texColorBuffer(out,cAttachNum){
+			out.texColor = gl.createTexture();
+			gl.bindTexture(gl.TEXTURE_2D, out.texColor);
+			gl.texImage2D(gl.TEXTURE_2D,0, gl.RGBA, gl.fWidth, gl.fHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);	//Stretch image to X position
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);	//Stretch image to Y position
+
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, cAttachNum, gl.TEXTURE_2D, out.texColor, 0);
+			return this;
+		}
+
+		static depthBuffer(out){
+			out.depth = gl.createRenderbuffer();
+			gl.bindRenderbuffer(gl.RENDERBUFFER, out.depth);
+			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.fWidth, gl.fHeight);
+			gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, out.depth);
+			return this;
+		}
+
+		static finalize(out,name){
+			switch(gl.checkFramebufferStatus(gl.FRAMEBUFFER)){
+				case gl.FRAMEBUFFER_COMPLETE: break;
+				case gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT: console.log("FRAMEBUFFER_INCOMPLETE_ATTACHMENT"); break;
+				case gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: console.log("FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT"); break;
+				case gl.FRAMEBUFFER_INCOMPLETE_DIMENSIONS: console.log("FRAMEBUFFER_INCOMPLETE_DIMENSIONS"); break;
+				case gl.FRAMEBUFFER_UNSUPPORTED: console.log("FRAMEBUFFER_UNSUPPORTED"); break;
+				case gl.FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: console.log("FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"); break;
+				case gl.RENDERBUFFER_SAMPLES: console.log("RENDERBUFFER_SAMPLES"); break;
+			}
+			
+			gl.bindTexture(gl.TEXTURE_2D, null);
+    		gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    		Fungi.Res.Fbo[name] = out;
+
+    		return out;
+		}
+
+		static colorDepthFBO(name){
+			var rtn = {};
+			return FBO.create(rtn)
+				.texColorBuffer(rtn,gl.COLOR_ATTACHMENT0)
+				.depthBuffer(rtn)
+				.finalize(rtn,name);
+		}
+
+		static readPixel(fbo,x,y){
+			var p = new Uint8Array(4);
+			gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.id);
+			gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p);
+			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+			return p;
+		}
+
+		static activate(fbo){ gl.bindFramebuffer(gl.FRAMEBUFFER,fbo.id); return this; }
+		static deactivate(){ gl.bindFramebuffer(gl.FRAMEBUFFER,null); return this; }
+		static clear(fbo){
+			gl.bindFramebuffer(gl.FRAMEBUFFER,fbo.id);
+			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); 
+			gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+		}
+
+		static delete(fbo){
+			//TODO, Delete using the Cache name, then remove it from cache.
+  			gl.deleteRenderbuffer(fbo.depth);
+  			gl.deleteTexture(fbo.texColor);
+  			gl.deleteFramebuffer(fbo.id);
+		}
+	}
+
 
 	/*>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 	<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<*/
@@ -1725,7 +1821,7 @@ var Fungi = (function(){
 	var Renderer = (function(){
 		var material = shader = null;
 
-		return function(ary){
+		var f = function(ary){
 			for(var i=0; i < ary.length; i++){
 				if(ary[i].visible == false) continue;
 
@@ -1752,13 +1848,21 @@ var Fungi = (function(){
 				//Render !!!
 				if(ary[i].vao.isIndexed)	gl.drawElements(material.drawMode, ary[i].vao.count, gl.UNSIGNED_SHORT, 0); 
 				else						gl.drawArrays(material.drawMode, 0, ary[i].vao.count);
+
+				//Incase there is a render callback, call it after item has been rendered.
+				if(f.onItemRendered != null) f.onItemRendered(ary[i]);
 			}
 
 			//...................................
 			//Cleanup
 			gl.bindVertexArray(null); //After all done rendering, unbind VAO
-		}
+		};
+
+		f.onItemRendered = null;
+		return f;
 	})();
+
+
 
 	/*>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 	Final Build
@@ -1767,13 +1871,13 @@ var Fungi = (function(){
 		Init:Init, gl:null, Util:Util,
 		
 		//RESOURCE CACHE
-		Res:{ Textures:[], Videos:[], Images:[], Shaders:[], Ubo:[], Vao:[], Materials:[] },
+		Res:{ Textures:[], Videos:[], Images:[], Shaders:[], Ubo:[], Vao:[], Fbo:[], Materials:[] },
 
 		//MATH OBJECTS
 		Maths:{ Vec3:Vec3, Quaternion:Quaternion, Matrix4:Matrix4 },
 
 		//SHADERS
-		Shaders:{Material:Material, New:NewShader, Builder:ShaderBuilder, Util:ShaderUtil, VAO:VAO, UBO:UBO },
+		Shaders:{Material:Material, New:NewShader, Builder:ShaderBuilder, Util:ShaderUtil, VAO:VAO, UBO:UBO, FBO:FBO },
 		
 		//TRANSFORM AND ITS EXTENSIONS
 		Transform:Transform, Renderable:Renderable, CameraOrbit:CameraOrbit,

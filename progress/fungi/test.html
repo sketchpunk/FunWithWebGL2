@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.CameraMouseCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+
+		<script>
+			var gCamera,gCameraCtrl,gRenderList,gRLoop,gDebugLine,gGridFloor,gShader,gModel;
+			var gLblFPS;
+
+			var fbo, cID = 100, colorID, blankID;
+
+			window.addEventListener("load",function(){
+				//.......................................................
+				//Setup and Preperations
+				colorID = idToColor(cID);
+				blankID = idToColor(0);
+
+				Fungi.Init("FungiCanvas").fClearColor("FFFFFF").fFitScreen(1,1).fClear();
+
+				Fungi.Render.onItemRendered = function(itm){
+					if(itm === gGridFloor) return;
+					//Optimize by only rendering to FBO when mouse is is down.
+					gShader.setUniforms("uColorID",colorID);
+						Fungi.Shaders.FBO.activate(fbo);
+							itm.draw();
+						Fungi.Shaders.FBO.deactivate();
+					gShader.setUniforms("uColorID",blankID);
+				}
+
+				fbo = Fungi.Shaders.FBO.colorDepthFBO("picking");
+
+				//.......................................................
+				//Setup Camera
+				var uboTransform = Fungi.Shaders.UBO.createTransformUBO();
+				gCamera = new Fungi.CameraOrbit().setPosition(0,0.5,5).setEulerDegrees(-15,45,0);
+				
+				gCameraCtrl = new Fungi.KBMCtrl()
+					.addHandler("camera",new Fungi.KBMCtrl_Viewport(gCamera),true)
+					.addHandler("pick",new KBMCtrl_Picking())
+
+					.setDownOverride(function(e,ctrl,x,y){
+						var yi		= Fungi.gl.fHeight - y, //Gotta flip the y
+							pixel	= Fungi.Shaders.FBO.readPixel(fbo,x,yi),
+							id		= colorToID(pixel);
+
+						if(id == 0 || id == 16777215) return; //ignore Black and white.
+
+						//console.log(pixel,id);
+						ctrl.switchHandler("pick");
+					});
+
+
+				//gCameraCtrl = new Fungi.CameraMouseCtrl(gCamera);
+				//gCameraCtrl.onDownOverride = function(x,y){
+				//	var yi = Fungi.gl.fHeight - y; //Gotta flip the y
+				//	var pixel = Fungi.Shaders.FBO.readPixel(fbo,x,yi);
+				//	var id = colorToID(pixel);
+				//	console.log(pixel,id);
+				//	return id > 0 && id < 16777215; //Ignore Black and White.
+				//}
+
+				//.......................................................
+				//Create Shaders and Materials
+				gShader = Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uColorID","vec3")
+					.prepareUniformBlocks(uboTransform,0);
+
+				var mat = Fungi.Shaders.Material.create("MatDomShader","DomShader");
+
+				//.......................................................
+				//Prepare our Renderables
+				gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				//gDebugLine = Fungi.Debug.Lines.getRenderable();
+
+				gGridFloor = Fungi.Debug.GridFloor.getRenderable();
+				gRenderList = [ gGridFloor, gModel ];
+				
+				//.......................................................
+				//Create and Start Render Loop
+				gRLoop = new Fungi.RenderLoop(onRender).start();
+
+				//gLblFPS = document.getElementById("lblFPS");
+				//setInterval(function(){ gLblFPS.innerHTML = gRLoop.fps; },200);
+			});
+
+			function onRender(dt){
+				//.......................................................
+				//Run Frame Updates
+				gCamera.update();//.setDegY(20 * dt).update();
+
+				//.......................................................
+				//Start Rendering
+				Fungi.gl.fClear();
+				Fungi.Shaders.FBO.clear(fbo);
+				Fungi.Render(gRenderList);
+			}
+
+
+			//.......................................................
+			//Picking and framebuffer stuff
+			function colorToID(a){ return a[0] | (a[1] << 8) | (a[2] << 16); }
+			function idToColor(v){ //With 3 bytes, the max value is 16777215;
+				var a = new Float32Array(3);
+				a[0] = (v & 0xff) / 255.0;
+				a[1] = ((v & 0xff00) >> 8) / 255.0;
+				a[2] = ((v & 0xff0000) >> 16) / 255.0;
+				return a;
+			}
+
+			class KBMCtrl_Picking{
+				constructor(){ this.rate = 0.007; }
+				onMouseUp(e,ctrl,x,y,dx,dy){ ctrl.switchHandler("camera"); }
+				onMouseMove(e,ctrl,xx,yy,dx,dy){
+					var v = [0,0,0];
+					gModel.position
+						.add(gCamera.left(v,dx*this.rate))
+						.add(gCamera.up(v,-dy*this.rate));
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		const vec3 blankColorID = vec3(0.0,0.0,0.0);
+		uniform vec3 uColorID;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(uColorID != blankColorID)	color = uColorID;
+			else if(a_position.w == 0.0)	color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0)	color = vec3(0.0,1.0,0.0);
+			else							color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+<!--
+	Textures -> Models -> Shaders -> Materials -> Renderables
+	
+	<[CONFIG]>
+	{ name:"ShaderOne", uniblocks:["UBOTransform",0], uniforms:["uModelMatrix","mat4"], tex:[] }
+	<[MATERIAL]>
+	[
+		{name:"Material1",shader:"ShaderOne",useCulling:true,useBlend:false,useModelMat:true,useNormalMat:false,drawMode:gl.TRIANGLES,
+			uniforms:[ {name:"uColor",type="vec3",value="1.0,0.0,0.0"} ]
+		}
+	]
+	<[VERTEX]>
+	#version 300 es
+	<[FRAGMENT]>
+	#version 300 es
+-->
+</body>
+</html>

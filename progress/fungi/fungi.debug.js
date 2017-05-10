@@ -154,26 +154,3 @@ Fungi.Debug.Lines = class{
 		return this._colorList.length - 1;
 	}
 };
-
-
-/*
-		static floatArrayBuffer(out,name,aryFloat,attrLoc,size,stride,offset,isStatic,keepData){
-			var rtn = {
-				buf:gl.createBuffer(),
-				size:size,
-				stride:stride,
-				offset:offset,
-				count:aryFloat.length / size
-			};
-			if(keepData == true) rtn.data = aryFloat;
-			var ary = (aryFloat instanceof Float32Array)? aryFloat : new Float32Array(aryFloat);
-
-			gl.bindBuffer(gl.ARRAY_BUFFER, rtn.buf);
-			gl.bufferData(gl.ARRAY_BUFFER, ary, (isStatic != false)? gl.STATIC_DRAW : gl.DYNAMIC_DRAW );
-			gl.enableVertexAttribArray(attrLoc);
-			gl.vertexAttribPointer(attrLoc,size,gl.FLOAT,false,stride || 0,offset || 0);
-
-			out.buffers[name] = rtn;
-			return VAO;
-		}
-*/
