@@ -190,8 +190,6 @@ var Fungi = (function(){
 
 		//----------------------------------------------
 		//region Setters/Getters
-			
-
 			//R  T  F  T    
 			//00 04 08 12
 			//01 05 09 13
@@ -214,25 +212,7 @@ var Fungi = (function(){
 				v[2] = z/m*d;
 				return v;
 			}
-			/*			
-			forward(v){
-				v = v || new Vec3(); v.set(0,0,1);
-				Quaternion.multiVec3(v,this.rotation,v);
-				return v.normalize();
-			}
 
-			up(v){
-				v = v || new Vec3(); v.set(0,1,0);
-				Quaternion.multiVec3(v,this.rotation,v);
-				return v.normalize();
-			}
-
-			left(v){
-				v = v || new Vec3(); v.set(1,0,0);
-				Quaternion.multiVec3(v,this.rotation,v);
-				return v.normalize();
-			}
-			*/
 			get parent(){ this._parent; }
 			set parent(p){
 				if(this._parent != null){
@@ -246,13 +226,6 @@ var Fungi = (function(){
 			//Chaining functions, useful for initializing
 			setPosition(x,y,z){	this.position.set(x,y,z);	return this; }
 			setScale(x,y,z){	this.scale.set(x,y,z);		return this; }
-
-			//setRadX(rad){	this.rotation.rx(rad);	return this; }
-			//setRadY(rad){	this.rotation.ry(rad);	return this; }
-			//setRadZ(rad){	this.rotation.rz(rad);	return this; }
-			//setDegX(deg){	this.rotation.ex(deg);	return this; }
-			//setDegY(deg){	this.rotation.ey(deg);	return this; }
-			//setDegZ(deg){	this.rotation.ez(deg);	return this; }
 		//endregion
 
 		//----------------------------------------------
@@ -284,6 +257,7 @@ var Fungi = (function(){
 			this.visible = true;
 			this.material = Fungi.Res.Materials[matName];
 		}
+
 		draw(){
 			if(this.vao.isIndexed)	gl.drawElements(this.material.drawMode, this.vao.count, gl.UNSIGNED_SHORT, 0); 
 			else					gl.drawArrays(this.material.drawMode, 0, this.vao.count);
@@ -1241,8 +1215,8 @@ var Fungi = (function(){
 			this.shader = null;
 			this.uniforms = [];
 			
-			this.useCulling = CULLING_STATE;
-			this.useBlending = BLENDING_STATE;
+			this.useCulling = true;
+			this.useBlending = false;
 			this.useModelMatrix = true;
 			this.useNormalMatrix = false;
 
@@ -1318,7 +1292,9 @@ var Fungi = (function(){
 		setUniforms(uName,uValue){
 			if(arguments.length % 2 != 0){ console.log("setUniforms needs arguments to be in pairs."); return this; }
 
-			var name;
+			var texCnt = 0,
+				name;
+
 			for(var i=0; i < arguments.length; i+=2){
 				name = arguments[i];
 				if(this._UniformList[name] === undefined){ console.log("uniform not found " + name); return this; }
@@ -1328,6 +1304,12 @@ var Fungi = (function(){
 					case "vec3":	gl.uniform3fv(this._UniformList[name].loc, arguments[i+1]); break;
 					case "vec4":	gl.uniform4fv(this._UniformList[name].loc, arguments[i+1]); break;
 					case "mat4":	gl.uniformMatrix4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
+					case "tex":
+						gl.activeTexture(gl["TEXTURE" + texCnt]);
+						gl.bindTexture(gl.TEXTURE_2D,uValue);
+						gl.uniform1i(this._UniformList[name].loc,texCnt);
+						texCnt++;
+						break;
 					default: console.log("unknown uniform type for " + name); break;
 				}
 			}
@@ -1673,29 +1655,53 @@ var Fungi = (function(){
 
 	//FrameBuffer Object
 	class FBO{
+		static build(name,colorCnt,useDepth,wSize,hSize){
+			var rtn = {}
+			if(wSize === undefined || wSize == null) wSize = gl.fWidth;
+			if(hSize === undefined || wSize == null) hSize = gl.fHeight;
+
+			//Create and Set Depth
+			FBO.create(rtn);
+			if(useDepth == true) FBO.depthBuffer(rtn,wSize,hSize);
+
+			//Build color buffers
+			var cBufAry = [];
+			for(var i=0; i < colorCnt; i++){
+				cBufAry.push( gl.COLOR_ATTACHMENT0 + i );
+				FBO.texColorBuffer(rtn,i,wSize,hSize);
+			}
+			if(cBufAry.length > 1)gl.drawBuffers(cBufAry);
+			
+			//All Done.
+			FBO.finalize(rtn,name);
+			return rtn;
+		}
+
 		static create(out){
+			out.colorBuf = [];
 			out.id = gl.createFramebuffer();
 			gl.bindFramebuffer(gl.FRAMEBUFFER, out.id);
 			return this;
 		}
 
-		static texColorBuffer(out,cAttachNum){
-			out.texColor = gl.createTexture();
-			gl.bindTexture(gl.TEXTURE_2D, out.texColor);
-			gl.texImage2D(gl.TEXTURE_2D,0, gl.RGBA, gl.fWidth, gl.fHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		static texColorBuffer(out,cAttachNum,w,h){
+			//Up to 16 texture attachments 0 to 15
+			out.colorBuf[cAttachNum] = gl.createTexture();
+			gl.bindTexture(gl.TEXTURE_2D, out.colorBuf[cAttachNum]);
+			gl.texImage2D(gl.TEXTURE_2D,0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);	//Stretch image to X position
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);	//Stretch image to Y position
 
-			gl.framebufferTexture2D(gl.FRAMEBUFFER, cAttachNum, gl.TEXTURE_2D, out.texColor, 0);
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + cAttachNum, gl.TEXTURE_2D, out.colorBuf[cAttachNum], 0);
 			return this;
 		}
 
-		static depthBuffer(out){
+		static depthBuffer(out,w,h){
 			out.depth = gl.createRenderbuffer();
 			gl.bindRenderbuffer(gl.RENDERBUFFER, out.depth);
-			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.fWidth, gl.fHeight);
+			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
 			gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, out.depth);
 			return this;
 		}
@@ -1722,16 +1728,17 @@ var Fungi = (function(){
 		static colorDepthFBO(name){
 			var rtn = {};
 			return FBO.create(rtn)
-				.texColorBuffer(rtn,gl.COLOR_ATTACHMENT0)
+				.texColorBuffer(rtn,0)
 				.depthBuffer(rtn)
 				.finalize(rtn,name);
 		}
 
-		static readPixel(fbo,x,y){
+		static readPixel(fbo,x,y,cAttachNum){
 			var p = new Uint8Array(4);
-			gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.id);
+			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo.id);
+			gl.readBuffer(gl.COLOR_ATTACHMENT0 + cAttachNum);
 			gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p);
-			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
 			return p;
 		}
 

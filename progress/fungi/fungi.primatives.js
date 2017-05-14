@@ -1,11 +1,18 @@
 Fungi.Primatives = {
-	Quad:function(){
-		if(Fungi.Res.Vao["FungiQuad"]) return Fungi.Res.Vao["FungiQuad"];
+	Quad2U:function(){
+		if(Fungi.Res.Vao["FungiQuad2U"]) return Fungi.Res.Vao["FungiQuad2U"];
+		var aVert	= [-1,1,0,	-1,-1,0,	1,-1,0,	1,-1,0,	1,1,0,	-1,1,0],
+			aUV		= [ 0,0, 	0,1,		1,1,	1,1,	1,0,	0,0];
+		return Fungi.Shaders.VAO.standardMesh("FungiQuad2U",3,aVert,null,aUV,null,false);
+	},
+
+	Quad1U:function(){
+		if(Fungi.Res.Vao["FungiQuad1U"]) return Fungi.Res.Vao["FungiQuad1U"];
 
 		var aVert = [ -0.5,0.5,0, -0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0 ],
 			aUV = [ 0,0, 0,1, 1,1, 1,0 ],
 			aIndex = [ 0,1,2, 2,3,0 ];
-		return Fungi.Shaders.VAO.standardMesh("FungiQuad",3,aVert,null,aUV,aIndex,false);
+		return Fungi.Shaders.VAO.standardMesh("FungiQuad1U",3,aVert,null,aUV,aIndex,false);
 	},
 
 	FacedCube:function(keepRawData){
