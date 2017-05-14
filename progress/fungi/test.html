@@ -17,6 +17,7 @@
 		<script>
 		//https://learnopengl.com/#!Advanced-OpenGL/Framebuffers
 		//https://open.gl/framebuffers
+		//https://learnopengl.com/#!Advanced-Lighting/Deferred-Shading
 			var gCamera,gCameraCtrl,gRenderList,gRLoop,gDebugLine,gGridFloor,gShader,gModel;
 			var gLblFPS;
 
@@ -43,6 +44,7 @@
 				}
 				*/
 
+				//fbo = Fungi.Shaders.FBO.colorDepthFBO("picking");
 				fbo = Fungi.Shaders.FBO.build("cBuf",2,true);
 
 				//.......................................................
@@ -56,7 +58,7 @@
 
 					.setDownOverride(function(e,ctrl,x,y){
 						var yi		= Fungi.gl.fHeight - y, //Gotta flip the y
-							pixel	= Fungi.Shaders.FBO.readPixel(fbo,x,yi,0),
+							pixel	= Fungi.Shaders.FBO.readPixel(fbo,x,yi,1),
 							id		= colorToID(pixel);
 
 						if(id == 0 || id == 16777215) return; //ignore Black and white.
@@ -94,8 +96,8 @@
 				//Create and Start Render Loop
 				gRLoop = new Fungi.RenderLoop(onRender).start();
 
-				//gLblFPS = document.getElementById("lblFPS");
-				//setInterval(function(){ gLblFPS.innerHTML = gRLoop.fps; },200);
+				gLblFPS = document.getElementById("lblFPS");
+				setInterval(function(){ gLblFPS.innerHTML = gRLoop.fps; },200);
 			});
 
 			function onRender(dt){
@@ -270,13 +272,13 @@
 
 		    float kernel[9] = float[](
 		    	//Sharpen 
-		        //-1.0, -1.0, -1.0,
-		        //-1.0,  9.0, -1.0,
-		        //-1.0, -1.0, -1.0
+		        -1.0, -1.0, -1.0,
+		        -1.0,  9.0, -1.0,
+		        -1.0, -1.0, -1.0
 		        //Blur
-		        1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0,
-    			2.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0,
-    			1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0  
+		        //1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0,
+    			//2.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0,
+    			//1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0  
 		    );
 		    
 		    //Get Pixels based on offset.
