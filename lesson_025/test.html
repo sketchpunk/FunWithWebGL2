@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.CameraMouseCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+
+		<script>
+		//https://learnopengl.com/#!Advanced-OpenGL/Framebuffers
+		//https://open.gl/framebuffers
+		//https://learnopengl.com/#!Advanced-Lighting/Deferred-Shading
+			var gCamera,gCameraCtrl,gRenderList,gRLoop,gDebugLine,gGridFloor,gShader,gModel;
+			var gLblFPS;
+
+			var fbo, cID = 100, colorID, blankID;
+			var mtrRenderer, finalShader, finalQuad;
+
+			window.addEventListener("load",function(){
+				//.......................................................
+				//Setup and Preperations
+				colorID = idToColor(cID);
+				//blankID = idToColor(0);
+
+				Fungi.Init("FungiCanvas").fClearColor("FFFFFF").fFitScreen(1,1).fClear();
+
+				/*
+				Fungi.Render.onItemRendered = function(itm){
+					if(itm === gGridFloor) return;
+					//Optimize by only rendering to FBO when mouse is is down.
+					gShader.setUniforms("uColorID",colorID);
+						Fungi.Shaders.FBO.activate(fbo);
+							itm.draw();
+						Fungi.Shaders.FBO.deactivate();
+					gShader.setUniforms("uColorID",blankID);
+				}
+				*/
+
+				//fbo = Fungi.Shaders.FBO.colorDepthFBO("picking");
+				fbo = Fungi.Shaders.FBO.build("cBuf",2,true);
+
+				//.......................................................
+				//Setup Camera
+				var uboTransform = Fungi.Shaders.UBO.createTransformUBO();
+				gCamera = new Fungi.CameraOrbit().setPosition(0,0.5,5).setEulerDegrees(-15,45,0);
+				
+				gCameraCtrl = new Fungi.KBMCtrl()
+					.addHandler("camera",new Fungi.KBMCtrl_Viewport(gCamera),true)
+					.addHandler("pick",new KBMCtrl_Picking())
+
+					.setDownOverride(function(e,ctrl,x,y){
+						var yi		= Fungi.gl.fHeight - y, //Gotta flip the y
+							pixel	= Fungi.Shaders.FBO.readPixel(fbo,x,yi,1),
+							id		= colorToID(pixel);
+
+						if(id == 0 || id == 16777215) return; //ignore Black and white.
+
+						//console.log(pixel,id);
+						ctrl.switchHandler("pick");
+					});
+
+				//.......................................................
+				//Create Shaders and Materials
+				gShader = Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uColorID","vec3")
+					.prepareUniformBlocks(uboTransform,0)
+					.setUniforms("uColorID",colorID);
+
+
+				finalShader = Fungi.Shaders.New("FinalShader","vertex_final","fragment_final")
+					.prepareUniforms("tex0","tex","tex1","tex");
+
+				Fungi.Shaders.Material.create("MatDomShader","DomShader");
+				var mat = Fungi.Shaders.Material.create("MatFinalShader","FinalShader");
+				mat.useModelMatrix = false;
+
+				//.......................................................
+				//Prepare our Renderables
+				gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				//gDebugLine = Fungi.Debug.Lines.getRenderable();
+
+				gGridFloor = Fungi.Debug.GridFloor.getRenderable();
+				gRenderList = [ gGridFloor, gModel ];
+				
+				finalQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatFinalShader");
+
+				//.......................................................
+				//Create and Start Render Loop
+				gRLoop = new Fungi.RenderLoop(onRender).start();
+
+				gLblFPS = document.getElementById("lblFPS");
+				setInterval(function(){ gLblFPS.innerHTML = gRLoop.fps; },200);
+			});
+
+			function onRender(dt){
+				//.......................................................
+				//Run Frame Updates
+				gCamera.update();//.setDegY(20 * dt).update();
+
+				//.......................................................
+				//Start Rendering
+				Fungi.gl.fClear();
+				Fungi.Shaders.FBO.clear(fbo);
+				//Fungi.Render(gRenderList);
+				mtrRenderer(gRenderList);
+			}
+
+
+			//.......................................................
+			//Picking and framebuffer stuff
+			function colorToID(a){ return a[0] | (a[1] << 8) | (a[2] << 16); }
+			function idToColor(v){ //With 3 bytes, the max value is 16777215;
+				var a = new Float32Array(3);
+				a[0] = (v & 0xff) / 255.0;
+				a[1] = ((v & 0xff00) >> 8) / 255.0;
+				a[2] = ((v & 0xff0000) >> 16) / 255.0;
+				return a;
+			}
+
+			class KBMCtrl_Picking{
+				constructor(){ this.rate = 0.007; }
+				onMouseUp(e,ctrl,x,y,dx,dy){ ctrl.switchHandler("camera"); }
+				onMouseMove(e,ctrl,xx,yy,dx,dy){
+					var v = [0,0,0];
+					gModel.position
+						.add(gCamera.left(v,dx*this.rate))
+						.add(gCamera.up(v,-dy*this.rate));
+				}
+			}
+
+			mtrRenderer = (function(){
+				var material = shader = null;
+				return function(ary){
+					Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,fbo.id);
+
+					for(var i=0; i < ary.length; i++){
+						//...................................
+						if(material !== ary[i].material){
+							material = ary[i].material;
+							if(material.shader !== shader) shader = material.shader.activate();
+						}
+
+						//...................................
+						Fungi.gl.bindVertexArray(ary[i].vao.id);
+						if(material.useModelMatrix) material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,ary[i].updateMatrix()); 
+
+						//...................................
+						//Render !!!
+						ary[i].draw();
+					}
+
+					//Switch to Display Buffer
+					Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,null);
+
+					//Set up the quad to draw the custom frame buffer to.
+					Fungi.gl.bindVertexArray(finalQuad.vao.id);
+					material = finalQuad.material;
+					shader = material.shader.activate();
+					shader.setUniforms("tex0",fbo.colorBuf[0]);
+
+					finalQuad.draw();
+				};
+			})();
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(a_position.w == 0.0)			color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0)	color = vec3(0.0,1.0,0.0);
+			else							color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		uniform vec3 uColorID;
+		
+		//out vec4 outColor;
+        layout(location = 0) out vec4 outColor0;
+        layout(location = 1) out vec4 outColor1;
+
+		void main(void){
+			outColor0 = vec4(color,1.0);
+			outColor1 = vec4(uColorID,1.0);
+		}
+	</script>
+
+
+	<script id="vertex_final" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=2) in vec2 a_uv;
+
+		out highp vec2 vUV;
+
+		void main(void){
+			vUV = vec2(a_uv.s,1.0-a_uv.t);
+			gl_Position =  vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_final" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		in highp vec2 vUV;
+
+        uniform sampler2D tex0;
+        uniform sampler2D tex1;
+
+		out vec4 outColor;
+
+		const float offset = 1.0 / 300.0; 
+
+		void main(void){
+			vec4 c = texture(tex0,vUV);
+
+			//Simple Drawing Frame
+			outColor = c; 
+			
+			//Invert Color
+			//outColor = vec4(1.0, 1.0, 1.0, 1.0) - c;
+			//outColor = 1.0 - c;
+
+			//Gray Scale
+			//float a = (c.r + c.g + c.b) / 3.0;
+			//outColor = vec4(a, a, a, 1.0);
+
+			//Kernal Effects
+			/*
+		    vec2 offsets[9] = vec2[](
+		        vec2(-offset, offset),  // top-left
+		        vec2(0.0f,    offset),  // top-center
+		        vec2(offset,  offset),  // top-right
+		        vec2(-offset, 0.0f),    // center-left
+		        vec2(0.0f,    0.0f),    // center-center
+		        vec2(offset,  0.0f),    // center-right
+		        vec2(-offset, -offset), // bottom-left
+		        vec2(0.0f,    -offset), // bottom-center
+		        vec2(offset,  -offset)  // bottom-right    
+		    );
+
+		    float kernel[9] = float[](
+		    	//Sharpen 
+		        -1.0, -1.0, -1.0,
+		        -1.0,  9.0, -1.0,
+		        -1.0, -1.0, -1.0
+		        //Blur
+		        //1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0,
+    			//2.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0,
+    			//1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0  
+		    );
+		    
+		    //Get Pixels based on offset.
+		    vec3 sampleTex[9];
+		    for(int i = 0; i < 9; i++) sampleTex[i] = vec3(texture(tex0, vUV.st + offsets[i])); 
+
+		    vec3 col = vec3(0.0);
+		    for(int i = 0; i < 9; i++) col += sampleTex[i] * kernel[i]; 
+
+			outColor = vec4(col, 1.0);
+			*/
+		}
+	</script>
+</body>
+</html>
