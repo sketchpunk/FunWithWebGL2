@@ -74,5 +74,43 @@ Fungi.Primatives = {
 		];
 
 		return Fungi.Shaders.VAO.standardMesh("FungiFCube",4,aVert,aNorm,aUV,aIndex,false);
+	},
+
+	AppendCube:function(ary,ind,width,height,depth,x,y,z,id){
+		var w = width*0.5, h = height*0.5, d = depth*0.5;
+		var x0 = x-w, x1 = x+w, y0 = y-h, y1 = y+h, z0 = z-d, z1 = z+d;
+		var ii = ary.length/4 ;
+		//Front
+		ary.push(	x0, y1, z1, id,	
+					x0, y0, z1, id,
+					x1, y0, z1, id,
+					x1, y1, z1, id); 
+		//Back
+		ary.push(	x1, y1, z0, id,
+					x1, y0, z0, id,
+					x0, y0, z0, id,
+					x0, y1, z0, id); 
+		//Left
+		ary.push(	x0, y1, z0, id,
+					x0, y0, z0, id,
+					x0, y0, z1, id,
+					x0, y1, z1, id);
+		//Bottom
+		ary.push(	x0, y0, z1, id, 
+					x0, y0, z0, id,
+					x1, y0, z0, id,
+					x1, y0, z1, id);
+		//Right
+		ary.push(	x1, y1, z1, id, 
+					x1, y0, z1, id, 
+					x1, y0, z0, id,
+					x1, y1, z0, id);
+		//Top
+		ary.push(	x0, y1, z0, id, 
+					x0, y1, z1, id,
+					x1, y1, z1, id,
+					x1, y1, z0, id);
+
+		for(var i=0; i < 6*4; i+=2) ind.push(ii+i, ii+i+1, ii+(Math.floor(i/4)*4)+((i+2)%4) );
 	}
-};
+}; 

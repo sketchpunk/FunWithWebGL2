@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script>
+			var gModel;
+
+			window.addEventListener("load",function(){
+				FungiApp.startup();
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.Material.create("MatDomShader","DomShader");
+
+				//.......................................................
+				//Prepare our Renderables
+				var gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				FungiApp.scene.push(gModel);
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+			});
+
+			function onRender(dt){
+				FungiApp.update();
+				Fungi.Render(FungiApp.scene);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+</body>
+</html>
+<!--
+{name:"DomShader", vertexDomID:"vertex_shader", fragmentDomID:"fragment_shader",
+	uniforms:[ {name:"uModalMatrix",type:"mat4"} ], //{name,type,default}
+	uniformBlock[ {name:"UBOTransform",index:0} ] //{name,index}
+}
+
+{ name:"MatDomShader", shaderName:"DomShader" }
+-->

@@ -106,12 +106,14 @@ Fungi.Debug.Lines = class{
 		this.vao.count = 0;
 	}
 
+	draw(){ if(this.vao.count > 0) Fungi.gl.drawArrays(Fungi.gl.LINES, 0, this.vao.count); }
+
 	update(){
 		if(!this._isModified) return;
 		
 		//If there is no verts, set this to invisible to disable rendering.
 		this._isModified = false;
-		if(this._verts.length == 0){ this.visible = false; return; }
+		if(this._verts.length == 0){ this.visible = false; return this; }
 		this.visible = true;
 		
 		//Calc how many vec4 elements we have
@@ -126,6 +128,7 @@ Fungi.Debug.Lines = class{
 		this.material.shader.activate();
 		this.material.shader.setUniforms("uColorAry",this._colorArray);
 		this.material.shader.deactivate();
+		return this;
 	}
 
 	reset(){
@@ -134,12 +137,14 @@ Fungi.Debug.Lines = class{
 		this._colorList.length = 0;
 		this.vao.count = 0;
 		this._isModified = true;
+		return this;
 	}
 
 	addVector(v1,v2,color){
 		var idx = this.addColor(color);
 		this._verts.push(v1[0],v1[1],v1[2],idx, v2[0],v2[1],v2[2],idx);
 		this._isModified = true;
+		return this;
 	}
 
 	addColor(c){

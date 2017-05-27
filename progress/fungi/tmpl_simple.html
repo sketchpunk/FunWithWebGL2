@@ -11,7 +11,7 @@
 
 		<script src="fungi.core.js"></script>
 		<script src="fungi.primatives.js"></script>
-		<script src="fungi.CameraMouseCtrl.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
 		<script src="fungi.Debug.js"></script>
 
 		<script>
@@ -27,7 +27,8 @@
 				//Setup Camera
 				var uboTransform = Fungi.Shaders.UBO.createTransformUBO();
 				gCamera = new Fungi.CameraOrbit().setPosition(0,0.5,5).setEulerDegrees(-15,45,0);
-				gCameraCtrl = new Fungi.CameraMouseCtrl(gCamera);
+				gCameraCtrl = new Fungi.KBMCtrl()
+					.addHandler("camera",new Fungi.KBMCtrl_Viewport(gCamera),true)
 
 				//.......................................................
 				//Create Shaders and Materials
@@ -49,7 +50,7 @@
 				var p1 = new Fungi.Maths.Vec3(),
 					p2 = new Fungi.Maths.Vec3();
 
-				p2.copy( renCube.top(p1) ).add(renCube.position);
+				p2.copy( renCube.up(p1) ).add(renCube.position);
 				p1.multi(0.5).add(renCube.position);
 				gDebugLine.addVector(p1,p2,"00ff00");
 				
