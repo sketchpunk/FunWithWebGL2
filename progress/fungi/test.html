@@ -14,254 +14,80 @@
 		<script src="fungi.KBMCtrl.js"></script>
 		<script src="fungi.Debug.js"></script>
 		<script src="fungiApp.js"></script>
-		<!--Gadget/Widget/Control/Maniplulator-->
-		<script>
-			var gModel;
 
-			var fbo, mtrRenderer, finalShader, finalQuad;
+		<script src="spline.js"></script>
+
+		<script>
+			//LEO - Pink - Try
+			var gFbo,gModel,gPostShader,gPostQuad;
+			var gPoints,gPicking,gDMesh;
 
 			window.addEventListener("load",function(){
-				//.......................................................
-				//Setup and Preperations
 				FungiApp.startup();
+				gFbo = Fungi.Shaders.FBO.build("Fungi2Buf",2,true);
 
-				FungiApp.mainCamera.setEulerDegrees(-15,0,0);
-				FungiApp.ctrlCamera.addHandler("pick",new KBMCtrl_Picking())
-					.setDownOverride(function(e,ctrl,x,y){
-						var yi		= Fungi.gl.fHeight - y, //Gotta flip the y
-							pixel	= Fungi.Shaders.FBO.readPixel(fbo,x,yi,1),
-							id		= colorToID(pixel);
-
-						if(id == 0 || id == 16777215) return; //ignore Black and white.
-
-						//console.log(pixel,id);
-						ctrl.switchHandler("pick");
-						ctrl._activeHandler.id = id;
-					});
-
-				fbo = Fungi.Shaders.FBO.build("cBuf",2,true);
+				FungiApp.ctrlCamera.addHandler("pick",Picking)
+					.setDownOverride(Picking.onDownOverride);
 
 				//.......................................................
 				//Create Shaders and Materials
 				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
-					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uColorID","vec3")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
 					.prepareUniformBlocks(FungiApp.uboTransform,0);
-
-				finalShader = Fungi.Shaders.New("FinalShader","vertex_final","fragment_final")
-					.prepareUniforms("tex0","tex","tex1","tex");
-
 				Fungi.Shaders.Material.create("MatDomShader","DomShader");
-				Fungi.Shaders.Material.create("MatFinalShader","FinalShader").useModelMatrix = false;
 
+				gPostShader = Fungi.Shaders.New("PostShader","vertex_post","fragment_post")
+					.prepareUniforms("tex0","tex","tex1","tex")
+					.setUniforms("tex0",gFbo.colorBuf[0]);
+				Fungi.Shaders.Material.create("MatPostShader","PostShader").useModelMatrix = false;
 
 				//.......................................................
 				//Prepare our Renderables
-				ary = [];
-				ind = [];
-				Fungi.Primatives.AppendCube(ary,ind,0.5,0.5,0.5,0,0,0,1);		//Move on Camera Direction
-				Fungi.Primatives.AppendCube(ary,ind,0.5,1,0.5,0,1.2,0,2);		//Move on Y
-				Fungi.Primatives.AppendCube(ary,ind,1,0.5,0.5,-1.2,0,0,3);		//Move on X
-				Fungi.Primatives.AppendCube(ary,ind,0.5,0.5,1,0,0,1.2,4);		//Move on Z
-				gModel = new Fungi.Renderable(Fungi.Shaders.VAO.standardMesh("tGadget",4,ary,null,null,ind,false), "MatDomShader");
-				FungiApp.scene.push(gModel);
+
+				//Build our Control Points
+				gPoints = DragPoints.getRenderable();
+				gPoints.addPoint(-1,0,0,"ff0000");
+				gPoints.addPoint(0,1,0,"009900");
+				gPoints.addPoint(1,1,0,"009900");
+				gPoints.addPoint(2,0,0,"ff0000");
+				gPoints.buildBuffer();
+
+				FungiApp.scene.push(gPoints);
+
+				//Setup a Dynamic Mesh.
+				gDMesh = new DynamicMesh(100,"MatDomShader");
 				
+				Bezier.generate(gDMesh.verts,10,
+					gPoints._points[0].position,
+					gPoints._points[1].position,
+					gPoints._points[2].position,
+					gPoints._points[3].position
+				);
+				gDMesh.update();
 
-				finalQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatFinalShader");
+				FungiApp.scene.push(gDMesh);
 
+				gPostQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatPostShader");
 
 				//.......................................................
-				//Create and Start Render Loop
+				//Start Render Loop
 				FungiApp.renderLoop.start();
 			});
 
 			function onRender(dt){
 				FungiApp.update();
-				mtrRenderer(FungiApp.scene);
+				Fungi.Render(FungiApp.scene);
 			}
 
-
-			//.......................................................
-			//Picking and framebuffer stuff
-			function colorToID(a){ return a[0] | (a[1] << 8) | (a[2] << 16); }
-			function idToColor(v){ //With 3 bytes, the max value is 16777215;
-				var a = new Float32Array(3);
-				a[0] = (v & 0xff) / 255.0;
-				a[1] = ((v & 0xff00) >> 8) / 255.0;
-				a[2] = ((v & 0xff0000) >> 16) / 255.0;
-				return a;
+			Fungi.Render.onPreRender = function(f){
+				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,gFbo.id);
+				Fungi.gl.clear(Fungi.gl.COLOR_BUFFER_BIT | Fungi.gl.DEPTH_BUFFER_BIT); 
 			}
 
-
-			class KBMCtrl_Picking{
-				constructor(){
-					//this.rate = 0.025;
-					this.id = 0;								//Currently Active ID
-					this.lineX0 = 0;							//Dragging line, 0 is positive direction, 1 is negative.
-					this.lineY0 = 0;
-					this.lineX1 = 0;
-					this.lineY1 = 0;
-					this.initDelta = 0;							//Initial Distance on the drag line from the point of click and max positive position
-					this.dir = new Fungi.Maths.Vec3();			//Determine which direction we're moving
-					this.startPos = new Fungi.Maths.Vec3();		//Starting world space position of the model being dragged.
-					this.v3Tmp = new Fungi.Maths.Vec3();		//Reusable vars for calcs. Save memory from redeclaring them for every frame.
-					this.v3Final = new Fungi.Maths.Vec3();
-				}
-				onMouseUp(e,ctrl,x,y,dx,dy){ ctrl.switchHandler("camera"); }
-				onMouseDown(e,ctrl,x,y){
-					//Save Direction
-					switch(this.id){
-						case 255:		gModel.up(this.dir); break;			// Y
-						case 65280:		gModel.left(this.dir); break;		// X
-						case 16711680:	gModel.forward(this.dir); break;	// Z
-						case 3355443: 	return;								// Camera View
-					}
-										
-					this.startPos.copy(gModel.position);	//Backup current position
-
-					var a = this.dir.clone().multi(2);		//Positive Dir (Call it up)   IN WORLD SPACE
-					var b = this.dir.clone().multi(-2);		//Negative Dir (Call it down)
-					FungiApp.debugLines.reset().addVector(a,b,"ff0000").update();	//Visually see the travel line
-
-					//Move points from World space -> View Space -> Clip space
-					var m4 = new Float32Array(16);			//Matrix4 Holder
-					Fungi.Maths.Matrix4.mult(m4,FungiApp.mainCamera.projectionMatrix,FungiApp.mainCamera.invertedLocalMatrix);
-					
-					var p0 = Fungi.Maths.Matrix4.multiplyVector(m4,[a[0],a[1],a[2],1]),
-						p1 = Fungi.Maths.Matrix4.multiplyVector(m4,[b[0],b[1],b[2],1]);
-					
-					//Move from Clip Space to NDC Space (Normalized Device Coordinate Space) (-1 to 1 opengl viewport)
-					//only if W is not zero,
-					if(p0[3] != 0){
-						p0[0] = p0[0]/p0[3];
-						p0[1] = p0[1]/p0[3];
-					}
-					
-					if(p1[3] != 0){
-						p1[0] = p1[0]/p1[3];
-						p1[1] = p1[1]/p1[3];
-					}
-
-					//Then finally move the points to Screen Space
-					//Map points from -1 to 1 range into  0 to 1 range, Then multiple by canvas size
-					var nx0 = (p0[0] + 1)	/ 2 * Fungi.gl.fWidth,		
-						ny0 = (-p0[1] + 1)	/ 2 * Fungi.gl.fHeight,
-						nx1 = (p1[0]  + 1)	/ 2 * Fungi.gl.fWidth,
-						ny1 = (-p1[1] + 1)	/ 2 * Fungi.gl.fHeight;
-					
-					//Save the locking line starting and end position
-					var dx = (nx0-nx1)*10, //Move the X,Y points passed the boundaries of the canvas
-						dy = (ny0-ny1)*10;
-
-					this.lineX0 = x + dx;	//Max Positive Direction
-					this.lineY0 = y + dy;
-					this.lineX1 = x - dx;	//Max Negative Direction
-					this.lineY1 = y - dy;
-
-					//Get the closets point on the line that the mouse currently is and save it as our initial position.
-					var p = Fungi.Util.pointCloseToLine( this.lineX0, this.lineY0, this.lineX1, this.lineY1, x, y );
-					this.initDelta = v2mag(p[0],p[1],this.lineX0,this.lineY0); //Save distance from max positive, it will become a pivot point.
-				}
-				onMouseMove(e,ctrl,x,y,dx,dy){
-					//....................................................
-					//Camera view based movement
-					if(this.id == 3355443){
-						var v = [0,0,0];
-						gModel.position
-							.add(FungiApp.mainCamera.left(v,dx*0.021))
-							.add(FungiApp.mainCamera.up(v,-dy*0.021));
-						return;
-					}
-
-					//....................................................
-					//Single Axis Movement
-					this.v3Tmp.copy(this.dir); //Start off with the direction we're moving
-
-					//Clamp the Mouse movement to the limit of our testing line, then find the closets spot on the line
-					var cx	= Fungi.Util.clamp(x,Math.min(this.lineX0,this.lineX1),Math.max(this.lineX0,this.lineX1)),
-						cy	= Fungi.Util.clamp(y,Math.min(this.lineY0,this.lineY1),Math.max(this.lineY0,this.lineY1)),
-						p	= Fungi.Util.pointCloseToLine( this.lineX0, this.lineY0, this.lineX1, this.lineY1, cx, cy );
-					
-					//Find the distance from Max Positive Position on the Line.
-					var d = v2mag(p[0],p[1],this.lineX0,this.lineY0),
-						delta = this.initDelta - d;	//Difference compaired to the distance from mouse down.
-
-					//Figure out how far to the model using the init distance as a pivot point.
-					//Anything before the pivot point is moving in the negative direction, else positive.
-					this.v3Tmp.multi(delta * 0.01);			//How much to move in direction
-					this.v3Final.copy(this.startPos);	 	//Get starting position that was saved
-					this.v3Final.add(this.v3Tmp);			//Then add how far to move from
-					gModel.position.copy(this.v3Final);		//Copy position to model.
-				}
+			Fungi.Render.onPostRender = function(f){
+				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,null);
+				f.prepareNext(gPostQuad).draw();
 			}
-
-
-			mtrRenderer = (function(){
-				var material = shader = null;
-				return function(ary){
-					Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,fbo.id);
-					Fungi.gl.clear(Fungi.gl.COLOR_BUFFER_BIT | Fungi.gl.DEPTH_BUFFER_BIT); //New
-
-					for(var i=0; i < ary.length; i++){
-						//...................................
-						if(material !== ary[i].material){
-							material = ary[i].material;
-							if(material.shader !== shader) shader = material.shader.activate();
-						}
-
-						//...................................
-						Fungi.gl.bindVertexArray(ary[i].vao.id);
-						if(material.useModelMatrix) material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,ary[i].updateMatrix()); 
-
-						//...................................
-						//Render !!!
-						ary[i].draw();
-					}
-
-					//Switch to Display Buffer
-					Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,null);
-
-					//Set up the quad to draw the custom frame buffer to.
-					Fungi.gl.bindVertexArray(finalQuad.vao.id);
-					material = finalQuad.material;
-					shader = material.shader.activate();
-					shader.setUniforms("tex0",fbo.colorBuf[0]);
-
-					finalQuad.draw();
-				};
-			})();
-
-			function v2mag(x0,y0,x1,y1){
-				var dx = x1-x0,
-					dy = y1-y0;
-				return Math.sqrt(dx*dx + dy*dy);
-			}
-
-/*
-			function doLinesIntersect(x1, y1, x2, y2, x3, y3, x4, y4){
-			    var a_dx = x2 - x1;
-			    var a_dy = y2 - y1;
-			    var b_dx = x4 - x3;
-			    var b_dy = y4 - y3;
-			    var s = (-a_dy * (x1 - x3) + a_dx * (y1 - y3)) / (-b_dx * a_dy + a_dx * b_dy);
-			    var t = (+b_dx * (y1 - y3) - b_dy * (x1 - x3)) / (-b_dx * a_dy + a_dx * b_dy);
-			    return (s >= 0 && s <= 1 && t >= 0 && t <= 1);
-			}
-
-			function lineIntersect(x1, y1, x2, y2, x3, y3, x4, y4){
-			    var ua, ub, denom = (y4 - y3)*(x2 - x1) - (x4 - x3)*(y2 - y1);
-			    if (denom == 0) { return null; }
-
-			    ua = ((x4 - x3)*(y1 - y3) - (y4 - y3)*(x1 - x3))/denom;
-			    ub = ((x2 - x1)*(y1 - y3) - (y2 - y1)*(x1 - x3))/denom;
-			    
-			    return {
-			        x: x1 + ua*(x2 - x1),
-			        y: y1 + ua*(y2 - y1),
-			        seg1: ua >= 0 && ua <= 1,
-			        seg2: ub >= 0 && ub <= 1
-			    };
-			}
-*/
 		</script>
 	</head>
 <body>
@@ -276,6 +102,7 @@
 		uniform UBOTransform{
 			mat4 matProjection;
 			mat4 matCameraView;
+			vec3 posCamera;
 		};
 
 		uniform mat4 uModalMatrix;
@@ -283,14 +110,13 @@
 
 		out highp vec2 vUV;
 		out lowp vec3 color;
-		out lowp vec3 pcolor;
 
 		void main(void){
-			if(a_position.w == 1.0)			color = vec3(0.2,0.2,0.2);
-			else if(a_position.w == 2.0)	color = vec3(1.0,0.0,0.0);
-			else if(a_position.w == 3.0)	color = vec3(0.0,1.0,0.0);
-			else if(a_position.w == 4.0)	color = vec3(0.0,0.0,1.0);
-			else							color = vec3(0.6,0.6,0.6);
+			gl_PointSize = 8.0f;
+			color = vec3(0.0,0.0,0.0);
+			//if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			//else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			//else color = vec3(0.6,0.6,0.6);
 
 			vUV = a_uv;
 			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
@@ -298,23 +124,17 @@
 	</script>
 	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
 		precision mediump float;
-
 		in highp vec2 vUV;
 		in lowp vec3 color;
-		uniform vec3 uColorID;
-		
-		//out vec4 outColor;
-        layout(location = 0) out vec4 outColor0;
-        layout(location = 1) out vec4 outColor1;
+		out vec4 outColor;
 
 		void main(void){
-			outColor0 = vec4(color,1.0);
-			outColor1 = vec4(color,1.0); //vec4(uColorID,1.0);
+			outColor = vec4(color,1.0);
 		}
 	</script>
 
 
-	<script id="vertex_final" type="x-shader/x-vertex">#version 300 es
+	<script id="vertex_post" type="x-shader/x-vertex">#version 300 es
 		layout(location=0) in vec4 a_position;
 		layout(location=2) in vec2 a_uv;
 
@@ -325,7 +145,7 @@
 			gl_Position =  vec4(a_position.xyz, 1.0);
 		}
 	</script>
-	<script id="fragment_final" type="x-shader/x-fragment">#version 300 es
+	<script id="fragment_post" type="x-shader/x-fragment">#version 300 es
 		precision mediump float;
 
 		in highp vec2 vUV;

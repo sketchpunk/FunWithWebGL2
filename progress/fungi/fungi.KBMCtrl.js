@@ -24,7 +24,13 @@ Fungi.KBMCtrl = class{
 		this._handlers = {};
 	}
 
-	switchHandler(name){ this._activeHandler = this._handlers[name]; return this; }
+	switchHandler(name,data){
+		if(this._activeHandler.onDeactivate)	this._activeHandler.onDeactivate();
+		this._activeHandler = this._handlers[name];
+		if(this._activeHandler.onActive)		this._activeHandler.onActive(data);
+		return this;
+	}
+
 	addHandler(name,h,active){
 		this._handlers[name] = h;
 		if(active == true) this._activeHandler = h;

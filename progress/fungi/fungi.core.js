@@ -313,7 +313,7 @@ var Fungi = (function(){
 			if(this.position.isModified || this.scale.isModified || this.euler.isModified) this.updateMatrix();
 			
 			Matrix4.invert(this.invertedLocalMatrix,this.localMatrix);
-			this.ubo.update("matCameraView",this.invertedLocalMatrix);
+			this.ubo.update("matCameraView",this.invertedLocalMatrix,"posCamera",this.position);
 		}
 
 		setEulerDegrees(x,y,z){ this.euler.set(x * DEG2RAD,y * DEG2RAD,z * DEG2RAD); return this; }
@@ -1382,7 +1382,7 @@ var Fungi = (function(){
 			//Get Error data if shader failed compiling
 			if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
 				console.error("Error compiling shader : " + src, gl.getShaderInfoLog(shader));
-				gl.deleteShader(fungi.shader);
+				gl.deleteShader(Fungi.shader);
 				return null;
 			}
 
@@ -1479,13 +1479,19 @@ var Fungi = (function(){
 			//}
 
 			gl.bindBuffer(gl.UNIFORM_BUFFER,this.buf);
-			gl.bufferSubData(gl.UNIFORM_BUFFER, this.items[name].offset, data, 0, null);
+			for(var i=0; i < arguments.length; i+=2){
+				gl.bufferSubData(gl.UNIFORM_BUFFER, this.items[ arguments[i] ].offset, arguments[i+1], 0, null);
+			}
 			gl.bindBuffer(gl.UNIFORM_BUFFER,null);
+
+			//gl.bindBuffer(gl.UNIFORM_BUFFER,this.buf);
+			//gl.bufferSubData(gl.UNIFORM_BUFFER, this.items[name].offset, data, 0, null);
+			//gl.bindBuffer(gl.UNIFORM_BUFFER,null);
 			return this;
 		}
 
 		static createTransformUBO(){
-			return UBO.create(Fungi.UBO_TRANSFORM,0,[ {name:"matProjection",type:"mat4"}, {name:"matCameraView",type:"mat4"} ]);
+			return UBO.create(Fungi.UBO_TRANSFORM,0,[ {name:"matProjection",type:"mat4"}, {name:"matCameraView",type:"mat4"}, {name:"posCamera",type:"vec3"} ]);
 		}
 
 		static create(blockName,blockPoint,ary){
@@ -1671,6 +1677,12 @@ var Fungi = (function(){
 			VAO.finalize(rtn);
 			return rtn;
 		}
+
+		static updateAryBufSubData(bufID,offset,data){
+			gl.bindBuffer(gl.ARRAY_BUFFER, bufID);
+			gl.bufferSubData(gl.ARRAY_BUFFER, offset, data, 0, null);
+			gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		}
 	}
 
 	//FrameBuffer Object
@@ -1846,46 +1858,51 @@ var Fungi = (function(){
 	// Also try to sort the Renderables by Material, Shaders, etc to make sure we shift Shaders/uniforms as little as possible.
 	// Also try to find a way to filter out renderables that are not in the line of sight OR beyond our viewing range, no point rendering what we can't see.
 	var Renderer = (function(){
-		var material = shader = null;
-
 		var f = function(ary){
+			if(f.onPreRender != null) f.onPreRender(f);
+
 			for(var i=0; i < ary.length; i++){
 				if(ary[i].visible == false) continue;
 
-				//...................................
-				//Check if the next materal to use is different from the last
-				if(material !== ary[i].material){
-					material = ary[i].material;
+				f.prepareNext(ary[i]).draw();
 
-					//Multiple materials can share the same shader, if new shader, turn it on.
-					if(material.shader !== shader) shader = material.shader.activate();
-
-					//Turn on/off any gl features
-					if(material.useCulling != CULLING_STATE)	gl[ ( (CULLING_STATE = (!CULLING_STATE))  )?"enable":"disable" ](gl.CULL_FACE);
-					if(material.useBlending != BLENDING_STATE)	gl[ ( (BLENDING_STATE = (!BLENDING_STATE)) )?"enable":"disable" ](gl.BLEND);
-				}
-
-				//...................................
-				//Prepare Buffers and Uniforms.
-				gl.bindVertexArray(ary[i].vao.id);
-				if(material.useModelMatrix) material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,ary[i].updateMatrix());
-				//(material.useNormalMatrix) 
-
-				//...................................
-				//Render !!!
-				if(ary[i].vao.isIndexed)	gl.drawElements(material.drawMode, ary[i].vao.count, gl.UNSIGNED_SHORT, 0); 
-				else						gl.drawArrays(material.drawMode, 0, ary[i].vao.count);
-
-				//Incase there is a render callback, call it after item has been rendered.
 				if(f.onItemRendered != null) f.onItemRendered(ary[i]);
 			}
+
+			if(f.onPostRender != null) f.onPostRender(f);
 
 			//...................................
 			//Cleanup
 			gl.bindVertexArray(null); //After all done rendering, unbind VAO
 		};
 
-		f.onItemRendered = null;
+		f.onItemRendered	= null;	//Event After an Item has been rendered
+		f.onPreRender		= null;	//Before Rendering starts
+		f.onPostRender		= null;	//After Rendering is complete
+		f.material			= null;
+		f.shader			= null;
+
+		//Prepares the shader for the next item for rendering by dealing with the shader and gl features
+		f.prepareNext = function(itm){
+			//Check if the next materal to use is different from the last
+			if(f.material !== itm.material){
+				f.material = itm.material;
+
+				//Multiple materials can share the same shader, if new shader, turn it on.
+				if(f.material.shader !== f.shader) f.shader = f.material.shader.activate();
+
+				//Turn on/off any gl features
+				if(f.material.useCulling != CULLING_STATE)	gl[ ( (CULLING_STATE = (!CULLING_STATE))  )?"enable":"disable" ](gl.CULL_FACE);
+				if(f.material.useBlending != BLENDING_STATE)	gl[ ( (BLENDING_STATE = (!BLENDING_STATE)) )?"enable":"disable" ](gl.BLEND);
+			}
+
+			//Prepare Buffers and Uniforms.
+			gl.bindVertexArray(itm.vao.id);
+			if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.updateMatrix());
+
+			return itm;
+		}
+
 		return f;
 	})();
 
