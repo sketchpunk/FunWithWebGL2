@@ -15,12 +15,19 @@
 		<script src="fungi.Debug.js"></script>
 		<script src="fungiApp.js"></script>
 
+		<script src="spline.js"></script>
+
 		<script>
+			//LEO - Pink - Try
 			var gFbo,gModel,gPostShader,gPostQuad;
+			var gPoints,gPicking,gDMesh;
 
 			window.addEventListener("load",function(){
 				FungiApp.startup();
 				gFbo = Fungi.Shaders.FBO.build("Fungi2Buf",2,true);
+
+				FungiApp.ctrlCamera.addHandler("pick",Picking)
+					.setDownOverride(Picking.onDownOverride);
 
 				//.......................................................
 				//Create Shaders and Materials
@@ -36,8 +43,29 @@
 
 				//.......................................................
 				//Prepare our Renderables
-				var gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
-				FungiApp.scene.push(gModel);
+
+				//Build our Control Points
+				gPoints = DragPoints.getRenderable();
+				gPoints.addPoint(-1,0,0,"ff0000");
+				gPoints.addPoint(0,1,0,"009900");
+				gPoints.addPoint(1,1,0,"009900");
+				gPoints.addPoint(2,0,0,"ff0000");
+				gPoints.buildBuffer();
+
+				FungiApp.scene.push(gPoints);
+
+				//Setup a Dynamic Mesh.
+				gDMesh = new DynamicMesh(100,"MatDomShader");
+				
+				Bezier.generate(gDMesh.verts,10,
+					gPoints._points[0].position,
+					gPoints._points[1].position,
+					gPoints._points[2].position,
+					gPoints._points[3].position
+				);
+				gDMesh.update();
+
+				FungiApp.scene.push(gDMesh);
 
 				gPostQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatPostShader");
 
@@ -84,9 +112,11 @@
 		out lowp vec3 color;
 
 		void main(void){
-			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
-			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
-			else color = vec3(0.6,0.6,0.6);
+			gl_PointSize = 8.0f;
+			color = vec3(0.0,0.0,0.0);
+			//if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			//else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			//else color = vec3(0.6,0.6,0.6);
 
 			vUV = a_uv;
 			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
