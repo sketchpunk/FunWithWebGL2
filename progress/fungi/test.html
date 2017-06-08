@@ -43,29 +43,9 @@
 
 				//.......................................................
 				//Prepare our Renderables
-
-				//Build our Control Points
-				gPoints = DragPoints.getRenderable();
-				gPoints.addPoint(-1,0,0,"ff0000");
-				gPoints.addPoint(0,1,0,"009900");
-				gPoints.addPoint(1,1,0,"009900");
-				gPoints.addPoint(2,0,0,"ff0000");
-				gPoints.buildBuffer();
-
-				FungiApp.scene.push(gPoints);
-
-				//Setup a Dynamic Mesh.
-				gDMesh = new DynamicMesh(100,"MatDomShader");
-				
-				Bezier.generate(gDMesh.verts,10,
-					gPoints._points[0].position,
-					gPoints._points[1].position,
-					gPoints._points[2].position,
-					gPoints._points[3].position
-				);
-				gDMesh.update();
-
-				FungiApp.scene.push(gDMesh);
+				var spline = new Spline(1);
+				var spEditor = SplineEditor.getRenderable(10,spline);
+				FungiApp.scene.push(spEditor);
 
 				gPostQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatPostShader");
 

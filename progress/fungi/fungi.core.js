@@ -267,10 +267,11 @@ var Fungi = (function(){
 			super();
 			this.vao = vao;
 			this.visible = true;
-			this.material = Fungi.Res.Materials[matName];
+			this.material = (matName != null && matName !== undefined)? Fungi.Res.Materials[matName] : null;
 		}
 
 		draw(){
+			gl.bindVertexArray(this.vao.id);
 			if(this.vao.isIndexed)	gl.drawElements(this.material.drawMode, this.vao.count, gl.UNSIGNED_SHORT, 0); 
 			else					gl.drawArrays(this.material.drawMode, 0, this.vao.count);
 		}
@@ -328,6 +329,8 @@ var Fungi = (function(){
 			super(3);
 			if(ini instanceof Vec3){
 				this[0] = ini[0]; this[1] = ini[1]; this[2] = ini[2];
+			}else if(arguments.length == 3){
+				this[0] = arguments[0]; this[1] = arguments[1]; this[2] = arguments[2];
 			}else{
 				this[0] = this[1] = this[2] = ini || 0;
 			}
@@ -366,19 +369,30 @@ var Fungi = (function(){
 				return this;
 			}
 
-			multi(v){
-				this[0] *= v;
-				this[1] *= v;
-				this[2] *= v;
-				this.isModified = true;
+			multi(v,out){
+				out = out || this;
+				out[0] = this[0] * v;
+				out[1] = this[1] * v;
+				out[2] = this[2] * v;
+				if(out === this) this.isModified = true;
 				return this;
 			}
 
-			add(v){
-				this[0] += v[0];
-				this[1] += v[1];
-				this[2] += v[2];
-				this.isModified = true;
+			add(v,out){
+				out = out || this;
+				out[0] = this[0] + v[0];
+				out[1] = this[1] + v[1];
+				out[2] = this[2] + v[2];
+				if(out === this) this.isModified = true;
+				return this;
+			}
+
+			sub(v,out){
+				out = out || this;
+				out[0] = this[0] - v[0];
+				out[1] = this[1] - v[1];
+				out[2] = this[2] - v[2];
+				if(out === this) this.isModified = true;
 				return this;
 			}
 
@@ -1800,13 +1814,16 @@ var Fungi = (function(){
 			this._fpsLimit		= 0;		//Limit how many frames per second the loop should do.
 			this._runPtr 		= null;		//Pointer to a run function that has this class's scope attached
 
+			this._fpsLast		= null;		//Track time last FPS value was reported
+			this._fpsCnt		= 0;		//Constant count of how many frames have been rendered.
+
 			this.setFPSLimit( (fps != undefined && fps > 0)?fps:0  );
 		}
 
 		stop(){ this.isActive = false; }
 		start(){
 			this.isActive = true;
-			this._LastFrame = performance.now();
+			this._LastFrame = this._fpsLast = performance.now();
 			this._frameCaller.requestAnimationFrame(this._runPtr);
 			return this;
 		}
@@ -1842,8 +1859,16 @@ var Fungi = (function(){
 			var msCurrent	= performance.now(),	//Gives you the whole number of how many milliseconds since the dawn of time :)
 				deltaTime	= (msCurrent - this._lastFrame) / 1000.0;	//ms between frames, Then / by 1 second to get the fraction of a second.
 
+			//Track how my frames have passed in one second of time.
+			this._fpsCnt++;
+			if(msCurrent - this._fpsLast >= 1000){
+				this.fps		= this._fpsCnt;
+				this._fpsCnt	= 0;
+				this._fpsLast	= msCurrent;
+			}
+
 			//Now execute frame since the time has elapsed.
-			this.fps			= Math.floor(1/deltaTime); //Time it took to generate one frame, divide 1 by that to get how many frames in one second.
+			//this.fps			= Math.floor(1/deltaTime); //Time it took to generate one frame, divide 1 by that to get how many frames in one second.
 			this._lastFrame		= msCurrent;
 			this._callBack(deltaTime);
 			if(this.isActive)	this._frameCaller.requestAnimationFrame(this._runPtr);
@@ -1893,7 +1918,7 @@ var Fungi = (function(){
 			}
 
 			//Prepare Buffers and Uniforms.
-			gl.bindVertexArray(itm.vao.id);
+			//gl.bindVertexArray(itm.vao.id);
 			if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.updateMatrix());
 
 			return itm;
