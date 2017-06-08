@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script src="spline.js"></script>
+
+		<script>
+			//LEO - Pink - Try
+			var gFbo,gModel,gPostShader,gPostQuad;
+			var gPoints,gPicking,gDMesh;
+
+			window.addEventListener("load",function(){
+				FungiApp.startup();
+				gFbo = Fungi.Shaders.FBO.build("Fungi2Buf",2,true);
+
+				FungiApp.ctrlCamera.addHandler("pick",Picking)
+					.setDownOverride(Picking.onDownOverride);
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+				Fungi.Shaders.Material.create("MatDomShader","DomShader");
+
+				gPostShader = Fungi.Shaders.New("PostShader","vertex_post","fragment_post")
+					.prepareUniforms("tex0","tex","tex1","tex")
+					.setUniforms("tex0",gFbo.colorBuf[0]);
+				Fungi.Shaders.Material.create("MatPostShader","PostShader").useModelMatrix = false;
+
+				//.......................................................
+				//Prepare our Renderables
+				var spline = new Spline(3);
+				var spEditor = SplineEditor.getRenderable(10,spline);
+				FungiApp.scene.push(spEditor);
+
+				gPostQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatPostShader");
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+			});
+
+			function onRender(dt){
+				FungiApp.update();
+				Fungi.Render(FungiApp.scene);
+			}
+
+			Fungi.Render.onPreRender = function(f){
+				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,gFbo.id);
+				Fungi.gl.clear(Fungi.gl.COLOR_BUFFER_BIT | Fungi.gl.DEPTH_BUFFER_BIT); 
+			}
+
+			Fungi.Render.onPostRender = function(f){
+				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,null);
+				f.prepareNext(gPostQuad).draw();
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0f;
+			color = vec3(0.0,0.0,0.0);
+			//if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			//else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			//else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+	<script id="vertex_post" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=2) in vec2 a_uv;
+
+		out highp vec2 vUV;
+
+		void main(void){
+			vUV = vec2(a_uv.s,1.0-a_uv.t);
+			gl_Position =  vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_post" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		in highp vec2 vUV;
+
+        uniform sampler2D tex0;
+        uniform sampler2D tex1;
+
+		out vec4 outColor;
+
+		void main(void){
+			outColor = texture(tex0,vUV);
+		}
+	</script>
+</body>
+</html>
