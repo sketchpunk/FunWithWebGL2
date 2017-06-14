@@ -106,7 +106,12 @@ Fungi.Debug.Lines = class{
 		this.vao.count = 0;
 	}
 
-	draw(){ if(this.vao.count > 0) Fungi.gl.drawArrays(Fungi.gl.LINES, 0, this.vao.count); }
+	draw(){
+		if(this.vao.count > 0){
+			Fungi.gl.bindVertexArray(this.vao.id);
+			Fungi.gl.drawArrays(Fungi.gl.LINES, 0, this.vao.count);
+		}
+	}
 
 	update(){
 		if(!this._isModified) return;

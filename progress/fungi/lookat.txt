@@ -1,0 +1,162 @@
+	Quaternion static lookAt(vLook,vUp,out){
+				var look	= new Vec3(vLook),
+					up		= new Vec3(vUp),
+					pDot 	= Vec3.dot(look,up),
+					eDot	= Math.abs( Math.abs(pDot) - (look.magnitude() * up.magnitude()) );
+
+				if(eDot <= 0.00001){//1e-6
+					//up.normalize(); // The look and up vectors are parallel
+					if(pDot < 0) look.inverse();
+					console.log("TODO");
+					fromRotationBetween(WorldParameters.FORWARD_AXIS, look);
+					return;
+				}
+
+				Vec3.orthoNormalize(look, up); // Find the forward and up vectors
+				
+				var right = new Vec3();
+				Vec3.cross(up,look,right);
+				right.normalize();
+				//mTmpVec3.crossAndSet(up, look); // Create the right vector
+				Quaternion.fromAxes(right, up, look, out);
+			}
+
+Quaternion static fromAxes(xAxis, yAxis, zAxis, out){
+				// The trace is the sum of the diagonal elements; see
+				// http://mathworld.wolfram.com/MatrixTrace.html
+				var m00 = xAxis.x, m01 = xAxis.y, m02 = xAxis.z,
+					m10 = yAxis.x, m11 = yAxis.y, m12 = yAxis.z,
+					m20 = zAxis.x, m21 = zAxis.y, m22 = zAxis.z,
+					t = m00 + m11 + m22;
+
+				//Protect the division by s by ensuring that s >= 1
+				var x, y, z, w, s;
+				if (t > 0){
+					s = Math.sqrt(t + 1.0); // |s| >= 1
+					w = s * 0.5 ; // |w| >= 0.5
+					s = 0.5 / s; //<- This division cannot be bad
+					x = (m12 - m21) * s;
+					y = (m20 - m02) * s;
+					z = (m01 - m10) * s;
+				} else if ((m00 > m11) && (m00 > m22)){
+					S = Math.sqrt(1.0 + m00 - m11 - m22);// |s| >= 1
+					x = 0.5 * s;// |x| >= 0.5
+					s = 0.5 / s;
+					y = (m01 + m10) * num4;
+					z = (m02 + m20) * num4;
+					w = (m12 - m21) * num4;
+				} else if (m11 > m22) {
+					s = Math.sqrt(1.0 + m11 - m00 - m22); // |s| >= 1
+					y = 0.5 * s; // |y| >= 0.5
+					s = 0.5 / s;
+					x = (m10 + m01) * s;
+					z = (m21 + m12) * s;
+					w = (m20 - m02) * s;
+				} else {
+					s = Math.sqrt(1.0 + m22 - m00 - m11); // |s| >= 1
+					z = 0.5 * s; // |z| >= 0.5
+					s = 0.5 / s;
+					x = (m20 + m02) * s;
+					y = (m21 + m12) * s;
+					w = (m01 - m10) * s;
+				}
+				out[0] = x;
+				out[1] = y;
+				out[2] = z;
+				out[3] = w;
+			}
+
+
+//https://github.com/Rajawali/Rajawali/blob/master/rajawali/src/main/java/org/rajawali3d/math/vector/Vector3.java
+			//projectAnd
+vec3			static project(u,v,out){
+				var d = Vec3.dot(u,v),
+					d_div = d / (v.x*v.x + v.y*v.y + v.z*v.z);
+
+				out.copy(v).multi(d_div);
+
+				//double d = u.dot(v);
+				//double d_div = d / v.length2();
+				//return v.clone().multiply(d_div);
+			}
+
+	/**
+	 * Applies Gram-Schmitt Ortho-normalization to the given set of input {@link Vector3} objects.
+	 *
+	 * @param vecs Array of {@link Vector3} objects to be ortho-normalized.
+	 */	
+	 //https://github.com/Rajawali/Rajawali/blob/master/rajawali/src/main/java/org/rajawali3d/math/vector/Vector3.java
+	vec3		static orthoNormalize(){
+				var i,j;
+				var proj = new Vec3();
+				for (i=0; i < arguments.length; ++i) {
+					arguments[i].normalize();
+					for(j = i+1; j < arguments.length; ++j){
+						Vec3.project(arguments[j], arguments[i], proj);
+						arguments[j].sub(proj);
+					}
+				}
+/*
+				for (int i = 0; i < vecs.length; ++i) {
+					vecs[i].normalize();
+					for (int j = i + 1; j < vecs.length; ++j) {
+						vecs[j].subtract(Vector3.projectAndCreate(vecs[j], vecs[i]));
+					}
+				}*/
+			}
+
+			inverse(out){
+				out = out || this;
+				out[0] = -this[0];
+				out[1] = -this[1];
+				out[2] = -this[2];
+				if(out === this) this.isModified = true;
+				return this;
+			}
+
+
+
+
+
+
+/* Build a unit quaternion representing the rotation
+ * from u to v. The input vectors need not be normalised. */
+/*
+http://www.360doc.com/content/15/1204/14/22278244_517863181.shtml
+http://lolengine.net/blog/2014/02/24/quaternion-from-two-vectors-final
+quat quat::fromtwovectors(vec3 u, vec3 v)
+{
+    float norm_u_norm_v = sqrt(dot(u, u) * dot(v, v));
+    float real_part = norm_u_norm_v + dot(u, v);
+    vec3 w;
+
+    if (real_part < 1.e-6f * norm_u_norm_v)
+    {
+        //If u and v are exactly opposite, rotate 180 degrees
+        //around an arbitrary orthogonal axis. Axis normalisation
+        //can happen later, when we normalise the quaternion.
+        real_part = 0.0f;
+        w = abs(u.x) > abs(u.z) ? vec3(-u.y, u.x, 0.f)
+                                : vec3(0.f, -u.z, u.y);
+    }
+    else
+    {
+        Otherwise, build quaternion the standard way.
+        w = cross(u, v);
+    }
+
+    return normalize(quat(real_part, w.x, w.y, w.z));
+}
+
+The complete version from nonunit vectors looks like
+
+quat quat::fromtwovectors(vec3 u, vec3 v) {
+
+vec3 w = cross(u, v); quat q = quat(dot(u, v), w.x, w.y, w.z); q.w += q.magnitude(); return normalize(q);
+
+}
+
+Faster. 4 muls for quaternion magnitude instead of 6 muls for vectors magnitude.
+Numerical more stable (produce less roundoff error) than use of vectors length.
+Derivation of original method can be found ​http://www.euclideanspace.com/maths/algebra/vectors/angleBetween/minorlogic.htm
+*/

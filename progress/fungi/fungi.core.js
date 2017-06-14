@@ -327,7 +327,7 @@ var Fungi = (function(){
 	class Vec3 extends Float32Array{
 		constructor(ini){
 			super(3);
-			if(ini instanceof Vec3){
+			if(ini instanceof Vec3 || (ini && ini.length == 3)){
 				this[0] = ini[0]; this[1] = ini[1]; this[2] = ini[2];
 			}else if(arguments.length == 3){
 				this[0] = arguments[0]; this[1] = arguments[1]; this[2] = arguments[2];
@@ -360,12 +360,15 @@ var Fungi = (function(){
 				return Math.sqrt( x*x + y*y + z*z );
 			}
 
-			normalize(){
+			normalize(out){
 				var mag = Math.sqrt( this[0]*this[0] + this[1]*this[1] + this[2]*this[2] );
-				this[0] /= mag;
-				this[1] /= mag;
-				this[2] /= mag;
-				this.isModified = true;
+				if(mag == 0) return this;
+
+				out = out || this;
+				out[0] = this[0] / mag;
+				out[1] = this[1] / mag;
+				out[2] = this[2] / mag;
+				if(out === this) this.isModified = true;
 				return this;
 			}
 
@@ -403,6 +406,18 @@ var Fungi = (function(){
 				this.isModified = true;
 				return this;
 			}
+
+			static dot(a,b){ return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+			static cross(a,b,out){
+				var ax = a[0], ay = a[1], az = a[2],
+					bx = b[0], by = b[1], bz = b[2];
+
+				out[0] = ay * bz - az * by;
+				out[1] = az * bx - ax * bz;
+				out[2] = ax * by - ay * bx;
+				return out;
+			}
 		//endregion
 	}
 
@@ -418,6 +433,11 @@ var Fungi = (function(){
 		//region Setter/Getters
 			reset(){ this[0] = this[1] = this[2] = 0; this[3] = 1; this.isModified = false; return this; }
 
+			get x(){ return this[0]; }	set x(val){ this[0] = val; this.isModified = true; }
+			get y(){ return this[1]; }	set y(val){ this[1] = val; this.isModified = true; }
+			get z(){ return this[2]; }	set z(val){ this[2] = val; this.isModified = true; }
+			get w(){ return this[3]; }	set w(val){ this[3] = val; this.isModified = true; }
+
 			rx(rad){ Quaternion.rotateX(this,this,rad); this.isModified = true; return this; }
 			ry(rad){ Quaternion.rotateY(this,this,rad); this.isModified = true; return this; }
 			rz(rad){ Quaternion.rotateZ(this,this,rad); this.isModified = true; return this; }
@@ -426,6 +446,20 @@ var Fungi = (function(){
 			//ey(deg){ Quaternion.rotateY(this,this,deg * DEG2RAD); this.isModified = true; return this; }
 			//ez(deg){ Quaternion.rotateZ(this,this,deg * DEG2RAD); this.isModified = true; return this; }
 		//endregion
+		
+		normalize(out){
+			var len =  this[0]*this[0] + this[1]*this[1] + this[2]*this[2] + this[3]*this[3];
+			if(len > 0){
+				len = 1 / Math.sqrt(len);
+				out = out || this;
+				out[0] = this[0] * len;
+				out[1] = this[1] * len;
+				out[2] = this[2] * len;
+				out[3] = this[3] * len;
+				if(out === this) this.isModified = true;
+			}
+			return this;
+		}
 
 		//----------------------------------------------
 		//region Static Methods
@@ -449,6 +483,117 @@ var Fungi = (function(){
 				out[2] = az + aw * bz + ax * by - ay * bx;
 				return out;
 			}
+		
+			//Ported to JS from C# example at https://pastebin.com/ubATCxJY
+			//Note, if Dir and Up are equal, a roll happends. Need to find a way to fix this.
+			static lookRotation(vDir, vUp, out){
+				var zAxis	= new Vec3(vDir),	//Forward
+					up		= new Vec3(vUp),
+					xAxis	= new Vec3(),		//Right
+					yAxis	= new Vec3();
+
+				zAxis.normalize();
+				Vec3.cross(up,zAxis,xAxis);
+				xAxis.normalize();
+				Vec3.cross(zAxis,xAxis,yAxis); //new up
+
+				//fromAxis - Mat3 to Quaternion
+				var m00 = xAxis.x, m01 = xAxis.y, m02 = xAxis.z,
+					m10 = yAxis.x, m11 = yAxis.y, m12 = yAxis.z,
+					m20 = zAxis.x, m21 = zAxis.y, m22 = zAxis.z,
+					t = m00 + m11 + m22,
+					x, y, z, w, s;
+
+				if(t > 0.0){
+					s = Math.sqrt(t + 1.0);
+					w = s * 0.5 ; // |w| >= 0.5
+					s = 0.5 / s;
+					x = (m12 - m21) * s;
+					y = (m20 - m02) * s;
+					z = (m01 - m10) * s;
+				}else if((m00 >= m11) && (m00 >= m22)){
+					S = Math.sqrt(1.0 + m00 - m11 - m22);
+					x = 0.5 * s;// |x| >= 0.5
+					s = 0.5 / s;
+					y = (m01 + m10) * num4;
+					z = (m02 + m20) * num4;
+					w = (m12 - m21) * num4;
+				}else if(m11 > m22){
+					s = Math.sqrt(1.0 + m11 - m00 - m22);
+					y = 0.5 * s; // |y| >= 0.5
+					s = 0.5 / s;
+					x = (m10 + m01) * s;
+					z = (m21 + m12) * s;
+					w = (m20 - m02) * s;
+				}else{
+					s = Math.sqrt(1.0 + m22 - m00 - m11);
+					z = 0.5 * s; // |z| >= 0.5
+					s = 0.5 / s;
+					x = (m20 + m02) * s;
+					y = (m21 + m12) * s;
+					w = (m01 - m10) * s;
+				}
+				out[0] = x;
+				out[1] = y;
+				out[2] = z;
+				out[3] = w;
+
+				/*
+				var num8 = (m00 + m11) + m22;
+				if (num8 > 0.0){
+					var num = Math.sqrt(num8 + 1.0);
+					out.w = num * 0.5;
+					num = 0.5 / num;
+					out.x = (m12 - m21) * num;
+					out.y = (m20 - m02) * num;
+					out.z = (m01 - m10) * num;
+					return out;
+				}
+
+				if((m00 >= m11) && (m00 >= m22)){
+					var num7 = Math.sqrt(1.0 + m00 - m11 - m22);
+					var num4 = 0.5 / num7;
+					out.x = 0.5 * num7;
+					out.y = (m01 + m10) * num4;
+					out.z = (m02 + m20) * num4;
+					out.w = (m12 - m21) * num4;
+					return out;
+				}
+
+				if(m11 > m22){
+					var num6 = Math.sqrt(((1.0 + m11) - m00) - m22);
+					var num3 = 0.5 / num6;
+					out.x = (m10 + m01) * num3;
+					out.y = 0.5 * num6;
+					out.z = (m21 + m12) * num3;
+					out.w = (m20 - m02) * num3;
+					return out;
+				}
+
+				var num5 = Math.sqrt(((1.0 + m22) - m00) - m11);
+				var num2 = 0.5 / num5;
+				out.x = (m20 + m02) * num2;
+				out.y = (m21 + m12) * num2;
+				out.z = 0.5 * num5;
+				out.w = (m01 - m10) * num2;
+				return out;
+				*/
+			}
+
+			/*
+			setAxisAngle(axis, angle){
+				var halfAngle = angle * .5;
+				var s = Math.sin(halfAngle);
+
+				this[0] = axis[0] * s;
+				this[1] = axis[1] * s;
+				this[2] = axis[2] * s;
+				this[3] = Math.cos(halfAngle);
+
+				return this;
+			}
+			*/
+
 
 			//https://github.com/toji/gl-matrix/blob/master/src/gl-matrix/quat.js
 			static rotateX(out, a, rad){

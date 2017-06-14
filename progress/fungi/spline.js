@@ -144,15 +144,66 @@ class Spline{
 			}
 			this.points.push( new Fungi.Maths.Vec3( x+i, y, 0) );
 		}
+
+		this.points[1].copy(this.points[0]).y = 1; //TODO, REMOVE
+		this.points[1].x -= 0.3;
 	}
 
 	curveCount(){ return (this.points.length-1) / 3;} //Get how many curves exist in the points array
 
-	//getCurve(i){
-	//	var a = i * 3;
-	//	var b = a + 3;
-	//	console.log(this.pointCount(),a,b);
-	//}
+	getPosition(t,out){
+		var c = 0;
+		if(t >= 1){ //Final Curve in the spline, 
+			t = 1;
+			c = this.points.length - 4;
+		}else{ //Determine which curve is being accessed.
+			if(t < 0) t = 0;
+
+			/*NOTE TO SELF
+			This only work if T is less then 1, 1 can screw things up so the condition above prevents 
+			things from breaking. The idea is to multiple t by total curves in the spline. This gives 
+			you a whole number and fraction. Ex : t = 0.6 cnt = 2, results 1.2
+			The result gives both the curve index to access and the T to apply to it. So for the 
+			example we need to access the second segment, so by flooring we strip out the decimal we get 
+			the value 1 (second curve where 0 would be the first based on indexes). If we take the T minus
+			the Index to get the decimal which also works as the new T that can be applied to the second curve.
+			From there we just need to multiple by 3 to get the starting index of the curve.*/
+			
+			t *= this.curveCount(); //determine which curve we're accessing by using the T times curve count, Must be less then 1 to work.
+			c = Math.floor(t);		//Curve index by stripping out the decimal
+			t -= c;					//Strip out the whole number to get the decimal norm to be used for the curve 
+			c *= 3;					//Each curve starts at the 4th point in the array, so times 3 gets us the index where the curve starts.	
+		}
+
+		Spline.cubicBezierPoint(
+			this.points[c],
+			this.points[c+1],
+			this.points[c+2],
+			this.points[c+3],
+			t,out);
+	}
+
+	getDirection(t,out){
+		var c = 0;
+		if(t >= 1){ //Final Curve in the spline, 
+			t = 1;
+			c = this.points.length - 4;
+		}else{ //Determine which curve is being accessed.
+			if(t < 0) t = 0;
+			
+			t *= this.curveCount(); //determine which curve we're accessing by using the T times curve count, Must be less then 1 to work.
+			c = Math.floor(t);		//Curve index by stripping out the decimal
+			t -= c;					//Strip out the whole number to get the decimal norm to be used for the curve 
+			c *= 3;					//Each curve starts at the 4th point in the array, so times 3 gets us the index where the curve starts.	
+		}
+
+		Spline.cubicBezierDerivative(
+			this.points[c],
+			this.points[c+1],
+			this.points[c+2],
+			this.points[c+3],
+			t,out);
+	}
 
 	static cubicBezierPoint(p0,p1,p2,p3,t,out){
 		if(t > 1) t = 1;
@@ -175,6 +226,29 @@ class Spline{
 				t * t * t * p3.z;
 		return out;
 	}
+
+	//Gets the Non Normalized Curve Tangent
+	static cubicBezierDerivative(p0,p1,p2,p3,t,out){
+		//Clamp t betwen 0 and 1
+		if(t > 1) t = 1;
+		else if(t < 0) t = 0;
+		var i = 1 - t;
+
+		out = out || new Fungi.Maths.Vec3();
+		out[0] = 3 * i * i * (p1.x - p0.x) +
+				6 * i * t * (p2.x - p1.x) +
+				3 * t * t * (p3.x - p2.x);
+		
+		out[1] = 3 * i * i * (p1.y - p0.y) +
+				6 * i * t * (p2.y - p1.y) +
+				3 * t * t * (p3.y - p2.y);
+
+		out[2] = 3 * i * i * (p1.z - p0.z) +
+				6 * i * t * (p2.z - p1.z) +
+				3 * t * t * (p3.z - p2.z);
+		return out;
+	}
+
 }
 
 class SplineEditor{
@@ -305,8 +379,10 @@ class SplineEditor{
 	//Recreate the curve buffer
 	updateDynamicMesh(){
 		var inc = 1/this.sampleSize, t = 0, p = 0,
-			pos = new Fungi.Maths.Vec3();
+			pos = new Fungi.Maths.Vec3(),
+			dir = new Fungi.Maths.Vec3();
 
+		FungiApp.debugLines.reset();
 		this.curveMesh.clear();
 		this.lineMesh.clear();
 
@@ -320,6 +396,16 @@ class SplineEditor{
 					this.splineData.points[p+3],
 					x*inc,pos);
 				this.curveMesh.verts.push(pos.x,pos.y,pos.z);
+
+				Spline.cubicBezierDerivative(
+					this.splineData.points[p],
+					this.splineData.points[p+1],
+					this.splineData.points[p+2],
+					this.splineData.points[p+3],
+					x*inc,dir);
+				dir.normalize().multi(0.3).add(pos);
+				
+				FungiApp.debugLines.addVector(pos,dir,"#ff0000");
 			}
 
 			this.lineMesh.verts.push(
@@ -341,6 +427,7 @@ class SplineEditor{
 		//Do the GPU push on the data
 		this.lineMesh.update();	//Draw line between position and control point
 		this.curveMesh.update();	//Visualize the bezier curves.
+		FungiApp.debugLines.update();
 	}
 
 	//On Pick down, find the point that was clicked plus additional points that will be modified
