@@ -56,29 +56,66 @@ var Picking = {
 	}
 }
 
+class Mesh{
+	static triangleStrip(rLen,cLen,indAry,isLoop){ //isLoop ties the left to the right
+		var iLen	= (rLen-1) * cLen,	//How many loops to process vertices
+			lastCol	= cLen - 1,			//Index of Last col
+			lastRow = rLen - 2,			//Index of last row that can be processed.
+			total	= (rLen-1)*cLen*2 + (lastRow * 2);	//Total Index Length
+
+		var r,c,posA,posB;
+		for(var i=0; i < iLen; i++){
+			r = Math.floor(i / cLen);	//Current Row
+			c = i % cLen;				//Current Column
+			posA = r * cLen + c;		//Top Row Pos
+			posB = posA + cLen;			//Bottom Row Pos //(r+1) * cLen + c;
+
+			indAry.push(posA,posB);
+
+			//Create degenerate triangles, The last then the first index of the current bottom row.
+			if(c == lastCol && r < lastRow){
+				if(isLoop){
+					posA = r*cLen;
+					posB = posA + cLen;
+					indAry.push(posA,posB,posB,posB);
+				}else indAry.push(posB, posB-cLen+1);
+			}
+		}
+		if(isLoop) indAry.push(r*cLen, r*cLen+cLen);
+	}
+}
+
 class DynamicMesh extends Fungi.Renderable{
-	constructor(tVert,matName){
+	constructor(tVert,tIndex,matName){
 		super({},matName);
 
 		this.verts			= [];
-		this.bufSize		= Float32Array.BYTES_PER_ELEMENT * 3 * tVert; //3Floats per vert
+		this.vertSize		= Float32Array.BYTES_PER_ELEMENT * 3 * tVert; //3Floats per vert
+		this.vertOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
+		this.index 			= [];
+		this.indexSize 		= Uint16Array.BYTES_PER_ELEMENT * tIndex;
+		this.indexOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
 		this.drawMode		= Fungi.gl.LINE_STRIP;
 		this.visible		= false;
 
 		//Create VAO with a buffer a predefined size buffer to dynamicly dump data in.
 		Fungi.Shaders.VAO.create(this.vao)
-			.emptyFloatArrayBuffer(this.vao,"vert",this.bufSize,Fungi.ATTR_POSITION_LOC,3,0,0,false)
-			.finalize(this.vao,"FungiVertDebugger");
+			.emptyFloatArrayBuffer(this.vao,"vert",this.vertSize,Fungi.ATTR_POSITION_LOC,3,0,0,false)
+		if(tIndex > 0) Fungi.Shaders.VAO.emptyIndexBuffer(this.vao,"index",this.indexSize,false);
+		Fungi.Shaders.VAO.finalize(this.vao,"FungiVertDebugger");
 	}
 
 	draw(){ 
 		if(this.vao.count > 0){
 			Fungi.gl.bindVertexArray(this.vao.id);
-			Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+			if(this.index.length > 0)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+			else						Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
 		}
 	}
+
 	clear(){
 		this.verts.length = 0;
+		this.index.length = 0;
 		this.vao.count = 0;
 		this.visible = false;
 	}
@@ -87,16 +124,78 @@ class DynamicMesh extends Fungi.Renderable{
 		//If there is no verts, set this to invisible to disable rendering.
 		if(this.verts.length == 0){ this.visible = false; return this; }
 		this.visible = true;
-		
-		//Calc how many vectors we have
-		this.vao.count = this.verts.length / 3;
 
+		//......................................
 		//Push verts to GPU.
+		//TODO : Should probably make a buffer object to handle creation, resizing, clearing and updating.
+		var vsize = this.verts.length * Float32Array.BYTES_PER_ELEMENT;
 		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["vert"].buf);
-		Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(this.verts), 0, null);
+	
+		if(vsize <= this.vertSize){
+			Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(this.verts), 0, null);
+		}else{
+			this.vertSize = vsize;
+			if(this.vertOnGpu > 0) Fungi.gl.bufferData(Fungi.gl.ARRAY_BUFFER, null, Fungi.gl.STATIC_DRAW); //Clean up previus data
+			Fungi.gl.bufferData(Fungi.gl.ARRAY_BUFFER, new Float32Array(this.verts), Fungi.gl.STATIC_DRAW);
+		}
 		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
+		this.vertOnGpu = this.verts.length;		
+
+		//......................................
+		//Push index to gpu
+		if(this.index.length > 0){
+			var isize = this.index.length * Uint16Array.BYTES_PER_ELEMENT;
+
+			Fungi.gl.bindBuffer(Fungi.gl.ELEMENT_ARRAY_BUFFER, this.vao.buffers["index"].buf);  
+			if(isize <= this.indexSize){
+				Fungi.gl.bufferSubData(Fungi.gl.ELEMENT_ARRAY_BUFFER, 0, new Uint16Array(this.index), 0, null);
+			}else{
+				this.indexSize = isize;
+				if(this.indexOnGpu > 0) Fungi.gl.bufferData(Fungi.gl.ELEMENT_ARRAY_BUFFER, null, Fungi.gl.STATIC_DRAW); //Clean up previus data
+				Fungi.gl.bufferData(Fungi.gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.index), Fungi.gl.STATIC_DRAW);
+			}
+			Fungi.gl.bindBuffer(Fungi.gl.ELEMENT_ARRAY_BUFFER,null);
+			this.vao.count = this.index.length;
+			this.indexOnGpu = this.index.length;
+		}else this.vao.count = this.verts.length / 3;
 
 		return this;
+	}
+}
+
+class SplineMesh extends DynamicMesh{
+	constructor(spline,sampleSize){
+		super(12,8,null);
+		this.splineData = spline;
+		this.sampleCnt = sampleSize * spline.curveCount();
+		this.drawMode = Fungi.gl.TRIANGLE_STRIP; //Fungi.gl.POINTS;
+		this.baseVerts = [];
+	}
+
+	processSpline(){
+		this.clear();
+		var t = 0,
+			inc = 1 / this.sampleCnt,
+			pos = new Fungi.Maths.Vec3(),
+			dir = new Fungi.Maths.Vec3(),
+			rot = new Fungi.Maths.Mat3(),
+			tmp = new Fungi.Maths.Vec3();
+
+		for(var i = 0; i <= this.sampleCnt; i++){
+			t  = (i < this.sampleCnt)? i * inc : 1;
+			this.splineData.getPosition(t,pos);
+
+			this.splineData.getDirection(t,dir);
+			Fungi.Maths.Mat3.lookRotation(dir.normalize(), [0,1,0], rot);
+
+			for(var v=0; v < this.baseVerts.length; v+=3){
+				tmp.set(this.baseVerts[v],this.baseVerts[v+1],this.baseVerts[v+2]);
+				tmp.transformMat3(rot);
+				this.verts.push(tmp.x + pos.x, tmp.y + pos.y, tmp.z + pos.z );
+			}
+		}
+		Mesh.triangleStrip(this.sampleCnt+1,this.baseVerts.length/3,this.index,true);
+		this.update();
 	}
 }
 
@@ -256,6 +355,7 @@ class SplineEditor{
 		//CREATE MATERIAL
 		var mat = Fungi.Shaders.Material.create("FungiSplineEditor","FungiSplineEditor");
 		mat.useModelMatrix = false;
+		mat.useDepthTest = false;
 		mat.drawMode = Fungi.gl.POINTS;
 
 		//......................................
@@ -286,6 +386,7 @@ class SplineEditor{
 		this.vao = {};
 		this.sampleSize = sampSize;						//How many points to sample each curve
 		this.splineData = spline;						//Data to visualize and modify
+		this.splineMesh = null;
 		this.moveRate = 0.008;							//Rate of how to move the points based on mouse movement
 
 		this.pickList = [];								//List of draggable items
@@ -337,8 +438,8 @@ class SplineEditor{
 		this.vao.count	= this.vao.buffers["vert"].count;
 
 		//Setup some dynamic meshes used for visualizing the data.
-		this.curveMesh	= new DynamicMesh(100,null);	//Line Curves
-		this.lineMesh	= new DynamicMesh(50,null);		//Connector Lines
+		this.curveMesh	= new DynamicMesh(100,-1,null);	//Line Curves
+		this.lineMesh	= new DynamicMesh(50,-1,null);		//Connector Lines
 		this.lineMesh.drawMode = Fungi.gl.LINES;
 	}
 
@@ -395,6 +496,8 @@ class SplineEditor{
 		this.lineMesh.update();	//Draw line between position and control point
 		this.curveMesh.update();	//Visualize the bezier curves.
 		FungiApp.debugLines.update();
+
+		if(this.splineMesh != null) this.splineMesh.processSpline();
 	}
 
 	//On Pick down, find the point that was clicked plus additional points that will be modified
@@ -510,51 +613,6 @@ class SplineEditor{
 
 
 /*
-	static getPoint(p0,p1,p2,p3,t,rtn){
-		if(t > 1) t = 1;
-		else if(t < 0) t = 0;
-
-		var i = 1 - t;
-		
-		rtn = rtn || new Fungi.Maths.Vec3();
-		rtn.x = i * i * i * p0.x +
-				3 * i * i * t * p1.x +
-				3 * i * t * t * p2.x +
-				t * t * t * p3.x;
-		rtn.y = i * i * i * p0.y +
-				3 * i * i * t * p1.y +
-				3 * i * t * t * p2.y +
-				t * t * t * p3.y;
-		rtn.z = i * i * i * p0.z +
-				3 * i * i * t * p1.z +
-				3 * i * t * t * p2.z +
-				t * t * t * p3.z;
-		return rtn;
-	}
-
-	//Gets the Non Normalized Curve Tangent
-	static getDerivative(p0,p1,p2,p3,t,rtn){
-		//Clamp t betwen 0 and 1
-		if(t > 1) t = 1;
-		else if(t < 0) t = 0;
-		var i = 1 - t;
-
-		rtn = rtn || new Fungi.Maths.Vec3();
-		rtn.x = 3 * i * i * (p1.x - p0.x) +
-				6 * i * t * (p2.x - p1.x) +
-				3 * t * t * (p3.x - p2.x);
-		
-		rtn.y = 3 * i * i * (p1.y - p0.y) +
-				6 * i * t * (p2.y - p1.y) +
-				3 * t * t * (p3.y - p2.y);
-
-		rtn.z = 3 * i * i * (p1.z - p0.z) +
-				6 * i * t * (p2.z - p1.z) +
-				3 * t * t * (p3.z - p2.z);
-		return rtn;
-	}
-
-
 	__normal3: function(t) {
       // see http://stackoverflow.com/questions/25453159
       var r1 = this.derivative(t),
@@ -584,182 +642,3 @@ class SplineEditor{
       return n;
     },
 */
-
-class Bezier{
-	static generate(out,res,p0,p1,p2,p3){
-		var inc = 1/res, t = 0,
-			pos = new Fungi.Maths.Vec3();
-
-		for(var i = 0; i < res; i++){
-			Bezier.getPoint(p0,p1,p2,p3, i*inc ,pos);
-			out.push(pos.x,pos.y,pos.z);
-		}
-
-		Bezier.getPoint(p0,p1,p2,p3, 1 ,pos);
-		out.push(pos.x,pos.y,pos.z);
-	}
-
-	static getPoint(p0,p1,p2,p3,t,out){
-		if(t > 1) t = 1;
-		else if(t < 0) t = 0;
-
-		var i = 1 - t;
-		
-		out = out || new Fungi.Maths.Vec3();
-		out[0] = i * i * i * p0.x +
-				3 * i * i * t * p1.x +
-				3 * i * t * t * p2.x +
-				t * t * t * p3.x;
-		out[1] = i * i * i * p0.y +
-				3 * i * i * t * p1.y +
-				3 * i * t * t * p2.y +
-				t * t * t * p3.y;
-		out[2] = i * i * i * p0.z +
-				3 * i * i * t * p1.z +
-				3 * i * t * t * p2.z +
-				t * t * t * p3.z;
-		return out;
-	}
-}
-
-
-class DragPoints{
-	static getRenderable(){
-		if(DragPoints.renderable) return DragPoints.renderable;
-
-		//......................................
-		//CREATE SHADER
-		var vShader = '#version 300 es\n'+
-			'layout(location=0) in vec3 a_position;' +
-			'layout(location=1) in vec3 a_id;' +
-			'layout(location=2) in lowp vec3 a_color;' +			
-			'uniform UBOTransform{ mat4 matProjection; mat4 matCameraView; vec3 posCamera; };' +
-			'out lowp vec3 color;'+
-			'out lowp vec3 id;'+
-			'void main(void){'+
-				'vec4 worldpos = matCameraView * vec4(a_position, 1.0);'+
-				'float d = distance(posCamera.xyz,worldpos.xyz);'+
-				'if(d > 0.0f) gl_PointSize = max(10.0f,(100.0f/d));' +
-				'else gl_PointSize = 10.0f;' +
-				'color = a_color;'+
-				'id = a_id;'+
-				'gl_Position = matProjection * worldpos; '+
-			'}';
-
-		var fShader = '#version 300 es\n precision mediump float;'+
-			'in lowp vec3 color; in lowp vec3 id;'+
-			'layout(location = 0) out vec4 outColor0;'+
-        	'layout(location = 1) out vec4 outColor1;'+
-			'void main(void){ outColor0 = vec4(color,1.0); outColor1 = vec4(id,1.0); }';
-
-		Fungi.Shaders.New("FungiDrawPoints",vShader,fShader)
-			.prepareUniformBlocks(Fungi.Res.Ubo[Fungi.UBO_TRANSFORM],0);
-
-		//......................................
-		//CREATE MATERIAL
-		var mat = Fungi.Shaders.Material.create("FungiDrawPoints","FungiDrawPoints");
-		mat.useModelMatrix = false;
-		mat.drawMode = Fungi.gl.POINTS;
-
-		//......................................
-		//CREATE RENDERABLE
-		var ren = new DragPoints();
-		ren.material = mat;
-		return DragPoints.renderable = ren;
-	}
-
-	constructor(){
-		var fsize = Float32Array.BYTES_PER_ELEMENT;
-		var compSize = 9;
-		var stride = compSize * fsize; //How large is the vertex data in bytes, Pos(3)-ID(3)-Color(3), 9 Floats at 4 bytes each
-
-		this._points		= [];
-		this._isModified 	= true;
-		this._vertCompSize	= compSize;
-		this._stride		= stride;
-		this._bufSize		= stride * 20;
-		this.vao			= {};
-		this.visible		= true;
-		this.material		= null;
-
-		//Create VAO with a buffer with space for 100 lines.
-		Fungi.Shaders.VAO.create(this.vao)
-			.emptyFloatArrayBuffer(this.vao,"vert",this._bufSize,Fungi.ATTR_POSITION_LOC,3,stride,0,false) //Setup buffer and verts
-			.partitionBuffer(1,3,stride,fsize * 3) //Setup ID
-			.partitionBuffer(2,3,stride,fsize * 6) //Setup Color
-			.finalize(this.vao,"FungiDragPoints");
-		this.vao.count = 0;
-	}
-
-	draw(){
-		if(this.vao.isIndexed)	Fungi.gl.drawElements(this.material.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
-		else					Fungi.gl.drawArrays(this.material.drawMode, 0, this.vao.count);
-	}
-
-	addPoint(x,y,z,cHex){
-		var obj = { id:0, color:cHex, position:new Fungi.Maths.Vec3().set(x,y,z), index:this._points.length };
-		obj.id = Picking.register(obj, this.updateCallback.bind(this));
-		this._points.push(obj);
-	}
-
-
-	getPointById(id){
-		for(var i=0; i < this._points.length; i++){
-			if(this._points[i].id == id) return i;
-		}
-		return -1;
-	}
-
-	updateCallback(o){
-		//console.log(o);
-		Fungi.Shaders.VAO.updateAryBufSubData(
-			this.vao.buffers["vert"].buf,
-			o.index * this._stride,
-			o.position
-		);
-	}
-
-	updatePositionById(id,x,y,z){
-		var i = this.getPointById(id);
-		if(i == -1){ console.log('point not found'); return; }
-
-		Fungi.Shaders.VAO.updateAryBufSubData(
-			this.vao.buffers["vert"].buf,
-			i * this._stride,
-			this._points[i].position.set(x,y,z)
-		);
-	}
-
-	buildBuffer(){
-		if(this._points.length == 0){ this.visible = false; return this; }
-		this.visible = true;
-
-		var ary = [], color, cid;
-		for(var i=0; i < this._points.length; i++){
-			color	= Fungi.Util.rgbArray(this._points[i].color);
-			cid		= Picking.idToColor(this._points[i].id);
-
-			ary.push(
-				this._points[i].position.x,
-				this._points[i].position.y,
-				this._points[i].position.z,
-				cid[0],
-				cid[1],
-				cid[2],
-				color[0],
-				color[1],
-				color[2]
-			);
-		}
-
-		//Calc how many vec4 elements we have
-		this.vao.count = ary.length / this._vertCompSize;
-
-		//Push verts to GPU.
-		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["vert"].buf);
-		Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(ary), 0, null);
-		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
-
-		return this;
-	}
-}

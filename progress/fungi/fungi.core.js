@@ -6,7 +6,8 @@ var Fungi = (function(){
 
 	var	gl = null,
 		CULLING_STATE = true,			//Global state if the feature is enabled
-		BLENDING_STATE = false;			//Same---
+		BLENDING_STATE = false,			//Same---
+		DEPTHTEST_STATE = true;
 
 	/*>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 	<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<*/
@@ -270,7 +271,11 @@ var Fungi = (function(){
 			this.material = (matName != null && matName !== undefined)? Fungi.Res.Materials[matName] : null;
 		}
 
+		setMaterial(matName){ this.material = Fungi.Res.Materials[matName]; }
+
 		draw(){
+			if(this.vao.count == 0) return;
+
 			gl.bindVertexArray(this.vao.id);
 			if(this.vao.isIndexed)	gl.drawElements(this.material.drawMode, this.vao.count, gl.UNSIGNED_SHORT, 0); 
 			else					gl.drawArrays(this.material.drawMode, 0, this.vao.count);
@@ -405,6 +410,27 @@ var Fungi = (function(){
 				this[0] = v[0]; this[1] = v[1]; this[2] = v[2];
 				this.isModified = true;
 				return this;
+			}
+
+			transformMat3(m,out){
+				var x = this[0], y = this[1], z = this[2];
+				out = out || this;
+				out[0] = x * m[0] + y * m[3] + z * m[6];
+				out[1] = x * m[1] + y * m[4] + z * m[7];
+				out[2] = x * m[2] + y * m[5] + z * m[8];
+				return out;
+			}
+
+			transformMat4(m,out){
+			    var x = this[0], y = this[1], z = this[2],
+			        w = m[3] * x + m[7] * y + m[11] * z + m[15];
+			    w = w || 1.0;
+
+			    out = out || this;
+			    out[0] = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+			    out[1] = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+			    out[2] = (m[2] * x + m[6] * y + m[10] * z + m[14]) / w;
+			    return out;
 			}
 
 			static dot(a,b){ return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
@@ -1254,6 +1280,35 @@ var Fungi = (function(){
 		//endregion
 	}
 
+	class Mat3 extends Float32Array{
+		constructor(){ super(9); this[0] = this[4] = this[8] = 1; }  //Setup Identity
+
+		static lookRotation(vDir, vUp, out){
+			var zAxis	= new Vec3(vDir),	//Forward
+				up		= new Vec3(vUp),
+				xAxis	= new Vec3(),		//Right
+				yAxis	= new Vec3();
+
+			zAxis.normalize();
+			Vec3.cross(up,zAxis,xAxis);
+			xAxis.normalize();
+			Vec3.cross(zAxis,xAxis,yAxis); //new up
+
+			var m00 = xAxis.x, m01 = xAxis.y, m02 = xAxis.z,
+				m10 = yAxis.x, m11 = yAxis.y, m12 = yAxis.z,
+				m20 = zAxis.x, m21 = zAxis.y, m22 = zAxis.z;
+
+			out[0] = m00;
+			out[1] = m01;
+			out[2] = m02;
+			out[3] = m10;
+			out[4] = m11;
+			out[5] = m12;
+			out[6] = m20;
+			out[7] = m21;
+			out[8] = m22;
+		}
+	}
 	/*
 	//https://github.com/mrdoob/three.js/blob/dev/src/math/Euler.js
 	class Euler extends Float32Array{
@@ -1388,6 +1443,7 @@ var Fungi = (function(){
 			
 			this.useCulling = true;
 			this.useBlending = false;
+			this.useDepthTest = true;
 			this.useModelMatrix = true;
 			this.useNormalMatrix = false;
 
@@ -1802,6 +1858,19 @@ var Fungi = (function(){
 			return VAO;
 		}
 
+
+		static emptyIndexBuffer(out,name,aryCount,isStatic){
+			var rtn = { buf:gl.createBuffer(), count:0 };
+
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rtn.buf );  
+			gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, aryCount, (isStatic != false)? gl.STATIC_DRAW : gl.DYNAMIC_DRAW );
+
+			out.buffers[name] = rtn;
+			out.isIndexed = true;
+
+			return VAO;
+		}
+
 		static indexBuffer(out,name,aryUInt,isStatic,keepData){
 			var rtn = { buf:gl.createBuffer(), count:aryUInt.length };
 			if(keepData == true) rtn.data = aryUInt;
@@ -2060,6 +2129,7 @@ var Fungi = (function(){
 				//Turn on/off any gl features
 				if(f.material.useCulling != CULLING_STATE)	gl[ ( (CULLING_STATE = (!CULLING_STATE))  )?"enable":"disable" ](gl.CULL_FACE);
 				if(f.material.useBlending != BLENDING_STATE)	gl[ ( (BLENDING_STATE = (!BLENDING_STATE)) )?"enable":"disable" ](gl.BLEND);
+				if(f.material.useDepthTest != DEPTHTEST_STATE)	gl[ ( (DEPTHTEST_STATE = (!DEPTHTEST_STATE)) )?"enable":"disable" ](gl.DEPTH_TEST);
 			}
 
 			//Prepare Buffers and Uniforms.
@@ -2084,7 +2154,7 @@ var Fungi = (function(){
 		Res:{ Textures:[], Videos:[], Images:[], Shaders:[], Ubo:[], Vao:[], Fbo:[], Materials:[] },
 
 		//MATH OBJECTS
-		Maths:{ Vec3:Vec3, Quaternion:Quaternion, Matrix4:Matrix4 },
+		Maths:{ Vec3:Vec3, Quaternion:Quaternion, Matrix4:Matrix4, Mat3:Mat3 },
 
 		//SHADERS
 		Shaders:{Material:Material, New:NewShader, Builder:ShaderBuilder, Util:ShaderUtil, VAO:VAO, UBO:UBO, FBO:FBO },
