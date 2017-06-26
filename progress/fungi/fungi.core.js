@@ -358,11 +358,23 @@ var Fungi = (function(){
 				if(v === undefined) return Math.sqrt( this[0]*this[0] + this[1]*this[1] + this[2]*this[2] );
 
 				//Get magnitude based on another vector
-				var x = v[0] - this[0],
-					y = v[1] - this[1],
-					z = v[2] - this[2];
+				var x = this[0] - v[0],
+					y = this[1] - v[1],
+					z = this[2] - v[2];
 
 				return Math.sqrt( x*x + y*y + z*z );
+			}
+			
+			sqrMag(v){
+				//Only get the squared magnitude of this vector
+				if(v === undefined) return this[0]*this[0] + this[1]*this[1] + this[2]*this[2];
+
+				//Get squared magnitude based on another vector
+				var x = this[0] - v[0],
+					y = this[1] - v[1],
+					z = this[2] - v[2];
+
+				return x*x + y*y + z*z;
 			}
 
 			normalize(out){

@@ -168,11 +168,50 @@ class SplineMesh extends DynamicMesh{
 		super(12,8,null);
 		this.splineData = spline;
 		this.sampleCnt = sampleSize * spline.curveCount();
-		this.drawMode = Fungi.gl.TRIANGLE_STRIP; //Fungi.gl.POINTS;
+		this.drawMode = Fungi.gl.TRIANGLE_STRIP; //Fungi.gl.POINTS; //
 		this.baseVerts = [];
 	}
 
 	processSpline(){
+		this.clear();
+
+		var tCurve	= this.splineData.curveCount(),	// Total Curve Count
+			pos		= new Fungi.Maths.Vec3(),		// Hold the sample vector position
+			dir		= new Fungi.Maths.Vec3(),		// Hold the sample direction vector
+			tmp		= new Fungi.Maths.Vec3(),		// Hold rotated vector position
+			rot		= new Fungi.Maths.Mat3(),		// Rotation Matrix
+			ary		= null,							// Array of simplifed T positons
+			t 		= 0,							// Sample T position to get on the whole spline
+			exCnt	= 0;							// Keep count how many times we extrude to use for TriangleStrips
+
+		//Works best if we process each curve individually instead of spline as a whole.
+		for(var c=0; c < tCurve; c++){
+			ary = Spline.subDivideCurve(c,this.splineData);
+
+			for(var i=0; i < ary.length; i++){
+				t = ary[i]/tCurve + c/tCurve; // Map the single curve T to the whole spline T;
+
+				this.splineData.getPosition(t, pos); 
+				//this.verts.push(pos.x, pos.y, pos.z);
+
+				this.splineData.getDirection(t,dir);
+				Fungi.Maths.Mat3.lookRotation(dir.normalize(), [0,1,0], rot);
+
+				//extrude the next set of baseVerts
+				exCnt++;
+				for(var v=0; v < this.baseVerts.length; v+=3){
+					tmp.set(this.baseVerts[v],this.baseVerts[v+1],this.baseVerts[v+2]);
+					tmp.transformMat3(rot);
+					this.verts.push(tmp.x + pos.x, tmp.y + pos.y, tmp.z + pos.z );
+				}
+			}
+		}
+
+		Mesh.triangleStrip(exCnt,this.baseVerts.length/3,this.index,true);
+		this.update();
+	}
+
+	processSplineOLD(){
 		this.clear();
 		var t = 0,
 			inc = 1 / this.sampleCnt,
@@ -209,7 +248,7 @@ class Spline{
 			switch( i % 3 ){ //y = ((i%3 != 0)?1:0)
 				case 0: y = 0; break;
 				case 1: y = 1; break;
-				case 2: y = -1; break;
+				case 2: y = -1; break; //-1 TODO FIX
 			}
 			this.points.push( new Fungi.Maths.Vec3( x+i, y, 0) );
 		}
@@ -240,6 +279,20 @@ class Spline{
 			t -= c;					//Strip out the whole number to get the decimal norm to be used for the curve 
 			c *= 3;					//Each curve starts at the 4th point in the array, so times 3 gets us the index where the curve starts.	
 		}
+
+		Spline.cubicBezierPoint(
+			this.points[c],
+			this.points[c+1],
+			this.points[c+2],
+			this.points[c+3],
+			t,out);
+	}
+
+	getCurvePosition(c,t,out){
+		c *= 3;
+
+		if(t >= 1) t = 1;
+		else if(t < 0) t = 0;
 
 		Spline.cubicBezierPoint(
 			this.points[c],
@@ -313,6 +366,63 @@ class Spline{
 				6 * i * t * (p2.z - p1.z) +
 				3 * t * t * (p3.z - p2.z);
 		return out;
+	}
+
+	static subDivideCurve(c,spData){
+		var angleThreshold = -0.99,				// At what angle do we consider a mid point to save and its left/right vectors to be added to the stack.
+			minSubDivDistance = 0.09,			// If the distance between start and end is less then this, don't process that vector
+			stack = [],							// Just hold all the vector ranges that need its angle checked if its straight enough.
+			rtn = [0,1];						// List of T that the spline should be sampled at. By default always have 0 and 1.
+
+		var tStart	= 0,						// Starting Time
+			tEnd	= 0,						// End Time
+			tMid	= 0,						// Calc the middle between start and end
+			pStart	= new Fungi.Maths.Vec3(),	// Holds the Vector position of the start
+			pEnd	= new Fungi.Maths.Vec3(),	// ... and the end
+			pMid	= new Fungi.Maths.Vec3(),	// ... and the middle
+			nLeft	= new Fungi.Maths.Vec3(),	// Left Normal vector from the Start to the Middle
+			nRight	= new Fungi.Maths.Vec3(),	// Right Normal vecto from the middle to the end
+			dot		= 0,						// save the dot product of the Left+Right Vectors (angle of these two positions)
+			dist	= 0,						// distance between start and end
+			p 		= null;						// just holds the data that is popped out of the stack
+
+		stack.push({start:0,end:0.5},{start:0.5,end:1}); //For sine wave like shapes, need to split the sline in half else you get a straight line
+		var dat = null;
+		//var i = 0;
+		while(stack.length > 0 ){ //&& i < 30
+			//Get our T position
+			p		= stack.pop(); //i++;
+			//console.log(p);
+			tStart	= p.start;
+			tEnd	= p.end;
+
+			//Get the points that will form an angle.
+			spData.getCurvePosition(c,tStart,pStart);
+			spData.getCurvePosition(c,tEnd,pEnd);
+			dist = pStart.sqrMag(pEnd);
+
+			//console.log("dist",dist);
+			if(dist < minSubDivDistance) continue; //only sub divide if greater then min length
+
+			//Get real middle position.
+			tMid = ((tEnd - tStart) / 2) + tStart;
+			spData.getCurvePosition(c,tMid,pMid);
+			//console.log("mid",tMid);
+
+			//Get Direction of the two vectors from the middle point
+			pStart.sub(pMid,nLeft);	nLeft.normalize();
+			pEnd.sub(pMid,nRight);	nRight.normalize();
+			dot = Fungi.Maths.Vec3.dot(nLeft,nRight);
+			//console.log("dot",dot);
+
+			if(dot > angleThreshold){
+			//	console.log("save",tMid);
+				stack.push({start:tStart,end:tMid},{start:tMid,end:tEnd});
+				rtn.push(tMid);
+			}
+		}
+		//console.log(rtn);
+		return rtn.sort(); //With all the points found out, sort it to process the points in the right order.
 	}
 }
 

@@ -59,7 +59,7 @@
 				Fungi.Res.Materials["MatDomShader"].useCulling = false; //Hack, just to see it. Should Culling be a Mesh setting instead of material?
 
 				gSplineMesh = new SplineMesh(gSpline,10);
-				gSplineMesh.setMaterial("MatLowPoly");
+				gSplineMesh.setMaterial("MatLowPoly");//  MatDomShader
 				gSplineMesh.baseVerts.push( //MUST BE IN CLOCK WISE ORDER
 					-0.5,0.2,0.0,
 					0.5,0.2,0.0,
