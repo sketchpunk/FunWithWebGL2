@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script src="spline.js"></script>
+
+		<script>
+			//LEO - Pink - Try
+			var gFbo,gModel,gPostShader,gPostQuad;
+			var gPoints,gPicking,gDMesh;
+			var gSpline, gSplineMesh;
+
+			window.addEventListener("load",function(){
+				FungiApp.startup();
+				gFbo = Fungi.Shaders.FBO.build("Fungi2Buf",2,true);
+
+				FungiApp.ctrlCamera.addHandler("pick",Picking)
+					.setDownOverride(Picking.onDownOverride);
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+				Fungi.Shaders.Material.create("MatDomShader","DomShader");
+
+				gPostShader = Fungi.Shaders.New("PostShader","vertex_post","fragment_post")
+					.prepareUniforms("tex0","tex","tex1","tex")
+					.setUniforms("tex0",gFbo.colorBuf[0]);
+				Fungi.Shaders.Material.create("MatPostShader","PostShader").useModelMatrix = false;
+
+				gPostShader = Fungi.Shaders.New("LowPoly","vertex_lowpoly","fragment_lowpoly")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+				Fungi.Shaders.Material.create("MatLowPoly","LowPoly").useCulling = false;
+
+				//.......................................................
+				//Prepare our Renderables
+				gSpline = new Spline(2);
+				var spEditor = SplineEditor.getRenderable(10,gSpline);				
+
+				//gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader")
+				//	.setPosition(0,0.5,0).setScale(0.2,0.2,0.2);
+				//FungiApp.scene.push(gModel);
+
+				Fungi.Res.Materials["MatDomShader"].useCulling = false; //Hack, just to see it. Should Culling be a Mesh setting instead of material?
+
+				gSplineMesh = new SplineMesh(gSpline,10);
+				gSplineMesh.setMaterial("MatLowPoly");//  MatDomShader
+				gSplineMesh.baseVerts.push( //MUST BE IN CLOCK WISE ORDER
+					-0.5,0.2,0.0,
+					0.5,0.2,0.0,
+					0.5,-0.2,0.0,
+					-0.5,-0.2,0.0
+				);
+				gSplineMesh.processSpline();
+				spEditor.splineMesh = gSplineMesh;
+
+				FungiApp.scene.push(gSplineMesh);
+				FungiApp.scene.push(spEditor);
+
+				gPostQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatPostShader");
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+				//onRender(0.1);
+			});
+
+			var i = 0,inc = 0.2;
+			function onRender(dt){
+				/*
+				var pos = [0,0,0], dir = [0,0,0];
+								
+				i += inc * dt;
+				gSpline.getPosition(i,pos);
+				gModel.position.copy(pos);
+
+				gSpline.getDirection(i,dir);
+				Fungi.Maths.Quaternion.lookRotation(dir, [0,1,0], gModel.rotation); 
+
+				if(i >= 1){ inc *= -1; i = 1; }
+				else if(i <= 0){ inc *= -1; i = 0; }
+				*/
+
+				FungiApp.update();
+				Fungi.Render(FungiApp.scene);
+			}
+
+			Fungi.Render.onPreRender = function(f){
+				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,gFbo.id);
+				Fungi.gl.clear(Fungi.gl.COLOR_BUFFER_BIT | Fungi.gl.DEPTH_BUFFER_BIT); 
+			}
+
+			Fungi.Render.onPostRender = function(f){
+				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,null);
+				f.prepareNext(gPostQuad).draw();
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0f;
+			//color = vec3(0.0,0.0,0.0);
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+	<script id="vertex_post" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=2) in vec2 a_uv;
+
+		out highp vec2 vUV;
+
+		void main(void){
+			vUV = vec2(a_uv.s,1.0-a_uv.t);
+			gl_Position =  vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_post" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+
+		in highp vec2 vUV;
+
+        uniform sampler2D tex0;
+        uniform sampler2D tex1;
+
+		out vec4 outColor;
+
+		void main(void){
+			outColor = texture(tex0,vUV);
+		}
+	</script>
+
+	<script id="vertex_lowpoly" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec3 vWorldPos;
+		out vec2 vTest;
+
+		const float col = 4.0;
+
+		//int mod(float a, float b){ return a - (b * floor(a/b)); }
+
+		void main(void){
+			vec4 worldPos = (uModalMatrix *  vec4(a_position.xyz, 1.0));
+			vWorldPos = worldPos.xyz;
+
+			//Identify Triangles in Quad, If y == 1, Then its the top triangle
+			//01 01
+			//00 01
+			float r = floor(float(gl_VertexID) / col);
+			if(mod(r,2.0) == 0.0) vTest = vec2(0.0,1.0);
+			else{
+				// i % col == colIndex -> colIndex % 2 = 0-1
+				if( mod(mod(float(gl_VertexID),col),2.0) == 0.0) vTest = vec2(0.0,0.0);
+				else vTest = vec2(0.0,1.0);
+			}
+
+			gl_Position =  matProjection * matCameraView * worldPos;
+		}
+	</script>
+	<script id="fragment_lowpoly" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec3 vWorldPos;
+		in vec2 vTest;
+
+		out vec4 outColor;
+
+		const vec3 lightPos = vec3(4.0,3.0,2.0);
+		const vec3 lightColor = vec3(0.7,0.7,0.7);
+		const vec3 baseColor = vec3(1.0,0.5,0.5);
+
+		void main(void){
+			float strength = 1.0;
+			if(vTest.y == 1.0) strength = 0.6;
+
+			vec3 norm = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));  //Calc new Normals based on World Pos
+			float angle = max(dot(norm, normalize(lightPos-vWorldPos)), 0.0);	//Calc angle of line
+			outColor = vec4(baseColor + (lightColor *strength) * angle,1.0);
+		}
+	</script>	
+</body>
+</html>
