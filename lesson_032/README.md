@@ -7,5 +7,5 @@ Today we're going to begin the next milestone in which we create a simple scene 
 * [3D Rotation](https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm#Y-Axis%20Rotation)
 
 ### Links
-* [Lesson on Youtube](https://youtu.be/bxpu1JYQYWA)
+* [Lesson on Youtube](https://youtu.be/-I7dFG3PyXc)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
