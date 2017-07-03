@@ -13,102 +13,118 @@
 		<script src="fungi.primatives.js"></script>
 		<script src="fungi.KBMCtrl.js"></script>
 		<script src="fungi.Debug.js"></script>
+		<script src="fungi.ext.js"></script>
 		<script src="fungiApp.js"></script>
 
-		<script src="spline.js"></script>
-
 		<script>
-			//LEO - Pink - Try
-			var gFbo,gModel,gPostShader,gPostQuad;
-			var gPoints,gPicking,gDMesh;
-			var gSpline, gSplineMesh;
+			var gModel;
 
 			window.addEventListener("load",function(){
 				FungiApp.startup();
-				gFbo = Fungi.Shaders.FBO.build("Fungi2Buf",2,true);
-
-				FungiApp.ctrlCamera.addHandler("pick",Picking)
-					.setDownOverride(Picking.onDownOverride);
 
 				//.......................................................
 				//Create Shaders and Materials
+				var mat;
 				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
 					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
 					.prepareUniformBlocks(FungiApp.uboTransform,0);
-				Fungi.Shaders.Material.create("MatDomShader","DomShader");
 
-				gPostShader = Fungi.Shaders.New("PostShader","vertex_post","fragment_post")
-					.prepareUniforms("tex0","tex","tex1","tex")
-					.setUniforms("tex0",gFbo.colorBuf[0]);
-				Fungi.Shaders.Material.create("MatPostShader","PostShader").useModelMatrix = false;
+				mat = Fungi.Shaders.Material.create("MatDomShader","DomShader");
+				mat.drawMode = Fungi.gl.POINTS; //Fungi.gl.TRIANGLE_STRIP;
 
-				gPostShader = Fungi.Shaders.New("LowPoly","vertex_lowpoly","fragment_lowpoly")
+				Fungi.Shaders.New("LowPoly","vertex_lowpoly","fragment_lowpoly")
 					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
 					.prepareUniformBlocks(FungiApp.uboTransform,0);
-				Fungi.Shaders.Material.create("MatLowPoly","LowPoly").useCulling = false;
+				mat = Fungi.Shaders.Material.create("MatLowPoly","LowPoly");
+				//mat.useCulling = false;
+				mat.drawMode = Fungi.gl.TRIANGLE_STRIP;
 
 				//.......................................................
 				//Prepare our Renderables
-				gSpline = new Spline(2);
-				var spEditor = SplineEditor.getRenderable(10,gSpline);				
-
-				//gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader")
-				//	.setPosition(0,0.5,0).setScale(0.2,0.2,0.2);
+				//var gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
 				//FungiApp.scene.push(gModel);
 
-				Fungi.Res.Materials["MatDomShader"].useCulling = false; //Hack, just to see it. Should Culling be a Mesh setting instead of material?
+				var sphere = Fungi.Primatives.PolarSphere(5,5,1);//5,6,1
+				var model = new Fungi.Renderable(sphere,"MatLowPoly");//MatLowPoly MatDomShader
+				FungiApp.scene.push(model);
+				//console.log(test);
+				//var test = new FungiExt.DynamicMesh(10,10,"MatLowPoly");
+				//test.drawMode = Fungi.gl.TRIANGLE_STRIP; //POINTS;
+				
+				/*
+				var ary = [];
+				var col = 5,
+					row = 6;
+				halfCircle(col,1,ary); console.log(ary.length/3);
+				FungiExt.Mesh.lathe(ary,row,"y",test.verts);
+				FungiExt.Mesh.triangleStrip(row,ary.length/3,test.index,true);
+				*/
 
-				gSplineMesh = new SplineMesh(gSpline,10);
-				gSplineMesh.setMaterial("MatLowPoly");//  MatDomShader
-				gSplineMesh.baseVerts.push( //MUST BE IN CLOCK WISE ORDER
-					-0.5,0.2,0.0,
-					0.5,0.2,0.0,
-					0.5,-0.2,0.0,
-					-0.5,-0.2,0.0
-				);
-				gSplineMesh.processSpline();
-				spEditor.splineMesh = gSplineMesh;
-
-				FungiApp.scene.push(gSplineMesh);
-				FungiApp.scene.push(spEditor);
-
-				gPostQuad = new Fungi.Renderable(Fungi.Primatives.Quad2U(),"MatPostShader");
+				//test.verts.push(0,1.0,0);
+				//Fungi.Ext.Mesh.triangleStrip(rLen,cLen,indAry,isLoop);
+				//test.update();
+				//FungiApp.scene.push(test);
 
 				//.......................................................
 				//Start Render Loop
 				FungiApp.renderLoop.start();
-				//onRender(0.1);
 			});
 
-			var i = 0,inc = 0.2;
 			function onRender(dt){
-				/*
-				var pos = [0,0,0], dir = [0,0,0];
-								
-				i += inc * dt;
-				gSpline.getPosition(i,pos);
-				gModel.position.copy(pos);
-
-				gSpline.getDirection(i,dir);
-				Fungi.Maths.Quaternion.lookRotation(dir, [0,1,0], gModel.rotation); 
-
-				if(i >= 1){ inc *= -1; i = 1; }
-				else if(i <= 0){ inc *= -1; i = 0; }
-				*/
-
 				FungiApp.update();
 				Fungi.Render(FungiApp.scene);
 			}
+/*
+			function halfCircle(div,radius,rtn){
+				var origin = Math.PI * 0.5, //90Degrees
+					inc = Math.PI / (div-1),
+					rad = 0,
+					x = 0,
+					y = 0;
 
-			Fungi.Render.onPreRender = function(f){
-				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,gFbo.id);
-				Fungi.gl.clear(Fungi.gl.COLOR_BUFFER_BIT | Fungi.gl.DEPTH_BUFFER_BIT); 
+				for(var i=0; i < div; i++){
+					rad = origin - (inc*i);
+					x = radius * Math.cos(rad);
+					y = radius * Math.sin(rad);
+					//console.log(rad,x,y);
+					rtn.push(x,y,0);
+				}
 			}
 
-			Fungi.Render.onPostRender = function(f){
-				Fungi.gl.bindFramebuffer(Fungi.gl.FRAMEBUFFER,null);
-				f.prepareNext(gPostQuad).draw();
+
+			function lathe(bAry,div,axis,rtn){
+				var len = bAry.length,			//Length of Vertices array
+					origin = Math.PI/-2,		//Starting Rotation Angle
+					inc = (Math.PI*2) / div,	//360 divided in increments
+					rad = 0,					//Rotation Angle in radians
+					sin,cos,					//Trig values of the radian angle
+					x,z,y,						//Pre Rotation Values
+					rx,ry,rz,					//New Rotation Values
+					v;							//Index of the vert array
+
+				//Loop through how many divisions we're making
+				for(var i=0; i < div; i++){
+					rad = origin + (inc*i);
+					cos = Math.cos(rad);
+					sin = Math.sin(rad);
+
+					//Now rotate all the verts in the path to the new angle
+					//then add it to our final vert array.
+					for(v = 0; v < len; v+=3){
+						x = bAry[v];
+						y = bAry[v+1];
+						z = bAry[v+2];
+
+						switch(axis){  https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm#Y-Axis%20Rotation
+							case "y": ry = y; rx = z*cos - x*sin; rz = z*sin + x*cos; break;
+							case "x": rx = x; ry = y*cos - z*sin; rz = y*sin + z*cos; break;
+							case "z": rz = z; rx = x*cos - y*sin; ry = x*sin + y*cos; break;
+						}
+						rtn.push(rx,ry,rz);
+					}
+				}
 			}
+			*/
 		</script>
 	</head>
 <body>
@@ -133,8 +149,7 @@
 		out lowp vec3 color;
 
 		void main(void){
-			gl_PointSize = 8.0f;
-			//color = vec3(0.0,0.0,0.0);
+			gl_PointSize = 12.0;
 			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
 			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
 			else color = vec3(0.6,0.6,0.6);
@@ -154,35 +169,10 @@
 		}
 	</script>
 
-
-	<script id="vertex_post" type="x-shader/x-vertex">#version 300 es
-		layout(location=0) in vec4 a_position;
-		layout(location=2) in vec2 a_uv;
-
-		out highp vec2 vUV;
-
-		void main(void){
-			vUV = vec2(a_uv.s,1.0-a_uv.t);
-			gl_Position =  vec4(a_position.xyz, 1.0);
-		}
-	</script>
-	<script id="fragment_post" type="x-shader/x-fragment">#version 300 es
-		precision mediump float;
-
-		in highp vec2 vUV;
-
-        uniform sampler2D tex0;
-        uniform sampler2D tex1;
-
-		out vec4 outColor;
-
-		void main(void){
-			outColor = texture(tex0,vUV);
-		}
-	</script>
-
 	<script id="vertex_lowpoly" type="x-shader/x-vertex">#version 300 es
 		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
 
 		uniform UBOTransform{
 			mat4 matProjection;
@@ -191,52 +181,75 @@
 		};
 
 		uniform mat4 uModalMatrix;
-		uniform mat3 uNormalMatrix;
+		//uniform mat3 uNormalMatrix;
 
-		out highp vec3 vWorldPos;
-		out vec2 vTest;
+		out vec3 vWorldPos;
+		out vec3 vCameraPos;
+		out vec2 vLowPoly;
 
-		const float col = 4.0;
-
-		//int mod(float a, float b){ return a - (b * floor(a/b)); }
+		const float uColumnCnt = 5.0;
 
 		void main(void){
-			vec4 worldPos = (uModalMatrix *  vec4(a_position.xyz, 1.0));
-			vWorldPos = worldPos.xyz;
-
 			//Identify Triangles in Quad, If y == 1, Then its the top triangle
 			//01 01
 			//00 01
-			float r = floor(float(gl_VertexID) / col);
-			if(mod(r,2.0) == 0.0) vTest = vec2(0.0,1.0);
+			float verID	= float(gl_VertexID);
+			float r		= floor(verID / uColumnCnt);
+			if(mod(r,2.0) == 0.0) vLowPoly = vec2(0.0,1.0);
 			else{
 				// i % col == colIndex -> colIndex % 2 = 0-1
-				if( mod(mod(float(gl_VertexID),col),2.0) == 0.0) vTest = vec2(0.0,0.0);
-				else vTest = vec2(0.0,1.0);
+				if( mod( mod(verID,uColumnCnt) ,2.0) == 0.0) vLowPoly = vec2(0.0,0.0);
+				//if( mod( verID ,2.0) == 0.0) vLowPoly = vec2(0.0,0.0);
+				else vLowPoly = vec2(0.0,1.0);
 			}
 
-			gl_Position =  matProjection * matCameraView * worldPos;
+			//Set Out values
+			vec4 wpos 	= uModalMatrix * vec4(a_position.xyz,1.0);
+			vWorldPos	= wpos.xyz;
+			vCameraPos	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz; //Need to pass Camera pos turned to WorldSpace avoid inverse matrix
+			gl_Position	= matProjection * matCameraView * wpos;
 		}
 	</script>
+
 	<script id="fragment_lowpoly" type="x-shader/x-fragment">#version 300 es
 		precision mediump float;
-		in highp vec3 vWorldPos;
-		in vec2 vTest;
+	
+		in vec3 vWorldPos;
+		in vec3 vCameraPos;
+		in vec2 vLowPoly;
+
+		const vec3 uLightPos			= vec3(4.0,2.0,1.0);
+		const vec3 uBaseColor			= vec3(1.0,0.5,0.5);
+		const vec3 uLightColor			= vec3(1.0,1.0,1.0);
+
+		const float uAmbientStrength	= 0.5;
+		const float uDiffuseStrength	= 0.5;
+		const float uSpecularStrength	= 0.2f;	//0.15
+		const float uSpecularShininess	= 1.0f; //256.0
 
 		out vec4 outColor;
 
-		const vec3 lightPos = vec3(4.0,3.0,2.0);
-		const vec3 lightColor = vec3(0.7,0.7,0.7);
-		const vec3 baseColor = vec3(1.0,0.5,0.5);
-
 		void main(void){
-			float strength = 1.0;
-			if(vTest.y == 1.0) strength = 0.6;
+			float LowPolyFactor = (vLowPoly.y >= 0.9999)? 1.1 : 1.0;	//Determine LowPoly Strength
+			vec3 pixelNorm = normalize( cross( dFdx(vWorldPos), dFdy(vWorldPos) ) ); //Calc the Normal of the Rasterizing Pixel
 
-			vec3 norm = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));  //Calc new Normals based on World Pos
-			float angle = max(dot(norm, normalize(lightPos-vWorldPos)), 0.0);	//Calc angle of line
-			outColor = vec4(baseColor + (lightColor *strength) * angle,1.0);
+			//Ambient Lighting
+			vec3 cAmbient		= uLightColor * uAmbientStrength;
+			
+			//Diffuse Lighting
+			vec3 lightVector	= normalize(uLightPos - vWorldPos); //light direction based on pixel world position
+			float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0); //Angle between Light Direction and Pixel Direction (1==90d)
+			vec3 cDiffuse		= uLightColor * diffuseAngle * uDiffuseStrength;
+
+			//Specular Lighting
+			vec3 camVector		= normalize(vCameraPos - vWorldPos); //Camera Direction based on pixel world position
+			vec3 reflectVector	= reflect(-lightVector, pixelNorm); //Reflective direction of line from pixel direction as pivot.
+			float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+			vec3 cSpecular		= uLightColor * specular * uSpecularStrength;
+
+			//Final Color
+			outColor = vec4( uBaseColor * ((cAmbient + cDiffuse + cSpecular) * LowPolyFactor), 1.0);
 		}
-	</script>	
+	</script>
 </body>
 </html>

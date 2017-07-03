@@ -112,5 +112,32 @@ Fungi.Primatives = {
 					x1, y1, z0, id);
 
 		for(var i=0; i < 6*4; i+=2) ind.push(ii+i, ii+i+1, ii+(Math.floor(i/4)*4)+((i+2)%4) );
+	},
+
+	PolarSphere:function(verSteps,horSteps,radius){
+		//Build a Half Circle
+		var origin	= Math.PI * 0.5, //90Degrees
+			inc		= Math.PI / (verSteps-1),
+			rad		= 0,
+			x		= 0,
+			y		= 0,
+			pathAry	= [];
+
+		for(var i=0; i < verSteps; i++){
+			rad = origin - (inc*i);
+			x = radius * Math.cos(rad);
+			y = radius * Math.sin(rad);
+			pathAry.push(x,y,0);
+		}
+
+		//var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,pathAry,null,null,null,false);
+
+		//Rotate the half circle in increments to form a sphere.
+		var aryVerts = [], aryIndex = [];
+		FungiExt.Mesh.lathe(pathAry,horSteps,"y",aryVerts);
+		FungiExt.Mesh.triangleStrip(horSteps,pathAry.length/3,aryIndex,true);
+
+		var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,aryVerts,null,null,aryIndex,false);
+		return vao;
 	}
 }; 
