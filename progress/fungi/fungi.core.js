@@ -7,7 +7,8 @@ var Fungi = (function(){
 	var	gl = null,
 		CULLING_STATE = true,			//Global state if the feature is enabled
 		BLENDING_STATE = false,			//Same---
-		DEPTHTEST_STATE = true;
+		DEPTHTEST_STATE = true,
+		SAMPLE_ALPHA_COV_STATE = false;
 
 	/*>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 	<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<*/
@@ -1458,6 +1459,7 @@ var Fungi = (function(){
 			this.useDepthTest = true;
 			this.useModelMatrix = true;
 			this.useNormalMatrix = false;
+			this.useSampleAlphaCoverage = false;
 
 			this.drawMode = gl.TRIANGLES;
 		}
@@ -2139,9 +2141,10 @@ var Fungi = (function(){
 				if(f.material.shader !== f.shader) f.shader = f.material.shader.activate();
 
 				//Turn on/off any gl features
-				if(f.material.useCulling != CULLING_STATE)	gl[ ( (CULLING_STATE = (!CULLING_STATE))  )?"enable":"disable" ](gl.CULL_FACE);
+				if(f.material.useCulling != CULLING_STATE)		gl[ ( (CULLING_STATE = (!CULLING_STATE))  )?"enable":"disable" ](gl.CULL_FACE);
 				if(f.material.useBlending != BLENDING_STATE)	gl[ ( (BLENDING_STATE = (!BLENDING_STATE)) )?"enable":"disable" ](gl.BLEND);
 				if(f.material.useDepthTest != DEPTHTEST_STATE)	gl[ ( (DEPTHTEST_STATE = (!DEPTHTEST_STATE)) )?"enable":"disable" ](gl.DEPTH_TEST);
+				if(f.material.useSampleAlphaCoverage != SAMPLE_ALPHA_COV_STATE) gl[ ( (SAMPLE_ALPHA_COV_STATE = (!SAMPLE_ALPHA_COV_STATE)) )?"enable":"disable" ](gl.SAMPLE_ALPHA_TO_COVERAGE);
 			}
 
 			//Prepare Buffers and Uniforms.

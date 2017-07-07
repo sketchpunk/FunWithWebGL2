@@ -29,7 +29,6 @@ FungiExt.Mesh = class{
 		}
 	}
 
-
 	static lathe(pathAry,steps,rotAxis,outVert){
 		var len = pathAry.length,		//Length of Vertices array
 			origin = Math.PI/-2,		//Starting Rotation Angle
@@ -62,7 +61,6 @@ FungiExt.Mesh = class{
 			}
 		}
 	}
-
 
 	static triangleStrip2(rLen,cLen,indAry,isLoop){ //isLoop ties the left to the right
 		var iLen	= (rLen-1) * cLen,	//How many loops to process vertices

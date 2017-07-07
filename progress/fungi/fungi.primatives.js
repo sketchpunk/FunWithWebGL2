@@ -114,7 +114,9 @@ Fungi.Primatives = {
 		for(var i=0; i < 6*4; i+=2) ind.push(ii+i, ii+i+1, ii+(Math.floor(i/4)*4)+((i+2)%4) );
 	},
 
-	PolarSphere:function(verSteps,horSteps,radius){
+	PolarSphere:function(verSteps,horSteps,radius,aryVerts,aryIndex){
+		var isGeoOnly = (aryVerts !== undefined && aryIndex !== undefined);
+
 		//Build a Half Circle
 		var origin	= Math.PI * 0.5, //90Degrees
 			inc		= Math.PI / (verSteps-1),
@@ -130,15 +132,16 @@ Fungi.Primatives = {
 			pathAry.push(x,y,0);
 		}
 
-		//var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,pathAry,null,null,null,false);
-
 		//Rotate the half circle in increments to form a sphere.
-		var aryVerts = [], aryIndex = [];
+		aryVerts = aryVerts || [];
+		aryIndex = aryIndex || [];
+		//var aryVerts = [], aryIndex = [];
 		FungiExt.Mesh.lathe(pathAry,horSteps,"y",aryVerts);
 		FungiExt.Mesh.triangleStrip(horSteps,pathAry.length/3,aryIndex,true);
 
-		//var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,aryVerts,null,null,null,false);
-		var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,aryVerts,null,null,aryIndex,false);
-		return vao;
+		if(!isGeoOnly){
+			var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,aryVerts,null,null,aryIndex,false);
+			return vao;
+		}
 	}
 }; 
