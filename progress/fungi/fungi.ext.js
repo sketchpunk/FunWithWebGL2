@@ -1,7 +1,7 @@
 FungiExt = {};
 
 FungiExt.Mesh = class{
-	static triangleStrip(rLen,cLen,indAry,isLoop){ //isLoop ties the left to the right
+	static triangleStrip(rLen,cLen,indAry,isLoop,doClose){ //isLoop ties the left to the right, doClose is for paths that are closed shapes like a square
 		var iLen = (rLen-1) * cLen,		//How many indexes do we need
 			iEnd = (cLen*(rLen-1))-1,	//What the final index for triangle strip
 			iCol = cLen - 1,			//Index of Last col
@@ -16,11 +16,15 @@ FungiExt.Mesh = class{
 			//Create degenerate triangles, The last then the first index of the current bottom row.
 			if(c == iCol){
 				if(i == iEnd && isLoop == true){
-					indAry.push(posB+cLen-1,0);
+					if(doClose == true) indAry.push(posA,posB);
+					indAry.push(posB+cLen-1,posB);
 					iLen += cLen; //Make loop go overtime for one more row that connects the final row to the first.
 					posA += cLen;
 					posB = 0;
+				}else if(i >= iEnd && doClose == true){
+					indAry.push(posA,posB);
 				}else if(i < iEnd){ //if not the end, then skip to next row
+					if(doClose == true) indAry.push(posA,posB);
 					indAry.push(posB+cLen-1, posB);
 					posA += cLen;
 					posB += cLen;
@@ -62,34 +66,46 @@ FungiExt.Mesh = class{
 		}
 	}
 
-	static triangleStrip2(rLen,cLen,indAry,isLoop){ //isLoop ties the left to the right
-		var iLen	= (rLen-1) * cLen,	//How many loops to process vertices
-			lastCol	= cLen - 1,			//Index of Last col
-			lastRow = rLen - 2,			//Index of last row that can be processed.
-			total	= (rLen-1)*cLen*2 + (lastRow * 2);	//Total Index Length
+	static vertexOffset(ary,aryOffset){
+		var oLen = aryOffset.length;
+		for(var i=0; i < ary.length; i++) ary[i] += aryOffset[i%oLen];
+	}
 
-		var r,c,posA,posB;
-		for(var i=0; i < iLen; i++){
-			r = Math.floor(i / cLen);	//Current Row
-			c = i % cLen;				//Current Column
-			posA = r * cLen + c;		//Top Row Pos
-			posB = posA + cLen;			//Bottom Row Pos //(r+1) * cLen + c;
+	static triangulateTriStrip(aVert,aIndex,out){ //Used mostly to wireframe a mesh that is setup in a traingle strip pattern.
+		//console.log(aIndex);
+		var j,bi,qi,skip,
+			ind = [0,0,0,0];
+		for(var i=0; i < aIndex.length-2; i+=2){
+			if(aIndex[i+1] == aIndex[i+2]) continue; //Skip degenerate triangles
+			
+			//console.log("xxxx",aIndex[i],aIndex[i+1],aIndex[i+2],aIndex[i+3]);
 
-			indAry.push(posA,posB);
+			//Tri-Strip has a upside down N like shape, swop 2 & 3 to make it a square shape
+			ind[0] = aIndex[i];
+			ind[1] = aIndex[i+1];
+			ind[3] = aIndex[i+2];
+			ind[2] = aIndex[i+3];
+			skip = false;			//Reset skip var
+			bi = 0;					//Reset barycentric index
 
-			//Create degenerate triangles, The last then the first index of the current bottom row.
-			if(c == lastCol && r < lastRow){
-				if(isLoop){
-					posA = r*cLen;
-					posB = posA + cLen;
-					indAry.push(posA,posB,posB,posB);
-					console.log("degenLoop", posA,posB,posB,posB);
-				}else indAry.push(posB, posB-cLen+1);
+			//loop quat pattern 0,1,2 - 2,3,0
+			for(j=0; j <= 4; j++){		//Loop quad path
+				if(j == 3 && !skip){	//Begin Second Triangle
+					skip = true;
+					bi = 0;
+					j--;
+				}
+
+				qi = (j!=4)?j:0;		//What quad index are we on.
+				p = ind[qi]*3;			//Get starting index of float vertice.
+
+				//console.log(qi,p);
+				//console.log(aVert[p],aVert[p+1],aVert[p+2]);
+				out.push(aVert[p],aVert[p+1],aVert[p+2],bi);
+				//var p = (i + j) * 3
+				bi++;
 			}
-		}
-
-		if(isLoop){
-			indAry.push(r*cLen, r*cLen+cLen);	
+			//console.log(aIndex[i],aIndex[i+1],aIndex[i+3],aIndex[i+2]);
 		}
 	}
 }
@@ -98,38 +114,66 @@ FungiExt.DynamicMesh = class extends Fungi.Renderable{
 	constructor(tVert,tIndex,matName){
 		super({},matName);
 
-		this.verts			= [];
-		this.vertSize		= Float32Array.BYTES_PER_ELEMENT * 3 * tVert; //3Floats per vert
-		this.vertOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
-		this.index 			= [];
-		this.indexSize 		= Uint16Array.BYTES_PER_ELEMENT * tIndex;
-		this.indexOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
+		this.verts 	= GLBuffer.float(null,3,tVert);
+
+		//this.verts			= [];
+		//this.vertSize		= Float32Array.BYTES_PER_ELEMENT * 3 * tVert; //3Floats per vert
+		//this.vertOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
+
+		//this.index 			= [];
+		//this.indexSize 		= Uint16Array.BYTES_PER_ELEMENT * tIndex;
+		//this.indexOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
+		
 		this.drawMode		= Fungi.gl.LINE_STRIP;
 		this.visible		= false;
 
 		//Create VAO with a buffer a predefined size buffer to dynamicly dump data in.
 		Fungi.Shaders.VAO.create(this.vao)
-			.emptyFloatArrayBuffer(this.vao,"vert",this.vertSize,Fungi.ATTR_POSITION_LOC,3,0,0,false)
-		if(tIndex > 0) Fungi.Shaders.VAO.emptyIndexBuffer(this.vao,"index",this.indexSize,false);
+			.emptyFloatArrayBuffer(this.vao,"vert",this.verts.getBufferSize(),Fungi.ATTR_POSITION_LOC,3,0,0,false)
+		
+		if(tIndex > 0){
+			this.index 	= GLBuffer.element(null,1,tIndex);
+			Fungi.Shaders.VAO.emptyIndexBuffer(this.vao,"index",this.index.getBufferSize(),false);
+			this.index.setRef(this.vao.buffers["index"].buf);
+		}
+		
 		Fungi.Shaders.VAO.finalize(this.vao,"FungiDynamicMesh");
+		this.verts.setRef(this.vao.buffers["vert"].buf);
 	}
 
 	draw(){
 		if(this.vao.count > 0){
 			Fungi.gl.bindVertexArray(this.vao.id);
-			if(this.index.length > 0)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
-			else						Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+			if( this.index != undefined && this.index.data.length > 0)
+				Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+			else
+				Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
 		}
 	}
 
 	clear(){
-		this.verts.length = 0;
-		this.index.length = 0;
+		//this.verts.length = 0;
+		//this.index.length = 0;
 		this.vao.count = 0;
 		this.visible = false;
 	}
 
 	update(){
+		if(this.verts.data.length == 0){ this.visible = false; return this; }
+		this.visible = true;
+
+		this.verts.update();
+
+		if( this.index != undefined && this.index.data.length > 0){
+			this.index.update();
+			this.vao.count = this.index.getComponentCnt();
+			console.log("index update");
+		}else this.vao.count = this.verts.getComponentCnt();
+
+		return this;
+	}
+
+	updateOLD(){
 		//If there is no verts, set this to invisible to disable rendering.
 		if(this.verts.length == 0){ this.visible = false; return this; }
 		this.visible = true;
@@ -137,6 +181,7 @@ FungiExt.DynamicMesh = class extends Fungi.Renderable{
 		//......................................
 		//Push verts to GPU.
 		//TODO : Should probably make a buffer object to handle creation, resizing, clearing and updating.
+		
 		var vsize = this.verts.length * Float32Array.BYTES_PER_ELEMENT;
 		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["vert"].buf);
 	
@@ -148,7 +193,8 @@ FungiExt.DynamicMesh = class extends Fungi.Renderable{
 			Fungi.gl.bufferData(Fungi.gl.ARRAY_BUFFER, new Float32Array(this.verts), Fungi.gl.STATIC_DRAW);
 		}
 		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
-		this.vertOnGpu = this.verts.length;		
+		this.vertOnGpu = this.verts.length;	
+		
 
 		//......................................
 		//Push index to gpu
@@ -172,9 +218,52 @@ FungiExt.DynamicMesh = class extends Fungi.Renderable{
 	}
 }
 
+function GLBuffer(){
+	var mGLArray = null, //UInt16Array;
+		mBufferRef = null,
+		mBufferSize = 0, //mGLArray.BYTES_PER_ELEMENT * componentLength * startSize,
+		mBufferSizeUsed = 0,
+		mBufferType = Fungi.gl.ARRAY_BUFFER,
+		mComponentLength = 3,
+		mAry = [];
 
+	return {
+		data:mAry,
 
+		getBufferSize:function(){ return mBufferSize; },
+		getComponentCnt:function(){ return mAry.length / mComponentLength; },	//for example, how many vertices in the array
 
+		setRef:function(ref){ mBufferRef = ref; return this; },
+		setup:function(bufRef,bufType,aryType,comLen,startSize){
+			mGLArray = aryType;
+			mComponentLength = comLen;
+			mBufferRef = bufRef;
+			mBufferType = bufType;
+			mBufferSize = mGLArray.BYTES_PER_ELEMENT * mComponentLength * startSize;
+
+			return this;
+		},
+
+		update:function(){
+			var pushSize = mAry.length * mGLArray.BYTES_PER_ELEMENT;
+			Fungi.gl.bindBuffer(mBufferType,mBufferRef);
+
+			//If data being push fits the existing buffer, send it up
+			if(pushSize <= mBufferSize) Fungi.gl.bufferSubData(mBufferType, 0, new mGLArray(mAry), 0, null);
+			else{ //if not, we need to wipe out the data and resize the buffer with the new set of data.
+				mBufferSize = pushSize;
+				if(mBufferSizeUsed > 0) Fungi.gl.bufferData(mBufferType, null, Fungi.gl.DYNAMIC_DRAW); //Clean up previus data
+				Fungi.gl.bufferData(mBufferType, new mGLArray(mAry), Fungi.gl.DYNAMIC_DRAW);
+			}
+
+			Fungi.gl.bindBuffer(mBufferType,null); //unbind buffer
+			mBufferSizeUsed = mAry.length;	
+		}
+	};
+}
+
+GLBuffer.float = function(bufRef,comLen,startSize){ return GLBuffer().setup(bufRef,Fungi.gl.ARRAY_BUFFER,Float32Array,comLen,startSize); }
+GLBuffer.element = function(bufRef,startSize){ return GLBuffer().setup(bufRef,Fungi.gl.ELEMENT_ARRAY_BUFFER,Uint16Array,1,startSize); }
 
 
 
