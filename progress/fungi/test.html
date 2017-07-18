@@ -23,7 +23,7 @@
 		http://mathworld.wolfram.com/BarycentricCoordinates.html
 		-->
 		<script>
-			var gModel;
+			var gModel,gModel2;
 
 			window.addEventListener("load",function(){
 				FungiApp.startup();
@@ -57,56 +57,48 @@
 
 				//.......................................................
 				//Prepare our Renderables
-				var model;
-				//var sphere = Fungi.Primatives.PolarSphere(10,10,2);
-				//model = new Fungi.Renderable(sphere,"MatLowPoly");//MatLowPoly MatDomShader
-				//model.position.y = 2;
-				//FungiApp.scene.push(model);
+				//var model;
+				var sphere = Fungi.Primatives.PolarSphere(10,10,2);
+				gModel = new Fungi.Renderable(sphere,"MatLowPoly");//MatLowPoly MatDomShader
+				//gModel.position.y = 2;
+				gModel.rotation.rz(90 * Math.PI/180);
+				gModel.scale.set(0.5,0.5,0.5);
+				FungiApp.scene.push(gModel);
 
-
-				model = new FungiExt.DynamicMesh(1,1,"MatDomShader");
-				model.drawMode = Fungi.gl.POINTS; // Fungi.gl.TRIANGLE_STRIP; //Fungi.gl.POINTS
-
-				var path = [], inc = 3;
-				road(model.verts.data);path
-				//FungiExt.Mesh.vertexOffset(model.verts.data,[0,2,0]);
-				//FungiExt.Mesh.lathe(path,inc,"x",model.verts.data);
-				//FungiExt.Mesh.triangleStrip(inc,path.length/3,model.index.data,true,true);
-
-				/* Original Example
-				model = new FungiExt.DynamicMesh(1,1,"MatLowPoly");
-				model.drawMode = Fungi.gl.TRIANGLE_STRIP; // Fungi.gl.TRIANGLE_STRIP; //Fungi.gl.POINTS
-
-				var path = [], inc = 3;
-				road(path);
-				FungiExt.Mesh.vertexOffset(path,[0,2,0]);
-				FungiExt.Mesh.lathe(path,inc,"x",model.verts.data);
-				FungiExt.Mesh.triangleStrip(inc,path.length/3,model.index.data,true,true);
-				*/
-
-				model.update();
-				
-				FungiApp.scene.push(model);
+				gModel2 = roadModel();
+				//model.rotation.z = 90;
+				//model.position.y = 1;
+				//model.rotation.rz(90 * Math.PI/180);
+				//FungiApp.scene.push(model2);
+				gModel2.parent = gModel;
 
 				//.......................................................
 				//Start Render Loop
-				
 				FungiApp.renderLoop.start();
 			});
 
 			function onRender(dt){
 				FungiApp.update();
+				gModel.rotation.rz(45 * dt * Math.PI/180);
+				//gModel2.rotation.rz(60 * dt * Math.PI/180);
+
 				Fungi.Render(FungiApp.scene);
 			}
-/*
-      x --- x      x --- x
-      |     |      |     |
-      |     x ---- x     |
-      |                  |
-      |                  |
-      x ---------------- x
-	START               END
-*/
+
+			function roadModel(){
+				var model = new FungiExt.DynamicMesh(1,1,"MatLowPoly");
+				model.drawMode = Fungi.gl.TRIANGLE_STRIP;
+
+				var path = [], inc = 6;
+				road(path);
+				FungiExt.Mesh.vertexOffset(path,[0,2.3,0]);
+				FungiExt.Mesh.lathe(path,inc,"x",model.verts.data);
+				FungiExt.Mesh.triangleStrip(inc,path.length/3,model.index.data,true,true);
+				model.update();
+
+				return model;
+			}
+
 			function road(ary){
 				var outWidth = 2,
 					outHeight = 0.4,
@@ -123,7 +115,7 @@
 				ary.push(-iwh,ohh,0.0); //left in upper
 				ary.push(-iwh,ohh-ihh,0.0); //Left in lower
 
-				//for(var i=ary.length-3; i >= 0; i-=3) ary.push(-ary[i], ary[i+1], ary[i+2]);
+				for(var i=ary.length-3; i >= 0; i-=3) ary.push(-ary[i], ary[i+1], ary[i+2]);
 			}
 		</script>
 	</head>

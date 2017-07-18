@@ -196,10 +196,13 @@ var Fungi = (function(){
 			this.scale = new Vec3(1);
 			this.rotation = new Quaternion();
 			this.localMatrix = new Matrix4();
+			this.worldMatrix = new Matrix4();
 
 			//Parent / Child Relations
 			this.children = [];
 			this._parent = null;
+
+			this.visible = true;
 		}
 
 		//----------------------------------------------
@@ -229,12 +232,8 @@ var Fungi = (function(){
 
 			get parent(){ this._parent; }
 			set parent(p){
-				if(this._parent != null){
-					//this._parent.removeChild(this);
-				}
-
-				this._parent = p;
-				//this._parent.addChild(this);
+				if(this._parent != null){ this._parent.removeChild(this); }
+				if(p != null) p.addChild(this); //addChild also sets parent
 			}
 
 			//Chaining functions, useful for initializing
@@ -244,7 +243,7 @@ var Fungi = (function(){
 
 		//----------------------------------------------
 		//region Methods
-			updateMatrix(){
+			updateMatrixOLD(){
 				//Only Update the Matrix if its needed.
 				if(!this.position.isModified && !this.scale.isModified && !this.rotation.isModified) return this.localMatrix;
 
@@ -258,9 +257,46 @@ var Fungi = (function(){
 				return this.localMatrix;
 			}
 
-			addChild(c){ c.parent = this; this.children.push(c); return this; }
+			updateMatrix(forceWorldUpdate){
+				var isDirty = (this.position.isModified || this.scale.isModified || this.rotation.isModified);
 
-			removeChild(c){ return this; }
+				if(!isDirty && !forceWorldUpdate) return false;
+				else if(isDirty){
+					//Update our local Matrix
+					Matrix4.fromQuaternionTranslationScale(this.localMatrix, this.rotation, this.position, this.scale);
+
+					//Set the modified indicator to false on all the transforms.
+					this.position.isModified	= false;
+					this.scale.isModified		= false;
+					this.rotation.isModified	= false;
+				}
+
+				//Figure out the world matrix.
+				if(this._parent != null){
+					Matrix4.mult(this.worldMatrix, this._parent.worldMatrix, this.localMatrix);
+				}else this.worldMatrix.copy(this.localMatrix); //if not parent, localMatrix is worldMatrix
+
+				return true;
+			}
+
+
+			addChild(c){
+				if(this.children.indexOf(c) == -1){ //check if child already exists
+					c._parent = this;
+					this.children.push(c);
+				}
+				return this;
+			}
+
+			removeChild(c){ 
+				var i = this.children.indexOf(c);
+				if(i != -1){
+					this.children[i]._parent = null;
+					this.children.splice(i,1);
+				}
+
+				return this;
+			}
 		//endregion
 	}
 
@@ -268,7 +304,7 @@ var Fungi = (function(){
 		constructor(vao,matName){
 			super();
 			this.vao = vao;
-			this.visible = true;
+			
 			this.material = (matName != null && matName !== undefined)? Fungi.Res.Materials[matName] : null;
 		}
 
@@ -652,7 +688,7 @@ var Fungi = (function(){
 				rad *= 0.5; 
 
 				var ax = a[0], ay = a[1], az = a[2], aw = a[3],
-				by = Math.sin(rad), bw = Math.cos(rad);
+					bx = Math.sin(rad), bw = Math.cos(rad);
 
 				out[0] = ax * bw - az * by;
 				out[1] = ay * bw + aw * by;
@@ -736,6 +772,12 @@ var Fungi = (function(){
 			//reset data back to identity.
 			reset(){ 
 				for(var i=0; i <= this.length; i++) this[i] = (i % 5 == 0)? 1 : 0; //only positions 0,5,10,15 need to be 1 else 0
+				return this;
+			}
+ 
+			//copy another matrix's data to this one.
+			copy(mat){
+				for(var i=0; i < 16; i++) this[i] = mat[i];
 				return this;
 			}
 		//endregion
@@ -2110,6 +2152,8 @@ var Fungi = (function(){
 		var f = function(ary){
 			if(f.onPreRender != null) f.onPreRender(f);
 
+			f.processList(ary,false);
+			/*
 			for(var i=0; i < ary.length; i++){
 				if(ary[i].visible == false) continue;
 
@@ -2117,6 +2161,7 @@ var Fungi = (function(){
 
 				if(f.onItemRendered != null) f.onItemRendered(ary[i]);
 			}
+			*/
 
 			if(f.onPostRender != null) f.onPostRender(f);
 
@@ -2130,6 +2175,24 @@ var Fungi = (function(){
 		f.onPostRender		= null;	//After Rendering is complete
 		f.material			= null;
 		f.shader			= null;
+
+		//process an array of transforms in a recursive fashion. Also forces world matrix update on items if needed
+		f.processList = function(ary,forceWorldUpdate){
+			var isUpdated;
+			for(var i=0; i < ary.length; i++){
+				if(ary[i].visible == false) continue;
+				isUpdated = ary[i].updateMatrix(forceWorldUpdate);
+				
+				//if this transform is a renderable, start drawing
+				if(ary[i].draw != undefined){
+					f.prepareNext(ary[i]).draw();
+					if(f.onItemRendered != null) f.onItemRendered(ary[i]);
+				}
+
+				//If transform has any children, then process that list next.
+				if(ary[i].children.length > 0) f.processList(ary[i].children, isUpdated || forceWorldUpdate);
+			}
+		}
 
 		//Prepares the shader for the next item for rendering by dealing with the shader and gl features
 		f.prepareNext = function(itm){
@@ -2149,7 +2212,8 @@ var Fungi = (function(){
 
 			//Prepare Buffers and Uniforms.
 			//gl.bindVertexArray(itm.vao.id);
-			if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.updateMatrix());
+			//if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.updateMatrix());
+			if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.worldMatrix);
 
 			return itm;
 		}
