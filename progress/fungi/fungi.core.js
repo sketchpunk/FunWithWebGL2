@@ -482,6 +482,19 @@ var Fungi = (function(){
 			    return out;
 			}
 
+			static scalar(v,s,out){
+				out[0] = v[0] * s;
+				out[1] = v[1] * s;
+				out[2] = v[2] * s;
+				return out;
+			}
+			static scalarRev(v,s,out){
+				out[0] = s * v[0];
+				out[1] = s * v[1];
+				out[2] = s * v[2];
+				return out;
+			}
+
 			static dot(a,b){ return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
 			static cross(a,b,out){
@@ -517,6 +530,28 @@ var Fungi = (function(){
 			ry(rad){ Quaternion.rotateY(this,this,rad); this.isModified = true; return this; }
 			rz(rad){ Quaternion.rotateZ(this,this,rad); this.isModified = true; return this; }
 			
+			setAxisAngle(axis, angle){ //AXIS MUST BE NORMALIZED.
+				var halfAngle = angle * .5;
+				var s = Math.sin(halfAngle);
+
+				this[0] = axis[0] * s;
+				this[1] = axis[1] * s;
+				this[2] = axis[2] * s;
+				this[3] = Math.cos(halfAngle);
+
+				this.isModified = true;
+				return this;
+			}
+
+			copy(q){
+				this[0] = q[0];
+				this[1] = q[1];
+				this[2] = q[2];
+				this[3] = q[3];
+				this.isModified = true;
+				return this;
+			}
+
 			//ex(deg){ Quaternion.rotateX(this,this,deg * DEG2RAD); this.isModified = true; return this; }
 			//ey(deg){ Quaternion.rotateY(this,this,deg * DEG2RAD); this.isModified = true; return this; }
 			//ez(deg){ Quaternion.rotateZ(this,this,deg * DEG2RAD); this.isModified = true; return this; }
@@ -559,6 +594,30 @@ var Fungi = (function(){
 				return out;
 			}
 
+			static rotateVec3(qa,va,out){
+				out = out || va;
+
+				//https://gamedev.stackexchange.com/questions/28395/rotating-vector3-by-a-quaternion
+				//vprime = 2.0f * dot(u, v) * u
+				//			+ (s*s - dot(u, u)) * v
+				//			+ 2.0f * s * cross(u, v);
+				var q = [qa[0],qa[1],qa[2]],		//Save the vector part of the Quaternion
+					v = [va[0],va[1],va[2]],		//Make a copy of the vector, going to chg its value
+					s = qa[3],						//Save Quaternion Scalar (W)
+					d = Fungi.Maths.Vec3.dot(q,v),	// U DOT V
+					dq = Fungi.Maths.Vec3.dot(q,q),	// U DOT U
+					cqv = Fungi.Maths.Vec3.cross(q,v,[0,0,0]);	// Cross Product for Q,V
+
+				Fungi.Maths.Vec3.scalarRev(q,2.0 * d,q);
+				Fungi.Maths.Vec3.scalarRev(v,s*s - dq,v);
+				Fungi.Maths.Vec3.scalarRev(cqv,2.0 * s,cqv);
+
+				out[0] = q[0] + v[0] + cqv[0];
+				out[1] = q[1] + v[1] + cqv[1];
+				out[2] = q[2] + v[2] + cqv[2];
+				return out;
+			}
+
 			//Ported to JS from C# example at https://pastebin.com/ubATCxJY
 			//Note, if Dir and Up are equal, a roll happends. Need to find a way to fix this.
 			static lookRotation(vDir, vUp, out){
@@ -587,7 +646,7 @@ var Fungi = (function(){
 					y = (m20 - m02) * s;
 					z = (m01 - m10) * s;
 				}else if((m00 >= m11) && (m00 >= m22)){
-					S = Math.sqrt(1.0 + m00 - m11 - m22);
+					s = Math.sqrt(1.0 + m00 - m11 - m22);
 					x = 0.5 * s;// |x| >= 0.5
 					s = 0.5 / s;
 					y = (m01 + m10) * s;
@@ -654,21 +713,6 @@ var Fungi = (function(){
 				return out;
 				*/
 			}
-
-			/*
-			setAxisAngle(axis, angle){
-				var halfAngle = angle * .5;
-				var s = Math.sin(halfAngle);
-
-				this[0] = axis[0] * s;
-				this[1] = axis[1] * s;
-				this[2] = axis[2] * s;
-				this[3] = Math.cos(halfAngle);
-
-				return this;
-			}
-			*/
-
 
 			//https://github.com/toji/gl-matrix/blob/master/src/gl-matrix/quat.js
 			static rotateX(out, a, rad){
@@ -757,6 +801,18 @@ var Fungi = (function(){
 						out[3] = c1 * c2 * c3 + s1 * s2 * s3;
 						break;
 				}
+			}
+
+			static lerp(out,a,b,t){
+				var ax = a[0],
+					ay = a[1],
+					az = a[2],
+					aw = a[3];
+				out[0] = ax + t * (b[0] - ax);
+				out[1] = ay + t * (b[1] - ay);
+				out[2] = az + t * (b[2] - az);
+				out[3] = aw + t * (b[3] - aw);
+				return out;
 			}
 		//endregion
 	}

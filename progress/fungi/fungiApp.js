@@ -12,7 +12,7 @@ FungiApp = {
 		Fungi.Init("FungiCanvas").fClearColor("FFFFFF").fFitScreen(1,1).fClear();
 
 		this.uboTransform	= Fungi.Shaders.UBO.createTransformUBO();
-		this.mainCamera		= new Fungi.CameraOrbit().setPosition(0,0.5,5).setEulerDegrees(-15,45,0);
+		this.mainCamera		= new Fungi.CameraOrbit().setPosition(0,3,10).setEulerDegrees(-15,45,0);
 		this.ctrlCamera		= new Fungi.KBMCtrl().addHandler("camera",new Fungi.KBMCtrl_Viewport(this.mainCamera),true);
 
 		this.renderLoop		= new Fungi.RenderLoop(onRender);

@@ -57,7 +57,7 @@ FungiExt.Mesh = class{
 				z = pathAry[v+2];
 
 				switch(rotAxis){ /* https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm#Y-Axis%20Rotation*/
-					case "y": ry = y; rx = z*cos - x*sin; rz = z*sin + x*cos; break;
+					case "y": ry = y; rx = z*sin + x*cos; rz = z*cos - x*sin; break;
 					case "x": rx = x; ry = y*cos - z*sin; rz = y*sin + z*cos; break;
 					case "z": rz = z; rx = x*cos - y*sin; ry = x*sin + y*cos; break;
 				}
@@ -111,25 +111,16 @@ FungiExt.Mesh = class{
 }
 
 FungiExt.DynamicMesh = class extends Fungi.Renderable{
-	constructor(tVert,tIndex,matName){
+	constructor(tVertComp,tVert,tIndex,matName){
 		super({},matName);
 
-		this.verts 	= GLBuffer.float(null,3,tVert);
-
-		//this.verts			= [];
-		//this.vertSize		= Float32Array.BYTES_PER_ELEMENT * 3 * tVert; //3Floats per vert
-		//this.vertOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
-
-		//this.index 			= [];
-		//this.indexSize 		= Uint16Array.BYTES_PER_ELEMENT * tIndex;
-		//this.indexOnGpu		= 0; //Keep Track of how much data was pushed to the GPU, If none was sent, dont try to delete on resize
-		
-		this.drawMode		= Fungi.gl.LINE_STRIP;
-		this.visible		= false;
+		this.verts		= GLBuffer.float(null,tVertComp,tVert);
+		this.drawMode	= Fungi.gl.LINE_STRIP;
+		this.visible	= false;
 
 		//Create VAO with a buffer a predefined size buffer to dynamicly dump data in.
 		Fungi.Shaders.VAO.create(this.vao)
-			.emptyFloatArrayBuffer(this.vao,"vert",this.verts.getBufferSize(),Fungi.ATTR_POSITION_LOC,3,0,0,false)
+			.emptyFloatArrayBuffer(this.vao,"vert",this.verts.getBufferSize(),Fungi.ATTR_POSITION_LOC,tVertComp,0,0,false)
 		
 		if(tIndex > 0){
 			this.index 	= GLBuffer.element(null,1,tIndex);
@@ -152,8 +143,6 @@ FungiExt.DynamicMesh = class extends Fungi.Renderable{
 	}
 
 	clear(){
-		//this.verts.length = 0;
-		//this.index.length = 0;
 		this.vao.count = 0;
 		this.visible = false;
 	}
@@ -167,52 +156,7 @@ FungiExt.DynamicMesh = class extends Fungi.Renderable{
 		if( this.index != undefined && this.index.data.length > 0){
 			this.index.update();
 			this.vao.count = this.index.getComponentCnt();
-			console.log("index update");
 		}else this.vao.count = this.verts.getComponentCnt();
-
-		return this;
-	}
-
-	updateOLD(){
-		//If there is no verts, set this to invisible to disable rendering.
-		if(this.verts.length == 0){ this.visible = false; return this; }
-		this.visible = true;
-
-		//......................................
-		//Push verts to GPU.
-		//TODO : Should probably make a buffer object to handle creation, resizing, clearing and updating.
-		
-		var vsize = this.verts.length * Float32Array.BYTES_PER_ELEMENT;
-		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["vert"].buf);
-	
-		if(vsize <= this.vertSize){
-			Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(this.verts), 0, null);
-		}else{
-			this.vertSize = vsize;
-			if(this.vertOnGpu > 0) Fungi.gl.bufferData(Fungi.gl.ARRAY_BUFFER, null, Fungi.gl.STATIC_DRAW); //Clean up previus data
-			Fungi.gl.bufferData(Fungi.gl.ARRAY_BUFFER, new Float32Array(this.verts), Fungi.gl.STATIC_DRAW);
-		}
-		Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
-		this.vertOnGpu = this.verts.length;	
-		
-
-		//......................................
-		//Push index to gpu
-		if(this.index.length > 0){
-			var isize = this.index.length * Uint16Array.BYTES_PER_ELEMENT;
-
-			Fungi.gl.bindBuffer(Fungi.gl.ELEMENT_ARRAY_BUFFER, this.vao.buffers["index"].buf);  
-			if(isize <= this.indexSize){
-				Fungi.gl.bufferSubData(Fungi.gl.ELEMENT_ARRAY_BUFFER, 0, new Uint16Array(this.index), 0, null);
-			}else{
-				this.indexSize = isize;
-				if(this.indexOnGpu > 0) Fungi.gl.bufferData(Fungi.gl.ELEMENT_ARRAY_BUFFER, null, Fungi.gl.STATIC_DRAW); //Clean up previus data
-				Fungi.gl.bufferData(Fungi.gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.index), Fungi.gl.STATIC_DRAW);
-			}
-			Fungi.gl.bindBuffer(Fungi.gl.ELEMENT_ARRAY_BUFFER,null);
-			this.vao.count = this.index.length;
-			this.indexOnGpu = this.index.length;
-		}else this.vao.count = this.verts.length / 3;
 
 		return this;
 	}
