@@ -56,7 +56,7 @@ FungiExt.Mesh = class{
 				y = pathAry[v+1];
 				z = pathAry[v+2];
 
-				switch(rotAxis){ /* https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm#Y-Axis%20Rotation*/
+				switch(rotAxis){ // https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm#Y-Axis%20Rotation
 					case "y": ry = y; rx = z*sin + x*cos; rz = z*cos - x*sin; break;
 					case "x": rx = x; ry = y*cos - z*sin; rz = y*sin + z*cos; break;
 					case "z": rz = z; rx = x*cos - y*sin; ry = x*sin + y*cos; break;
@@ -109,6 +109,8 @@ FungiExt.Mesh = class{
 		}
 	}
 }
+
+
 
 FungiExt.DynamicMesh = class extends Fungi.Renderable{
 	constructor(tVertComp,tVert,tIndex,matName){

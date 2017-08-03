@@ -17,6 +17,7 @@
 		<script src="fungiApp.js"></script>
 
 		<script src="Kai.js"></script>
+		<script src="Perlin.js"></script>
 
 		<script>
 			var gModel;
@@ -39,7 +40,7 @@
 					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
 					.prepareUniformBlocks(FungiApp.uboTransform,0);
 				mat = Fungi.Shaders.Material.create("MatLowPoly","LowPoly");
-				mat.useCulling = false;
+				mat.useCulling = true;
 				mat.drawMode = Fungi.gl.TRIANGLE_STRIP; //Fungi.gl.TRIANGLE_STRIP;
 
 
@@ -110,7 +111,11 @@
 				Kai.TriQuad(idxListLast,iData);
 				
 				//Create Branches in the holes created in the trunk
-				for(var i=0; i < branches.length; i++) createBranch(branches[i],vData,iData);
+				var ePoints = [];
+				for(var i=0; i < branches.length; i++) ePoints.push(createBranch(branches[i],vData,iData));
+
+				//Create bushes at the end of the branches
+				for(var i=0; i < ePoints.length; i++) createBush(ePoints[i]);
 			}
 
 			function createBranch(iAry,src,iData){
@@ -145,6 +150,61 @@
 					
 					idxPrev = idxNext;							//Save for next loop to continue extruding
 				}
+
+				//Get the center of the final quad created, this will be the position for bushes.
+				var endPoint = [0,0,0];
+				Kai.QuadCenterPos(idxPrev,src,endPoint)
+				return endPoint;
+			}
+
+			function createBush(iniPos){
+				var verSteps = 10,
+					horSteps = 10,
+					iRadius = Kai.Rnd(1,2);
+					radius = 2;
+
+				var i,x,y,z,
+					halfPI		= Math.PI * 0.5,				//Starting Angle for Azimuth
+					eleInc		= Math.PI / (verSteps-1),		//Vertical Increment
+					aziInc		= Math.PI * 2 / (horSteps),		//Horizontal Increment
+					elevation	= 0,							//North-South
+					azimuth		= 0,							//West-East
+					aryVerts	= [],//0,radius,0,0,-radius,0
+					aryIndex	= [];
+
+				for(var a=0; a < horSteps; a++){
+					azimuth = Math.PI + a * aziInc;				//Inc 360 degrees
+
+					for(i=0; i < verSteps; i++){
+						//radius = Kai.Rnd(1.5,2);
+
+						//Apply noise to any points except the poles
+						if(i > 0 && i < verSteps-1) radius = iRadius + (0.6 * noise.perlin2(a*0.45,i*0.45));
+						else radius = iRadius;
+
+						//Convert the Two angles to Cord Points
+						elevation = halfPI + i * eleInc;
+						x = radius * Math.cos(elevation) * Math.cos(azimuth);	//X
+						y = radius * Math.sin(elevation);						//Z
+						z = radius * Math.cos(elevation) * Math.sin(azimuth);	//Y
+
+						//Scale up
+						x *= 1.5;
+						z *= 1.5;
+
+						aryVerts.push(x,y,z);
+					}
+				}
+
+				FungiExt.Mesh.triangleStrip(horSteps,verSteps,aryIndex,true,false);
+				var vao = Fungi.Shaders.VAO.standardMesh("MorphCircle",3,aryVerts,null,null,aryIndex,false);
+				var model = new Fungi.Renderable(vao,"MatLowPoly");
+				model.position.x = iniPos[0];
+				model.position.y = iniPos[1];
+				model.position.z = iniPos[2];
+				FungiApp.scene.push(model);
+				//var vao = Fungi.Shaders.VAO.standardMesh("MorphCircle",3,aryVerts,null,null,null,false);
+				//return vao;
 			}
 		</script>
 	</head>

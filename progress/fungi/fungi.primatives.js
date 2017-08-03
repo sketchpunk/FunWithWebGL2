@@ -125,7 +125,7 @@ Fungi.Primatives = {
 			y		= 0,
 			pathAry	= [];
 
-		for(var i=0; i < verSteps; i++){
+		for(var i=verSteps-1; i >= 0; i--){
 			rad = origin - (inc*i);
 			x = radius * Math.cos(rad);
 			y = radius * Math.sin(rad);
@@ -135,9 +135,8 @@ Fungi.Primatives = {
 		//Rotate the half circle in increments to form a sphere.
 		aryVerts = aryVerts || [];
 		aryIndex = aryIndex || [];
-		//var aryVerts = [], aryIndex = [];
 		FungiExt.Mesh.lathe(pathAry,horSteps,"y",aryVerts);
-		FungiExt.Mesh.triangleStrip(horSteps,pathAry.length/3,aryIndex,true);
+		FungiExt.Mesh.triangleStrip(horSteps,pathAry.length/3,aryIndex,true,false);
 
 		if(!isGeoOnly){
 			var vao = Fungi.Shaders.VAO.standardMesh("FungiPolarSphere",3,aryVerts,null,null,aryIndex,false);

@@ -2268,7 +2268,6 @@ var Fungi = (function(){
 
 			//Prepare Buffers and Uniforms.
 			//gl.bindVertexArray(itm.vao.id);
-			//if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.updateMatrix());
 			if(f.material.useModelMatrix) f.material.shader.setUniforms(Fungi.UNI_MODEL_MAT_NAME,itm.worldMatrix);
 
 			return itm;
