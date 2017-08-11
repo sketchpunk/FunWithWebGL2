@@ -1540,7 +1540,7 @@ var Fungi = (function(){
 	}
 
 	class Material{
-		static create(name,shaderName,opt){
+		static create(name,shaderName){
 			var m = new Material();
 			m.shader = Fungi.Res.Shaders[shaderName];
 
@@ -1552,14 +1552,22 @@ var Fungi = (function(){
 			this.shader = null;
 			this.uniforms = [];
 			
-			this.useCulling = true;
+			this.useCulling = true;			
 			this.useBlending = false;
-			this.useDepthTest = true;
+			this.useDepthTest = true;		
 			this.useModelMatrix = true;
 			this.useNormalMatrix = false;
 			this.useSampleAlphaCoverage = false;
 
 			this.drawMode = gl.TRIANGLES;
+		}
+
+		setUniforms(uName,uValue){ for(var i=0; i < arguments.length; i+=2) this.uniforms[arguments[i]] = arguments[i+1];  return this; }
+		applyUniforms(){
+			for(var n in this.uniforms){
+				this.shader.setUniforms(n,this.uniforms[n]);
+			}
+			return this;
 		}
 	}
 
@@ -2264,6 +2272,8 @@ var Fungi = (function(){
 				if(f.material.useBlending != BLENDING_STATE)	gl[ ( (BLENDING_STATE = (!BLENDING_STATE)) )?"enable":"disable" ](gl.BLEND);
 				if(f.material.useDepthTest != DEPTHTEST_STATE)	gl[ ( (DEPTHTEST_STATE = (!DEPTHTEST_STATE)) )?"enable":"disable" ](gl.DEPTH_TEST);
 				if(f.material.useSampleAlphaCoverage != SAMPLE_ALPHA_COV_STATE) gl[ ( (SAMPLE_ALPHA_COV_STATE = (!SAMPLE_ALPHA_COV_STATE)) )?"enable":"disable" ](gl.SAMPLE_ALPHA_TO_COVERAGE);
+
+				f.material.applyUniforms();
 			}
 
 			//Prepare Buffers and Uniforms.
