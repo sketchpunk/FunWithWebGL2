@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungi.ext.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script src="Kai.js"></script>
+		<script src="Perlin.js"></script>
+
+		<script>
+			var gModel;
+
+			window.addEventListener("load",function(){
+				FungiApp.startup();
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.New("LowPolyShader","vertex_lowpoly","fragment_lowpoly")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uColorAry","vec3")
+					.prepareUniformBlocks(FungiApp.uboTransform,0)
+					.setUniforms("uColorAry",Fungi.Util.rgbArray("ff0000"));
+
+				Fungi.Shaders.New("LowPolyShader1c","vertex_lowpoly1c","fragment_lowpoly1c")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uColor","vec3")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.Material.create("MatDomShader","DomShader");
+
+				var mat;
+				mat = Fungi.Shaders.Material.create("MatLowPoly","LowPolyShader1c").setUniforms("uColor",Fungi.Util.rgbArray("00ff00"));
+				mat.drawMode = Fungi.gl.TRIANGLE_STRIP;
+
+				mat = Fungi.Shaders.Material.create("matRoad","LowPolyShader1c").setUniforms("uColor",Fungi.Util.rgbArray("ffffff"));
+				mat.drawMode = Fungi.gl.TRIANGLE_STRIP;
+
+				Fungi.Shaders.Material.create("matHouse","LowPolyShader")
+					.setUniforms("uColorAry",Fungi.Util.rgbArray("ffffff","FFA500","FFD700"));
+
+				Fungi.Shaders.Material.create("matFountain","LowPolyShader")
+					.setUniforms("uColorAry",Fungi.Util.rgbArray("ffffff","29293d",));
+
+				Fungi.Shaders.Material.create("matTree","LowPolyShader1c").setUniforms("uColor",Fungi.Util.rgbArray("996633"));
+
+				mat = Fungi.Shaders.Material.create("matBush","LowPolyShader1c").setUniforms("uColor",Fungi.Util.rgbArray("009900"));
+				mat.drawMode = Fungi.gl.TRIANGLE_STRIP;
+
+				//.......................................................
+				//Prepare our Renderables
+				
+				/**/
+				var planet = new Fungi.Renderable(Fungi.Primatives.PolarSphere(20,20,4),"MatLowPoly");
+				planet.position.set(0,5,0);
+				FungiApp.scene.push(planet);
+				roadModel().parent = planet;
+				//FungiApp.scene.push(roadModel());
+				
+				gModel = house();
+				gModel.position.set(1.5,3.5,0);
+				gModel.rotation.rz(-22 * Math.PI/180);
+				gModel.scale.set(0.15,0.15,0.15);
+				gModel.parent = planet;
+				//FungiApp.scene.push(gModel);
+
+				gModel = garage();
+				gModel.scale.set(0.9,0.9,0.9);
+				gModel.position.set(3.0,2.4,0.4);
+				gModel.rotation.rz(-50 * Math.PI/180);
+				gModel.rotation.rx(-5 * Math.PI/180);
+				gModel.parent = planet;
+				//FungiApp.scene.push(gModel);
+
+				gModel = fountain();
+				gModel.scale.set(0.07,0.07,0.07);
+				gModel.position.set(2.8,4.4,2).normalize().multi(4);
+				qPlacement(gModel.position,gModel.rotation);
+				gModel.parent = planet;
+				//FungiApp.scene.push(gModel);
+
+				var treepos = [ [1,4,-1.2],[3.3,4,-0.9],[3.3,-1,4],[-2.8,-1,4],[-2.8,3,4] ];
+				for(var i=0; i < treepos.length; i++){
+					gModel = createTree();
+					gModel.scale.set(0.15,0.15,0.15);
+					//gModel.position.set(-2.8,3,4).normalize().multi(4);
+					gModel.position.set(treepos[i][0],treepos[i][1],treepos[i][2]).normalize().multi(4);
+					qPlacement(gModel.position,gModel.rotation);
+					gModel.parent = planet;
+					//FungiApp.scene.push(gModel);
+				}
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+			});
+
+
+
+			function onRender(dt){
+				FungiApp.update();
+				Fungi.Render(FungiApp.scene);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+	<script id="vertex_lowpoly" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		//uniform mat3 uNormalMatrix;
+		uniform vec3 uColorAry[3];
+
+		out vec3 vWorldPos;
+		out vec3 vCameraPos;
+		out vec2 vLowPoly;
+		out vec3 vColor;
+
+		const float uColumnCnt = 20.0;
+
+		void main(void){
+			vColor = uColorAry[ int(a_position.w) ];
+			if(vColor == vec3(0.0)) vColor = uColorAry[0];
+			//vColor = uColorAry[0];
+
+			//Identify Triangles in Quad, If y == 1, Then its the top triangle
+			//01 01
+			//00 01
+			float verID	= float(gl_VertexID);
+			float r		= floor(verID / uColumnCnt);
+			if(mod(r,2.0) == 0.0) vLowPoly = vec2(0.0,1.0);
+			else{
+				// i % col == colIndex -> colIndex % 2 = 0-1
+				if( mod( mod(verID,uColumnCnt) ,2.0) == 0.0) vLowPoly = vec2(0.0,0.0);
+				//if( mod( verID ,2.0) == 0.0) vLowPoly = vec2(0.0,0.0);
+				else vLowPoly = vec2(0.0,1.0);
+			}
+
+			//Set Out values
+			vec4 wpos 	= uModalMatrix * vec4(a_position.xyz,1.0);
+			vWorldPos	= wpos.xyz;
+			vCameraPos	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz; //Need to pass Camera pos turned to WorldSpace avoid inverse matrix
+			gl_Position	= matProjection * matCameraView * wpos;
+		}
+	</script>
+
+	<script id="fragment_lowpoly" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+	
+		in vec3 vWorldPos;
+		in vec3 vCameraPos;
+		in vec2 vLowPoly;
+		in vec3 vColor;
+
+		const vec3 uLightPos			= vec3(4.0,2.0,1.0);
+		const vec3 uBaseColor			= vec3(1.0,0.5,0.5);
+		const vec3 uLightColor			= vec3(1.0,1.0,1.0);
+
+		const float uAmbientStrength	= 0.5;
+		const float uDiffuseStrength	= 0.5;
+		const float uSpecularStrength	= 0.2f;	//0.15
+		const float uSpecularShininess	= 1.0f; //256.0
+
+		out vec4 outColor;
+
+		void main(void){
+			float LowPolyFactor = (vLowPoly.y >= 0.9999)? 1.1 : 1.0;	//Determine LowPoly Strength
+			vec3 pixelNorm = normalize( cross( dFdx(vWorldPos), dFdy(vWorldPos) ) ); //Calc the Normal of the Rasterizing Pixel
+
+			//Ambient Lighting
+			vec3 cAmbient		= uLightColor * uAmbientStrength;
+			
+			//Diffuse Lighting
+			vec3 lightVector	= normalize(uLightPos - vWorldPos); //light direction based on pixel world position
+			float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0); //Angle between Light Direction and Pixel Direction (1==90d)
+			vec3 cDiffuse		= uLightColor * diffuseAngle * uDiffuseStrength;
+
+			//Specular Lighting
+			vec3 camVector		= normalize(vCameraPos - vWorldPos); //Camera Direction based on pixel world position
+			vec3 reflectVector	= reflect(-lightVector, pixelNorm); //Reflective direction of line from pixel direction as pivot.
+			float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+			vec3 cSpecular		= uLightColor * specular * uSpecularStrength;
+
+			//Final Color
+			//outColor = vec4( uBaseColor * ((cAmbient + cDiffuse + cSpecular) * LowPolyFactor), 1.0);
+			outColor = vec4( vColor * ((cAmbient + cDiffuse + cSpecular) * LowPolyFactor), 1.0);
+		}
+	</script>
+
+	<script id="vertex_lowpoly1c" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec3 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		//uniform mat3 uNormalMatrix;
+		
+		out vec3 vWorldPos;
+		out vec3 vCameraPos;
+		out vec2 vLowPoly;
+
+		const float uColumnCnt = 20.0;
+
+		void main(void){
+			//Identify Triangles in Quad, If y == 1, Then its the top triangle
+			//01 01
+			//00 01
+			float verID	= float(gl_VertexID);
+			float r		= floor(verID / uColumnCnt);
+			if(mod(r,2.0) == 0.0) vLowPoly = vec2(0.0,1.0);
+			else{
+				// i % col == colIndex -> colIndex % 2 = 0-1
+				if( mod( mod(verID,uColumnCnt) ,2.0) == 0.0) vLowPoly = vec2(0.0,0.0);
+				//if( mod( verID ,2.0) == 0.0) vLowPoly = vec2(0.0,0.0);
+				else vLowPoly = vec2(0.0,1.0);
+			}
+
+			//Set Out values
+			vec4 wpos 	= uModalMatrix * vec4(a_position.xyz,1.0);
+			vWorldPos	= wpos.xyz;
+			vCameraPos	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz; //Need to pass Camera pos turned to WorldSpace avoid inverse matrix
+			gl_Position	= matProjection * matCameraView * wpos;
+		}
+	</script>
+
+	<script id="fragment_lowpoly1c" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+	
+		uniform vec3 uColor;
+
+		in vec3 vWorldPos;
+		in vec3 vCameraPos;
+		in vec2 vLowPoly;
+
+		const vec3 uLightPos			= vec3(4.0,2.0,1.0);
+		const vec3 uBaseColor			= vec3(1.0,0.5,0.5);
+		const vec3 uLightColor			= vec3(1.0,1.0,1.0);
+
+		const float uAmbientStrength	= 0.5;
+		const float uDiffuseStrength	= 0.5;
+		const float uSpecularStrength	= 0.2f;	//0.15
+		const float uSpecularShininess	= 1.0f; //256.0
+
+		out vec4 outColor;
+
+		void main(void){
+			float LowPolyFactor = (vLowPoly.y >= 0.9999)? 1.1 : 1.0;	//Determine LowPoly Strength
+			vec3 pixelNorm = normalize( cross( dFdx(vWorldPos), dFdy(vWorldPos) ) ); //Calc the Normal of the Rasterizing Pixel
+
+			//Ambient Lighting
+			vec3 cAmbient		= uLightColor * uAmbientStrength;
+			
+			//Diffuse Lighting
+			vec3 lightVector	= normalize(uLightPos - vWorldPos); //light direction based on pixel world position
+			float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0); //Angle between Light Direction and Pixel Direction (1==90d)
+			vec3 cDiffuse		= uLightColor * diffuseAngle * uDiffuseStrength;
+
+			//Specular Lighting
+			vec3 camVector		= normalize(vCameraPos - vWorldPos); //Camera Direction based on pixel world position
+			vec3 reflectVector	= reflect(-lightVector, pixelNorm); //Reflective direction of line from pixel direction as pivot.
+			float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+			vec3 cSpecular		= uLightColor * specular * uSpecularStrength;
+
+			//Final Color
+			//outColor = vec4( uBaseColor * ((cAmbient + cDiffuse + cSpecular) * LowPolyFactor), 1.0);
+			outColor = vec4( uColor * ((cAmbient + cDiffuse + cSpecular) * LowPolyFactor), 1.0);
+		}
+	</script>
+</body>
+</html>
