@@ -1552,14 +1552,14 @@ var Fungi = (function(){
 			this.shader = null;
 			this.uniforms = [];
 			
-			this.useCulling = true;			
-			this.useBlending = false;
-			this.useDepthTest = true;		
+			this.useCulling = true;			//TODO, Move to Renderabale			
+			this.useBlending = false;		
+			this.useDepthTest = true;		//TODO, Move to Renderable
 			this.useModelMatrix = true;
 			this.useNormalMatrix = false;
 			this.useSampleAlphaCoverage = false;
 
-			this.drawMode = gl.TRIANGLES;
+			this.drawMode = gl.TRIANGLES;	//TODO, Move to Renderable
 		}
 
 		setUniforms(uName,uValue){ for(var i=0; i < arguments.length; i+=2) this.uniforms[arguments[i]] = arguments[i+1];  return this; }
@@ -1928,6 +1928,8 @@ var Fungi = (function(){
 		}
 
 		static finalize(out,name){
+			if(out.count == 0 && out.buffers["vert"] !== undefined) out.count = out.buffers["vert"].count;
+
 			gl.bindVertexArray(null);
 			gl.bindBuffer(gl.ARRAY_BUFFER,null);
 			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,null);
@@ -1958,7 +1960,7 @@ var Fungi = (function(){
 			return VAO;
 		}
 
-		static floatArrayBuffer(out,name,aryFloat,attrLoc,size,stride,offset,isStatic,keepData){
+		static floatArrayBuffer(out,name,aryFloat,attrLoc,size,stride,offset,isStatic,keepData,isInstance){
 			var rtn = {
 				buf:gl.createBuffer(),
 				size:size,
@@ -1973,6 +1975,47 @@ var Fungi = (function(){
 			gl.bufferData(gl.ARRAY_BUFFER, ary, (isStatic != false)? gl.STATIC_DRAW : gl.DYNAMIC_DRAW );
 			gl.enableVertexAttribArray(attrLoc);
 			gl.vertexAttribPointer(attrLoc,size,gl.FLOAT,false,stride || 0,offset || 0);
+
+			if(isInstance == true) gl.vertexAttribDivisor(attrLoc, 1);
+
+			out.buffers[name] = rtn;
+			return VAO;
+		}
+
+		static mat4ArrayBuffer(out,name,aryFloat,attrLoc,isStatic,keepData,isInstance){
+			var rtn = {
+				buf:gl.createBuffer(),
+				size:4,
+				stride:64,
+				offset:0,
+				count:aryFloat.length / 16
+			};
+			if(keepData == true) rtn.data = aryFloat;
+			var ary = (aryFloat instanceof Float32Array)? aryFloat : new Float32Array(aryFloat);
+
+			gl.bindBuffer(gl.ARRAY_BUFFER, rtn.buf);
+			gl.bufferData(gl.ARRAY_BUFFER, ary, (isStatic != false)? gl.STATIC_DRAW : gl.DYNAMIC_DRAW );
+			
+			//Matrix is treated like an array of vec4, So there is actually 4 attributes to setup that
+			//actually makes up a single mat4.
+			gl.enableVertexAttribArray(attrLoc);
+			gl.vertexAttribPointer(attrLoc,4,gl.FLOAT,false,64,0);
+
+			gl.enableVertexAttribArray(attrLoc+1);
+			gl.vertexAttribPointer(attrLoc+1,4,gl.FLOAT,false,64,16);
+			
+			gl.enableVertexAttribArray(attrLoc+2);
+			gl.vertexAttribPointer(attrLoc+2,4,gl.FLOAT,false,64,32);
+			
+			gl.enableVertexAttribArray(attrLoc+3);
+			gl.vertexAttribPointer(attrLoc+3,4,gl.FLOAT,false,64,48);
+			
+			if(isInstance == true){
+				gl.vertexAttribDivisor(attrLoc, 1);
+				gl.vertexAttribDivisor(attrLoc+1, 1);
+				gl.vertexAttribDivisor(attrLoc+2, 1);
+				gl.vertexAttribDivisor(attrLoc+3, 1);
+			}
 
 			out.buffers[name] = rtn;
 			return VAO;
@@ -2142,7 +2185,8 @@ var Fungi = (function(){
 			this.isActive		= false;	//Control the On/Off state of the render loop
 			this.fps			= 0;		//Save the value of how fast the loop is going.
 
-			this._lastFrame	= null;			//The time in Miliseconds of the last frame.
+			this._startTime		= 0;
+			this._lastFrame		= null;		//The time in Miliseconds of the last frame.
 			this._callBack		= callback;	//What function to call for each frame
 			this._frameCaller	= window;	//Normally we'll call window's requestAnimationFrame, but for VR we need to use its HMD reference for that call.
 			this._fpsLimit		= 0;		//Limit how many frames per second the loop should do.
@@ -2157,7 +2201,11 @@ var Fungi = (function(){
 		stop(){ this.isActive = false; }
 		start(){
 			this.isActive = true;
-			this._LastFrame = this._fpsLast = performance.now();
+			
+			this._startTime = 
+				this._LastFrame = 
+					this._fpsLast = performance.now();
+
 			this._frameCaller.requestAnimationFrame(this._runPtr);
 			return this;
 		}
@@ -2177,12 +2225,13 @@ var Fungi = (function(){
 			//Calculate Deltatime between frames and the FPS currently.
 			var msCurrent	= performance.now(),
 				msDelta		= (msCurrent - this._lastFrame),
-				deltaTime	= msDelta / 1000.0;		//What fraction of a single second is the delta time
+				deltaTime	= msDelta / 1000.0,		//What fraction of a single second is the delta time
+				sinceStart	= msCurrent - this._startTime;
 			
 			if(msDelta >= this._fpsLimit){ //Now execute frame since the time has elapsed.
 				this.fps		= Math.floor(1/deltaTime);
 				this._lastFrame	= msCurrent;
-				this._callBack(deltaTime);
+				this._callBack(deltaTime,sinceStart);
 			}
 
 			if(this.isActive) this._frameCaller.requestAnimationFrame(this._runPtr);
@@ -2191,7 +2240,10 @@ var Fungi = (function(){
 		runFull(){
 			//Calculate Deltatime between frames and the FPS currently.
 			var msCurrent	= performance.now(),	//Gives you the whole number of how many milliseconds since the dawn of time :)
-				deltaTime	= (msCurrent - this._lastFrame) / 1000.0;	//ms between frames, Then / by 1 second to get the fraction of a second.
+				deltaTime	= (msCurrent - this._lastFrame) / 1000.0,	//ms between frames, Then / by 1 second to get the fraction of a second.
+				sinceStart	= msCurrent - this._startTime;
+
+			this.timeSinceStart = msCurrent - this._startTime;
 
 			//Track how my frames have passed in one second of time.
 			this._fpsCnt++;
@@ -2204,7 +2256,7 @@ var Fungi = (function(){
 			//Now execute frame since the time has elapsed.
 			//this.fps			= Math.floor(1/deltaTime); //Time it took to generate one frame, divide 1 by that to get how many frames in one second.
 			this._lastFrame		= msCurrent;
-			this._callBack(deltaTime);
+			this._callBack(deltaTime,sinceStart);
 			if(this.isActive)	this._frameCaller.requestAnimationFrame(this._runPtr);
 		}
 	}

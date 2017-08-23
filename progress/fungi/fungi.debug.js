@@ -53,7 +53,7 @@ Fungi.Debug.GridFloor = class{
 };
 
 
-Fungi.Debug.Lines = class{
+Fungi.Debug.Lines = class extends Fungi.Renderable{
 	static getRenderable(){
 		if(Fungi.Debug.Lines.renderable) return Fungi.Debug.Lines.renderable;
 
@@ -88,16 +88,17 @@ Fungi.Debug.Lines = class{
 		return Fungi.Debug.Lines.renderable = ren;
 	}
 
-	constructor(){
+	constructor(mat){
+		super({},mat);
 		this._colorList		= [];
 		this._colorArray	= [];
 		this._verts			= [];
 		this._isModified 	= true;
 		this._bufSize		= Float32Array.BYTES_PER_ELEMENT * 8 * 100; //8Floats per line
 
-		this.vao			= {};
-		this.visible		= true;
-		this.material		= null;
+		//this.vao			= {};
+		//this.visible		= true;
+		//this.material		= null;
 
 		//Create VAO with a buffer with space for 100 lines.
 		Fungi.Shaders.VAO.create(this.vao)

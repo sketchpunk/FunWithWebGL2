@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script>
+			var gModel;
+			var skeleton,b1,b2,b3;
+			window.addEventListener("load",function(){
+				FungiApp.startup();
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.New("SkinningShader","vertex_skinning","fragment_skinning")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uBones","mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.New("SkeletonShader","vertex_skeleton","fragment_skeleton")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				var mat = Fungi.Shaders.Material.create("MatDomShader","DomShader");
+				mat.useCulling = false;
+
+				mat = Fungi.Shaders.Material.create("MatSkinningShader","SkinningShader");
+				//mat.useCulling = false;
+
+				mat = Fungi.Shaders.Material.create("MatSkeletonShader","SkeletonShader");
+				mat.useDepthTest = false;
+
+				//.......................................................
+				//Prepare our Renderables
+				//var gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				//FungiApp.scene.push(gModel);
+
+				//-----------------------------------
+				//Create Nesh Data
+				/**/
+				var idxPrev,idxAry,geo = new Geometry(4,2);
+				idxPrev = geo.newPoint(
+					-1.0,0.0,-1.0,0.0,
+					-1.0,0.0,1.0,1.0,
+					1.0,0.0,1.0,2.0,
+					1.0,0.0,-1.0,3.0);
+				geo.setBones(idxPrev,[0,0],[1,0]);
+
+
+				for(var i=0; i < 4; i++){
+					idxAry = geo.extrude(idxPrev,[0,2,0]);
+					geo.triLoop(idxPrev,idxAry);
+
+					//Apply Bone Information to vertices
+					if(i % 2 == 0) geo.setBones(idxAry,[(i/2),(i/2)+1],[0.5,0.5]); //console.log("Weight: 0.5 0.5", (i/2),(i/2)+1);	
+					else geo.setBones(idxAry,[Math.ceil(i/2),0],[1,0]); //console.log("Weight: 1 0", Math.ceil(i/2),0);
+					
+					idxPrev = idxAry;	
+				}
+
+				var geoMesh = new GeometryMesh(geo,"MatSkinningShader");
+				geoMesh.drawMode = Fungi.gl.POINTS;
+				FungiApp.scene.push(geoMesh);
+				
+
+				//-----------------------------------
+				//Skelelon Stuff
+				skeleton = new Skeleton();
+				b1 = skeleton.addBone("root");
+				//b1.position.set(0,0,0);
+
+				b2 = skeleton.addBone("hip",b1.index);
+				b2.position.set(0,4,0);
+				//b2.rotation.rz(-10 * Math.PI/180);
+				
+				b3 = skeleton.addBone("head",b2.index);
+				b3.position.set(0,4,0);
+				//b3.rotation.rz(-10 * Math.PI/180);
+
+				skeleton.setBindPose();
+
+				//b2.rotation.rz(-45 * Math.PI/180);
+				//b3.rotation.rz(-45 * Math.PI/180);
+				//skeleton.update();
+				
+
+				var skelMesh = new SkeletonMesh(skeleton,"MatSkeletonShader");
+				FungiApp.scene.push(skelMesh);
+				
+				geoMesh.skeleton = skeleton;
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+			});
+
+			function onRender(dt,ss){
+				FungiApp.update();
+
+				var rot = 90 * (Math.PI/180) * Math.sin(ss * 0.002) ;
+
+				b2.rotation.setAxisAngle([0,0,1], rot);
+				b3.rotation.setAxisAngle([0,0,1], rot);
+				skeleton.update();
+
+				Fungi.Render(FungiApp.scene);
+			}
+
+			class Geometry{
+				constructor(vertSize,boneSize){
+					this.vertSize = (vertSize === undefined)?3:vertSize;	//How many floats creates a single vertice
+					this.boneSize = (boneSize === undefined)?0:boneSize;	//Max bones per vertice
+
+					this.points = [];	//Point Data - Verts,UV,Norm,Bones,BoneWeight
+					this.indices = [];	//Element Array, used for draw modes like triangle, lines, etc.
+				}
+
+				newPoint(){
+					var itm,
+						rtn = [],
+						pLen = this.points.length;
+
+					for(var i=0; i < arguments.length; i+= this.vertSize){
+						itm = {
+							verts:(this.vertSize==3)?
+								[arguments[i],arguments[i+1],arguments[i+2]]:
+								[arguments[i],arguments[i+1],arguments[i+2],arguments[i+3]],
+							uv:[],
+							norm:[],
+							bones:[],
+							boneWeights:[]
+						}
+						this.points.push(itm);
+						rtn.push(pLen++);
+					}
+
+					return rtn;
+				}
+
+				setBones(idxAry,boneIdx,boneWeight){
+					var p,j;
+					for(var i=0; i < idxAry.length; i++){
+						p = this.points[ idxAry[i] ];
+
+						for(j=0; j < this.boneSize; j++){
+							p.bones[j]			= boneIdx[j];
+							p.boneWeights[j]	= boneWeight[j];
+						}
+					}
+				}
+
+				clonePoint(i){
+					return {
+						verts: this.points[i].verts.slice(0),
+						uv:this.points[i].uv.slice(0),
+						norm:this.points[i].norm.slice(0),
+						bones:this.points[i].bones.slice(0),
+						boneWeights:this.points[i].boneWeights.slice(0)
+					}
+				}
+
+				//Compile a single array of floats that make up all the vertices
+				compileVertices(){
+					var v,rtn = [];
+					for(var i=0; i < this.points.length; i++){
+						for(v=0; v < this.vertSize; v++) rtn.push(this.points[i].verts[v]);
+					}
+					return rtn;
+				}
+
+				compileBones(bAry,wAry){
+					var j;
+					for(var i=0; i < this.points.length; i++){
+						for(j=0; j < this.boneSize; j++){
+							bAry.push(this.points[i].bones[j]);
+							wAry.push(this.points[i].boneWeights[j]);
+						}
+					}
+				}
+
+				//extrude a list of points toward a direction
+				extrude(idxAry,dir){
+					var v, itm, rtn = [],
+						pLen = this.points.length;
+
+					for(var i=0; i < idxAry.length; i++){
+						itm = this.clonePoint(idxAry[i]);						//Create a copy of the point data
+
+						for(v=0; v < dir.length; v++) itm.verts[v] += dir[v];	//Update the vert position
+
+						this.points.push(itm);									//Save to array
+						rtn.push(pLen++);										//Save Index
+					}
+
+					return rtn;
+				}
+
+				//using two index arrays, if built counter clockwise, create triangles out of the quads that make up the wall.
+				triLoop(iAryA,iAryB){
+					var a,b,c,d,p,
+						len = iAryA.length;
+
+					for(var i=0; i < len; i++){
+						p = (i+1)%len;
+						a = iAryB[i],
+						b = iAryA[i],
+						c = iAryA[p],
+						d = iAryB[p];
+						this.indices.push(a,b,c,c,d,a);
+					}
+				}
+			}
+
+
+			class GeometryMesh extends Fungi.Renderable{
+				constructor(geo,matName){
+					super({},matName);
+
+					//Create VAO & Buffers
+					var verts = geo.compileVertices();
+
+					Fungi.Shaders.VAO.create(this.vao)
+						.floatArrayBuffer(this.vao,"vert",verts,Fungi.ATTR_POSITION_LOC,geo.vertSize,0,0,true,false);
+					
+					if(geo.indices.length > 0) Fungi.Shaders.VAO.indexBuffer(this.vao,"index",geo.indices,true,false);
+					if(geo.boneSize > 0){
+						var bAry = [], wAry = [];
+						geo.compileBones(bAry,wAry);
+						
+						Fungi.Shaders.VAO.floatArrayBuffer(this.vao,"boneIdx",bAry,3,geo.boneSize,0,0,true,false)
+										 .floatArrayBuffer(this.vao,"boneWeight",wAry,4,geo.boneSize,0,0,true,false);
+					}
+
+					Fungi.Shaders.VAO.finalize(this.vao);
+
+					//Create VAO & Buffers
+					this.drawMode	= (this.vao.isIndexed)? Fungi.gl.TRIANGLES : Fungi.gl.POINTS;
+					this.visible	= true;
+					this.skeleton 	= null;
+				}
+
+				draw(){
+					if(this.vao.count > 0){
+						var mat = [];
+						this.skeleton.getFlatOffset(mat);
+						this.material.shader.setUniforms("uBones",mat);
+
+						Fungi.gl.bindVertexArray(this.vao.id);
+						if(this.vao.isIndexed)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+						else 					Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+					}
+				}
+			}
+
+
+			class Skeleton{
+				constructor(){
+					this.bones = [];
+				}
+
+				//Bones must be made in parents first then child
+				//Important for updates that parent matrices get calced first before children.
+				addBone(name,parentIdx){
+					var bone = {
+						index: this.bones.length,
+						parent: (parentIdx == undefined || parentIdx == null)? null : parentIdx,
+						name:name,
+						isSkinned:true,
+						position:new Fungi.Maths.Vec3(),
+						rotation:new Fungi.Maths.Quaternion(),
+
+						localMatrix: new Fungi.Maths.Matrix4(),
+						worldMatrix: new Fungi.Maths.Matrix4(),
+						bindPoseMatrix: new Fungi.Maths.Matrix4(),	//Invert of Initial World Matrix
+						offsetMatrix: new Fungi.Maths.Matrix4(),	//Change from current WorldMatrix compared to BindPoseMatrix
+					};
+
+					this.bones.push(bone);
+					return bone;
+				}
+
+				setBindPose(){ //only call once when all bones are set where they need to be.
+					var b, mat4 = Fungi.Maths.Matrix4;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+
+						//Calc Local matrix
+						mat4.fromQuaternionTranslation(b.localMatrix,b.rotation,b.position);
+						b.position.isModified = false;
+						b.rotation.isModified = false;
+
+						//Calculate the World Matrix
+						if(b.parent != null)	mat4.mult(b.worldMatrix, this.bones[b.parent].worldMatrix,b.localMatrix);
+						else 					b.worldMatrix.copy(b.localMatrix); //no parent, localMatrix is worldMatrix
+
+						//Now we invert the world matrix which creates our bind pose,
+						//a starting point to check for changes in the world matrix
+						mat4.invert(b.bindPoseMatrix,b.worldMatrix);
+					}
+				}
+
+				update(){ //calc all the bone positions
+					var b, mat4 = Fungi.Maths.Matrix4;
+					var forceUpdate = false;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+
+						if(b.position.isModified || b.rotation.isModified){
+							forceUpdate = true;
+
+							mat4.fromQuaternionTranslation(b.localMatrix,b.rotation,b.position);
+							b.position.isModified = false;
+							b.rotation.isModified = false;
+						}
+
+						if(forceUpdate){
+							//Calculate the World Matrix
+							if(b.parent != null)	mat4.mult(b.worldMatrix, this.bones[b.parent].worldMatrix,b.localMatrix);
+							else 					b.worldMatrix.copy(b.localMatrix); //no parent, localMatrix is worldMatrix
+
+							//Calc the difference from the bindPose
+							mat4.mult(b.offsetMatrix, b.worldMatrix, b.bindPoseMatrix);
+						}
+					}
+				}
+
+				getFlatOffset(out){ //Used for Vertices to move
+					var b,j;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+						for(j=0; j < 16; j++) out[ (i*16) + j ] = b.offsetMatrix[j];
+					}
+				}
+
+				getFlatWorldSpace(out){ //Used for visualizing bones
+					var b,j;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+						for(j=0; j < 16; j++) out[ (i*16) + j ] = b.worldMatrix[j];
+					}
+				}
+			}
+
+			//http://veeenu.github.io/2014/05/09/implementing-skeletal-animation.html
+			//http://veeenu.github.io/data/2014-05-09-implementing-skeletal-animation/veeenu-skeletal-animation/test08.js
+			//http://blog.tojicode.com/2011/10/building-game-part-3-skinning-animation.html
+			//https://stackoverflow.com/questions/36921337/how-do-you-do-skinning-in-webgl
+			//http://webglsamples.org/WebGL2Samples/#draw_instanced
+			class SkeletonMesh extends Fungi.Renderable{
+				constructor(skel,matName){
+					super({},matName);
+
+					this.skeleton = skel;
+					this.drawMode = Fungi.gl.LINES;
+
+					var verts = [0,0,0,0, 0,3,0,1];
+					var offset = [];
+
+					var b;
+					for(var i=0; i < skel.bones.length; i++){
+						b = skel.bones[i].worldMatrix;
+						for(var j=0; j < b.length; j++) offset.push(b[j]);
+					}
+					
+					Fungi.Shaders.VAO.create(this.vao)
+						.floatArrayBuffer(this.vao,"vert",verts,Fungi.ATTR_POSITION_LOC,4,0,0,true,false)
+						.mat4ArrayBuffer(this.vao,"offset",offset,10,true,false,true);
+						
+			
+					Fungi.Shaders.VAO.finalize(this.vao);
+					this.instanceSize = offset.length/16; //How many bones are we rendering
+				}
+
+				updateOffset(){
+					var offset = [];
+					this.skeleton.getFlatWorldSpace(offset);
+
+					//Push Matrices to GPU
+					Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["offset"].buf);
+					Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(offset), 0, null);
+					Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
+				}
+
+				draw(){
+					if(this.vao.count > 0){
+						this.updateOffset();
+						//console.log(this.vao.buffers["offset"].buf);
+
+						Fungi.gl.bindVertexArray(this.vao.id);
+						Fungi.gl.drawArraysInstanced(this.drawMode, 0, this.vao.count, this.instanceSize);
+
+						//if(this.vao.isIndexed)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+						//else 					Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+					}
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0;
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+
+	<script id="vertex_skinning" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		layout(location=3) in vec2 a_boneIdx;
+		layout(location=4) in vec2 a_boneWeight;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+		uniform mat4[3] uBones;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0;// + (5.0 * a_boneIdx.y);
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+			//int bIdx = int(a_boneIdx.x);
+			//mat4 bMat = uBones[bIdx];
+
+			/* */
+			mat4 m4Bone = uBones[int(a_boneIdx[0])] * a_boneWeight[0] +
+                			uBones[int(a_boneIdx[1])] * a_boneWeight[1];
+            gl_Position =  matProjection * matCameraView * uModalMatrix * m4Bone * vec4(a_position.xyz, 1.0);
+			
+
+			/*
+			vec4 pos = uBones[int(a_boneIdx[0])] * vec4(a_position.xyz,1.0) * a_boneWeight[0] +
+                		uBones[int(a_boneIdx[1])] * vec4(a_position.xyz,1.0) * a_boneWeight[1] ;
+
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(pos.xyz, 1.0);
+			*/
+
+			vUV = a_uv;
+			//gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_skinning" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+
+	<script id="vertex_skeleton" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+		layout(location=10) in mat4 a_offset;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0;
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 3.0) color = vec3(0.0,0.0,0.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position = matProjection * matCameraView * uModalMatrix * a_offset * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_skeleton" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+</body>
+</html>
+<!--
+{name:"DomShader", vertexDomID:"vertex_shader", fragmentDomID:"fragment_shader",
+	uniforms:[ {name:"uModalMatrix",type:"mat4"} ], //{name,type,default}
+	uniformBlock[ {name:"UBOTransform",index:0} ] //{name,index}
+}
+
+{ name:"MatDomShader", shaderName:"DomShader" }
+-->
