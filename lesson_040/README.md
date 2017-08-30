@@ -9,5 +9,5 @@ https://www.cs.utah.edu/~ladislav/dq/dqs.cg
 https://github.com/robertsdionne/animus/blob/master/src/animus.html
 
 ### Links
-* [Lesson on Youtube](https://youtu.be/fQOeEA_8-uk)
+* [Lesson on Youtube](https://youtu.be/pUeBOymcEw0)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
