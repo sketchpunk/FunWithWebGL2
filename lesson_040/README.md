@@ -4,6 +4,7 @@ We're going back to our Bone and Skinning example to convert all the matrices in
 
 ### Links of Interest
 https://github.com/toji/gl-matrix/issues/221
+https://github.com/stefnotch/gl-matrix/blob/master/src/gl-matrix/quat2.js
 https://www.cs.utah.edu/~ladislav/dq/dqs.cg
 https://github.com/robertsdionne/animus/blob/master/src/animus.html
 
