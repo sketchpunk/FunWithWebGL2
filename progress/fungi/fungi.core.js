@@ -814,6 +814,20 @@ var Fungi = (function(){
 				out[3] = aw + t * (b[3] - aw);
 				return out;
 			}
+
+			//https://github.com/toji/gl-matrix/blob/master/src/gl-matrix/quat.js
+			static invert(out, a) {
+  				let a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
+  				let dot = a0*a0 + a1*a1 + a2*a2 + a3*a3;
+  				let invDot = dot ? 1.0/dot : 0;
+  				// TODO: Would be faster to return [0,0,0,0] immediately if dot == 0
+
+				out[0] = -a0*invDot;
+				out[1] = -a1*invDot;
+				out[2] = -a2*invDot;
+				out[3] = a3*invDot;
+				return out;
+			}
 		//endregion
 	}
 
@@ -1651,6 +1665,7 @@ var Fungi = (function(){
 					case "vec3":	gl.uniform3fv(this._UniformList[name].loc, arguments[i+1]); break;
 					case "vec4":	gl.uniform4fv(this._UniformList[name].loc, arguments[i+1]); break;
 					case "mat4":	gl.uniformMatrix4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
+					case "mat2x4": 	gl.uniformMatrix2x4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 					case "tex":
 						gl.activeTexture(gl["TEXTURE" + texCnt]);
 						gl.bindTexture(gl.TEXTURE_2D,uValue);
@@ -1954,9 +1969,12 @@ var Fungi = (function(){
 			return VAO;
 		}
 
-		static partitionBuffer(attrLoc,size,stride,offset){
+		static partitionBuffer(attrLoc,size,stride,offset,isInstance){
 			gl.enableVertexAttribArray(attrLoc);
 			gl.vertexAttribPointer(attrLoc,size,gl.FLOAT,false,stride,offset);
+
+			if(isInstance == true) gl.vertexAttribDivisor(attrLoc, 1);
+			
 			return VAO;
 		}
 
