@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script>
+			var gModel;
+			var skeleton,b1,b2,b3;
+			window.addEventListener("load",function(){
+				FungiApp.startup();
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				/*
+				Fungi.Shaders.New("SkinningShader","vertex_skinning","fragment_skinning")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uBones","mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.New("SkeletonShader","vertex_skeleton","fragment_skeleton")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+				*/
+
+				var mat = Fungi.Shaders.Material.create("MatDomShader","DomShader");
+				mat.useCulling = false;
+
+				//mat = Fungi.Shaders.Material.create("MatSkinningShader","SkinningShader");
+				//mat.useCulling = false;
+
+				//mat = Fungi.Shaders.Material.create("MatSkeletonShader","SkeletonShader");
+				//mat.useDepthTest = false;
+
+
+				Fungi.Shaders.New("QSkinningShader","qvertex_skinning","qfragment_skinning")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4","uBones","mat2x4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.New("QSkeletonShader","qvertex_skeleton","qfragment_skeleton")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				mat = Fungi.Shaders.Material.create("QMatSkinningShader","QSkinningShader");
+				mat = Fungi.Shaders.Material.create("QMatSkeletonShader","QSkeletonShader");
+				mat.useDepthTest = false;
+
+				//.......................................................
+				//Prepare our Renderables
+				//var gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				//FungiApp.scene.push(gModel);
+
+				//-----------------------------------
+				//Create Nesh Data
+				/**/
+				var idxPrev,idxAry,geo = new Geometry(4,2);
+				idxPrev = geo.newPoint(
+					-1.0,0.0,-1.0,0.0,
+					-1.0,0.0,1.0,1.0,
+					1.0,0.0,1.0,2.0,
+					1.0,0.0,-1.0,3.0);
+				geo.setBones(idxPrev,[0,0],[1,0]);
+
+				for(var i=0; i < 4; i++){
+					idxAry = geo.extrude(idxPrev,[0,2,0]);
+					geo.triLoop(idxPrev,idxAry);
+
+					//Apply Bone Information to vertices
+					if(i % 2 == 0) geo.setBones(idxAry,[(i/2),(i/2)+1],[0.5,0.5]); //console.log("Weight: 0.5 0.5", (i/2),(i/2)+1);	
+					else geo.setBones(idxAry,[Math.ceil(i/2),0],[1,0]); //console.log("Weight: 1 0", Math.ceil(i/2),0);
+					
+					idxPrev = idxAry;	
+				}
+
+				var geoMesh = new GeometryMesh(geo,"QMatSkinningShader"); //MatSkinningShader
+				geoMesh.drawMode = Fungi.gl.POINTS;
+				FungiApp.scene.push(geoMesh);
+				
+
+				//-----------------------------------
+				//Skeleton Matrix
+//				skeleton = new Skeleton();
+//				b1 = skeleton.addBone("root");
+				//b1.position.set(0,0,0);
+
+//				b2 = skeleton.addBone("hip",b1.index);
+//				b2.position.set(0,4,0);
+				//b2.rotation.rz(-10 * Math.PI/180);
+				
+//				b3 = skeleton.addBone("head",b2.index);
+//				b3.position.set(0,4,0);
+				//b3.rotation.rz(-10 * Math.PI/180);
+
+//				skeleton.setBindPose();
+
+				//b2.rotation.rz(-45 * Math.PI/180);
+				//b3.rotation.rz(-45 * Math.PI/180);
+				//skeleton.update();
+				
+				//var skelMesh = new SkeletonMesh(skeleton,"MatSkeletonShader");
+//				FungiApp.scene.push(skelMesh);
+
+				//-----------------------------------
+				//Skeleton Quaternions
+				skeleton = new QSkeleton();
+				b1 = skeleton.addBone("root");
+				b1.position.set(0,0,0);
+				
+				b2 = skeleton.addBone("hip",b1.index);
+				b2.position.set(0,4,0);
+				
+				b3 = skeleton.addBone("head",b2.index);
+				b3.position.set(0,4,0);
+				
+				skeleton.setBindPose();
+
+				//b1.rotation.rz(-45 * Math.PI/180);
+				//b2.rotation.rz(-45 * Math.PI/180);
+				b3.rotation.rz(-45 * Math.PI/180);
+				//b3.position.set(0,5,0);
+				skeleton.update();
+
+				//console.log(skeleton);
+				var skelMesh = new QSkeletonMesh(skeleton,"QMatSkeletonShader");
+				FungiApp.scene.push(skelMesh);
+
+
+				//-----------------------------------
+				//Apply Skeleton Data to Mesh
+				geoMesh.skeleton = skeleton;
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+			});
+
+			function onRender(dt,ss){
+				FungiApp.update();
+
+				var rot = 90 * (Math.PI/180) * Math.sin(ss * 0.002) ;
+
+				b2.rotation.setAxisAngle([0,0,1], rot);
+				b3.rotation.setAxisAngle([0,0,1], rot);
+				skeleton.update();
+
+				Fungi.Render(FungiApp.scene);
+			}
+
+			class Geometry{
+				constructor(vertSize,boneSize){
+					this.vertSize = (vertSize === undefined)?3:vertSize;	//How many floats creates a single vertice
+					this.boneSize = (boneSize === undefined)?0:boneSize;	//Max bones per vertice
+
+					this.points = [];	//Point Data - Verts,UV,Norm,Bones,BoneWeight
+					this.indices = [];	//Element Array, used for draw modes like triangle, lines, etc.
+				}
+
+				newPoint(){
+					var itm,
+						rtn = [],
+						pLen = this.points.length;
+
+					for(var i=0; i < arguments.length; i+= this.vertSize){
+						itm = {
+							verts:(this.vertSize==3)?
+								[arguments[i],arguments[i+1],arguments[i+2]]:
+								[arguments[i],arguments[i+1],arguments[i+2],arguments[i+3]],
+							uv:[],
+							norm:[],
+							bones:[],
+							boneWeights:[]
+						}
+						this.points.push(itm);
+						rtn.push(pLen++);
+					}
+
+					return rtn;
+				}
+
+				setBones(idxAry,boneIdx,boneWeight){
+					var p,j;
+					for(var i=0; i < idxAry.length; i++){
+						p = this.points[ idxAry[i] ];
+
+						for(j=0; j < this.boneSize; j++){
+							p.bones[j]			= boneIdx[j];
+							p.boneWeights[j]	= boneWeight[j];
+						}
+					}
+				}
+
+				clonePoint(i){
+					return {
+						verts: this.points[i].verts.slice(0),
+						uv:this.points[i].uv.slice(0),
+						norm:this.points[i].norm.slice(0),
+						bones:this.points[i].bones.slice(0),
+						boneWeights:this.points[i].boneWeights.slice(0)
+					}
+				}
+
+				//Compile a single array of floats that make up all the vertices
+				compileVertices(){
+					var v,rtn = [];
+					for(var i=0; i < this.points.length; i++){
+						for(v=0; v < this.vertSize; v++) rtn.push(this.points[i].verts[v]);
+					}
+					return rtn;
+				}
+
+				compileBones(bAry,wAry){
+					var j;
+					for(var i=0; i < this.points.length; i++){
+						for(j=0; j < this.boneSize; j++){
+							bAry.push(this.points[i].bones[j]);
+							wAry.push(this.points[i].boneWeights[j]);
+						}
+					}
+				}
+
+				//extrude a list of points toward a direction
+				extrude(idxAry,dir){
+					var v, itm, rtn = [],
+						pLen = this.points.length;
+
+					for(var i=0; i < idxAry.length; i++){
+						itm = this.clonePoint(idxAry[i]);						//Create a copy of the point data
+
+						for(v=0; v < dir.length; v++) itm.verts[v] += dir[v];	//Update the vert position
+
+						this.points.push(itm);									//Save to array
+						rtn.push(pLen++);										//Save Index
+					}
+
+					return rtn;
+				}
+
+				//using two index arrays, if built counter clockwise, create triangles out of the quads that make up the wall.
+				triLoop(iAryA,iAryB){
+					var a,b,c,d,p,
+						len = iAryA.length;
+
+					for(var i=0; i < len; i++){
+						p = (i+1)%len;
+						a = iAryB[i],
+						b = iAryA[i],
+						c = iAryA[p],
+						d = iAryB[p];
+						this.indices.push(a,b,c,c,d,a);
+					}
+				}
+			}
+
+
+			class GeometryMesh extends Fungi.Renderable{
+				constructor(geo,matName){
+					super({},matName);
+
+					//Create VAO & Buffers
+					var verts = geo.compileVertices();
+
+					Fungi.Shaders.VAO.create(this.vao)
+						.floatArrayBuffer(this.vao,"vert",verts,Fungi.ATTR_POSITION_LOC,geo.vertSize,0,0,true,false);
+					
+					if(geo.indices.length > 0) Fungi.Shaders.VAO.indexBuffer(this.vao,"index",geo.indices,true,false);
+					if(geo.boneSize > 0){
+						var bAry = [], wAry = [];
+						geo.compileBones(bAry,wAry);
+						
+						Fungi.Shaders.VAO.floatArrayBuffer(this.vao,"boneIdx",bAry,3,geo.boneSize,0,0,true,false)
+										 .floatArrayBuffer(this.vao,"boneWeight",wAry,4,geo.boneSize,0,0,true,false);
+					}
+
+					Fungi.Shaders.VAO.finalize(this.vao);
+
+					//Create VAO & Buffers
+					this.drawMode	= (this.vao.isIndexed)? Fungi.gl.TRIANGLES : Fungi.gl.POINTS;
+					this.visible	= true;
+					this.skeleton 	= null;
+				}
+
+				draw(){
+					if(this.vao.count > 0){
+						var mat = [];
+						this.skeleton.getFlatOffset(mat);
+						this.material.shader.setUniforms("uBones",mat);
+
+						Fungi.gl.bindVertexArray(this.vao.id);
+						if(this.vao.isIndexed)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+						else 					Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+					}
+				}
+			}
+
+
+			class Skeleton{
+				constructor(){
+					this.bones = [];
+				}
+
+				//Bones must be made in parents first then child
+				//Important for updates that parent matrices get calced first before children.
+				addBone(name,parentIdx){
+					var bone = {
+						index: this.bones.length,
+						parent: (parentIdx == undefined || parentIdx == null)? null : parentIdx,
+						name:name,
+						isSkinned:true,
+						position:new Fungi.Maths.Vec3(),
+						rotation:new Fungi.Maths.Quaternion(),
+
+						localMatrix: new Fungi.Maths.Matrix4(),
+						worldMatrix: new Fungi.Maths.Matrix4(),
+						bindPoseMatrix: new Fungi.Maths.Matrix4(),	//Invert of Initial World Matrix
+						offsetMatrix: new Fungi.Maths.Matrix4(),	//Change from current WorldMatrix compared to BindPoseMatrix
+					};
+
+					this.bones.push(bone);
+					return bone;
+				}
+
+				setBindPose(){ //only call once when all bones are set where they need to be.
+					var b, mat4 = Fungi.Maths.Matrix4;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+
+						//Calc Local matrix
+						mat4.fromQuaternionTranslation(b.localMatrix,b.rotation,b.position);
+						b.position.isModified = false;
+						b.rotation.isModified = false;
+
+						//Calculate the World Matrix
+						if(b.parent != null)	mat4.mult(b.worldMatrix, this.bones[b.parent].worldMatrix,b.localMatrix);
+						else 					b.worldMatrix.copy(b.localMatrix); //no parent, localMatrix is worldMatrix
+
+						//Now we invert the world matrix which creates our bind pose,
+						//a starting point to check for changes in the world matrix
+						mat4.invert(b.bindPoseMatrix,b.worldMatrix);
+					}
+				}
+
+				update(){ //calc all the bone positions
+					var b, mat4 = Fungi.Maths.Matrix4;
+					var forceUpdate = false;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+
+						if(b.position.isModified || b.rotation.isModified){
+							forceUpdate = true;
+
+							mat4.fromQuaternionTranslation(b.localMatrix,b.rotation,b.position);
+							b.position.isModified = false;
+							b.rotation.isModified = false;
+						}
+
+						if(forceUpdate){
+							//Calculate the World Matrix
+							if(b.parent != null)	mat4.mult(b.worldMatrix, this.bones[b.parent].worldMatrix,b.localMatrix);
+							else 					b.worldMatrix.copy(b.localMatrix); //no parent, localMatrix is worldMatrix
+
+							//Calc the difference from the bindPose
+							mat4.mult(b.offsetMatrix, b.worldMatrix, b.bindPoseMatrix);
+						}
+					}
+				}
+
+				getFlatOffset(out){ //Used for Vertices to move
+					var b,j;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+						for(j=0; j < 16; j++) out[ (i*16) + j ] = b.offsetMatrix[j];
+					}
+				}
+
+				getFlatWorldSpace(out){ //Used for visualizing bones
+					var b,j;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];
+						for(j=0; j < 16; j++) out[ (i*16) + j ] = b.worldMatrix[j];
+					}
+				}
+			}
+
+			//http://veeenu.github.io/2014/05/09/implementing-skeletal-animation.html
+			//http://veeenu.github.io/data/2014-05-09-implementing-skeletal-animation/veeenu-skeletal-animation/test08.js
+			//http://blog.tojicode.com/2011/10/building-game-part-3-skinning-animation.html
+			//https://stackoverflow.com/questions/36921337/how-do-you-do-skinning-in-webgl
+			//http://webglsamples.org/WebGL2Samples/#draw_instanced
+			class SkeletonMesh extends Fungi.Renderable{
+				constructor(skel,matName){
+					super({},matName);
+
+					this.skeleton = skel;
+					this.drawMode = Fungi.gl.LINES;
+
+					var verts = [0,0,0,0, 0,3,0,1];
+					var offset = [];
+
+					var b;
+					for(var i=0; i < skel.bones.length; i++){
+						b = skel.bones[i].worldMatrix;
+						for(var j=0; j < b.length; j++) offset.push(b[j]);
+					}
+					
+					Fungi.Shaders.VAO.create(this.vao)
+						.floatArrayBuffer(this.vao,"vert",verts,Fungi.ATTR_POSITION_LOC,4,0,0,true,false)
+						.mat4ArrayBuffer(this.vao,"offset",offset,10,true,false,true);
+						
+			
+					Fungi.Shaders.VAO.finalize(this.vao);
+					this.instanceSize = offset.length/16; //How many bones are we rendering
+				}
+
+				updateOffset(){
+					var offset = [];
+					this.skeleton.getFlatWorldSpace(offset);
+
+					//Push Matrices to GPU
+					Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["offset"].buf);
+					Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(offset), 0, null);
+					Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
+				}
+
+				draw(){
+					if(this.vao.count > 0){
+						this.updateOffset();
+						//console.log(this.vao.buffers["offset"].buf);
+
+						Fungi.gl.bindVertexArray(this.vao.id);
+						Fungi.gl.drawArraysInstanced(this.drawMode, 0, this.vao.count, this.instanceSize);
+
+						//if(this.vao.isIndexed)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+						//else 					Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+					}
+				}
+			}
+
+
+
+			class QSkeleton{
+				constructor(){
+					this.bones = [];
+				}
+
+				//Bones must be made in parents first then child
+				//Important for updates that parent matrices get calced first before children.
+				addBone(name,parentIdx){
+					var bone = {
+						index: this.bones.length,
+						parent: (parentIdx == undefined || parentIdx == null)? null : parentIdx,
+						name:name,
+						isSkinned:true,
+						position:new Fungi.Maths.Vec3(),
+						rotation:new Fungi.Maths.Quaternion(),
+
+						localDQ:new DualQuat(),
+						worldDQ:new DualQuat(),
+						bindPoseDQ:new DualQuat(),
+						offsetDQ:new DualQuat()
+					};
+
+					this.bones.push(bone);
+					return bone;
+				}
+
+				setBindPose(){ //only call once when all bones are set where they need to be.
+					var b,p;
+
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];										//Bone
+						p = (b.parent != null)? this.bones[b.parent] : null;	//Parent Bone
+
+						//Calc Local matrix
+						//mat4.fromQuaternionTranslation(b.localMatrix,b.rotation,b.position);
+						b.localDQ.set(b.rotation,b.position);
+						b.position.isModified = false;
+						b.rotation.isModified = false;
+
+						//b.worldPosition.copy(b.position); //Copy Local to World.
+						//b.worldRotation.copy(b.rotation);
+
+						//Calculate the World Q & P
+						if(p != null){
+							//b.worldPosition.add(this.bones[b.parent].position);
+							//quat.multi(b.worldRotation,this.bones[b.parent].rotation,b.rotation);
+
+							//mat4.mult(b.worldMatrix, this.bones[b.parent].worldMatrix,b.localMatrix);
+							p.worldDQ.mul(b.localDQ,b.worldDQ); //world = p.world * local
+						}else{
+							//no parent, local is world
+							//b.worldRotation.copy(this.bones[b.parent].rotation);
+							b.worldDQ.copy(b.localDQ);
+						}
+
+						//Now we invert the world matrix which creates our bind pose,
+						//a starting point to check for changes in the world matrix
+						//mat4.invert(b.bindPoseMatrix,b.worldMatrix);
+						b.worldDQ.invert(b.bindPoseDQ);
+
+
+						//b.worldPosition.multi(-1,b.bindPosePosition);
+						//quat.invert(b.bindPoseRotation,b.worldRotation);
+					}
+				}
+
+				update(){ //calc all the bone positions
+					var b, p, forceUpdate = false;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i];			//Bone
+						p = (b.parent != null)? this.bones[b.parent] : null;	//Parent Bone
+
+						if(b.position.isModified || b.rotation.isModified){
+							forceUpdate = true;
+
+							b.localDQ.set(b.rotation,b.position);
+							b.position.isModified = false;
+							b.rotation.isModified = false;
+						}
+
+						if(forceUpdate){
+							if(p != null) 	p.worldDQ.mul(b.localDQ,b.worldDQ); //world = p.world * local
+							else 			b.worldDQ.copy(b.localDQ); //No parent, Local == World
+
+							//Calc the difference from the bindPose
+							b.worldDQ.mul(b.bindPoseDQ, b.offsetDQ); // offset = world * bindPose;
+						}
+					}
+				}
+
+				getFlatOffset(out){ //Used for Vertices to move
+					var b,j;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i].offsetDQ;
+						out.push(b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7]);
+						//for(j=0; j < 16; j++) out[ (i*16) + j ] = b.offsetMatrix[j];
+					}
+				}
+
+				getFlatWorldSpace(out){ //Used for visualizing bones
+					var b;
+					for(var i=0; i < this.bones.length; i++){
+						b = this.bones[i].worldDQ;
+						out.push(b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7]);
+					}
+				}
+			}
+
+			class QSkeletonMesh extends Fungi.Renderable{
+				constructor(skel,matName){
+					super({},matName);
+
+					this.skeleton = skel;
+					this.drawMode = Fungi.gl.LINES;
+
+					var verts = [0,0,0,0, 0,3,0,1];
+					var offset = [];
+					skel.getFlatWorldSpace(offset);
+					
+					Fungi.Shaders.VAO.create(this.vao)
+						.floatArrayBuffer(this.vao,"vert",verts,Fungi.ATTR_POSITION_LOC,4,0,0,true,false)
+						.floatArrayBuffer(this.vao,"offset",offset,8,4,32,0,true,false,true)
+						.partitionBuffer(9,4,32,16,true)
+						.finalize(this.vao);
+
+					this.instanceSize = offset.length/8; //How many bones are we rendering
+				}
+
+				updateOffset(){
+					var offset = [];
+					this.skeleton.getFlatWorldSpace(offset);
+
+					Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,this.vao.buffers["offset"].buf);
+					Fungi.gl.bufferSubData(Fungi.gl.ARRAY_BUFFER, 0, new Float32Array(offset), 0, null);
+					Fungi.gl.bindBuffer(Fungi.gl.ARRAY_BUFFER,null);
+				}
+
+				draw(){
+					if(this.vao.count > 0){
+						this.updateOffset();
+						//console.log(this.vao.buffers["offset"].buf);
+
+						Fungi.gl.bindVertexArray(this.vao.id);
+						Fungi.gl.drawArraysInstanced(this.drawMode, 0, this.vao.count, this.instanceSize);
+
+						//if(this.vao.isIndexed)	Fungi.gl.drawElements(this.drawMode, this.vao.count, Fungi.gl.UNSIGNED_SHORT, 0); 
+						//else 					Fungi.gl.drawArrays(this.drawMode, 0, this.vao.count);
+					}
+				}
+			}
+
+			//http://wscg.zcu.cz/wscg2012/short/A29-full.pdf
+			//https://github.com/toji/gl-matrix/issues/221
+			//https://github.com/stefnotch/gl-matrix/blob/master/src/gl-matrix/quat2.js
+			class DualQuat extends Float32Array{
+				constructor(q,t){
+					super(8);
+					this.set(q,t);
+				}
+
+				copy(a){
+					this[0] = a[0];
+					this[1] = a[1];
+					this[2] = a[2];
+					this[3] = a[3];
+					this[4] = a[4];
+					this[5] = a[5];
+					this[6] = a[6];
+					this[7] = a[7];
+					return this;
+				}
+
+				//Adds two dual quat's
+				add(q,out){
+					out = out || this;
+					out[0] = this[0] + q[0];
+					out[1] = this[1] + q[1];
+					out[2] = this[2] + q[2];
+					out[3] = this[3] + q[3];
+					out[4] = this[4] + q[4];
+					out[5] = this[5] + q[5];
+					out[6] = this[6] + q[6];
+					out[7] = this[7] + q[7];
+					return this;
+				}
+
+				//Multiplies two dual quat's
+				mul(q,out){
+					out = out || this;
+
+					var ax0 = this[0], ay0 = this[1], az0 = this[2], aw0 = this[3],
+						ax1 = this[4], ay1 = this[5], az1 = this[6], aw1 = this[7],
+						bx0 = q[0], by0 = q[1], bz0 = q[2], bw0 = q[3],
+						bx1 = q[4], by1 = q[5], bz1 = q[6], bw1 = q[7];
+
+					out[0] = ax0 * bw0 + aw0 * bx0 + ay0 * bz0 - az0 * by0;
+					out[1] = ay0 * bw0 + aw0 * by0 + az0 * bx0 - ax0 * bz0;
+					out[2] = az0 * bw0 + aw0 * bz0 + ax0 * by0 - ay0 * bx0;
+					out[3] = aw0 * bw0 - ax0 * bx0 - ay0 * by0 - az0 * bz0;
+					out[4] = ax0 * bw1 + aw0 * bx1 + ay0 * bz1 - az0 * by1 + ax1 * bw0 + aw1 * bx0 + ay1 * bz0 - az1 * by0;
+					out[5] = ay0 * bw1 + aw0 * by1 + az0 * bx1 - ax0 * bz1 + ay1 * bw0 + aw1 * by0 + az1 * bx0 - ax1 * bz0;
+					out[6] = az0 * bw1 + aw0 * bz1 + ax0 * by1 - ay0 * bx1 + az1 * bw0 + aw1 * bz0 + ax1 * by0 - ay1 * bx0;
+					out[7] = aw0 * bw1 - ax0 * bx1 - ay0 * by1 - az0 * bz1 + aw1 * bw0 - ax1 * bx0 - ay1 * by0 - az1 * bz0;
+					return this;
+				}
+
+				scale(s,out){
+					out = out || this;
+					out[0] = this[0] * s;
+					out[1] = this[1] * s;
+					out[2] = this[2] * s;
+					out[3] = this[3] * s;
+					out[4] = this[4] * s;
+					out[5] = this[5] * s;
+					out[6] = this[6] * s;
+					out[7] = this[7] * s;
+					return this;
+				}
+
+				//Calculates the inverse of a dual quat. If they are normalized, conjugate is cheaper
+				invert(out){
+					out = out || this;
+					var sqlen = this.squaredLength(); //Todo, do 1/sqlen then mul the value
+
+					out[0] = -this[0] / sqlen;
+					out[1] = -this[1] / sqlen;
+					out[2] = -this[2] / sqlen;
+					out[3] =  this[3] / sqlen;
+					out[4] = -this[4] / sqlen;
+					out[5] = -this[5] / sqlen;
+					out[6] = -this[6] / sqlen;
+					out[7] =  this[7] / sqlen;
+					return this;
+				}
+
+				squaredLength(){ return this[0]*this[0] + this[1]*this[1] + this[2]*this[2] + this[3]*this[3]; }
+
+				set(q,v){
+					var nq = null;
+					if(q != undefined && q != null){
+						nq = [0,0,0,1];
+						q.normalize(nq);
+					}
+
+					v = v || null;
+
+					if(nq != null & v != null)			DualQuat.fromRotationTranslation(this,nq,v);
+					else if(nq != null && v == null)	DualQuat.fromRotation(this,nq);
+					else if(nq == null && v != null)	DualQuat.fromTranslation(this,v);
+					else{								//identity
+						this[0] = 0;
+						this[1] = 0;
+						this[2] = 0;
+						this[3] = 1;
+						this[4] = 0;
+						this[5] = 0;
+						this[6] = 0;
+						this[7] = 0;
+					}
+
+					return this;
+				}
+
+				//Creates a dual quat from a quaternion and a translation
+				static fromRotationTranslation(out,q,t){
+					var ax = t[0] * 0.5, ay = t[1] * 0.5, az = t[2] * 0.5,
+						bx = q[0], by = q[1], bz = q[2], bw = q[3];
+
+					out[0] = bx;
+					out[1] = by;
+					out[2] = bz;
+					out[3] = bw;
+					out[4] =  ax * bw + ay * bz - az * by;
+					out[5] =  ay * bw + az * bx - ax * bz;
+					out[6] =  az * bw + ax * by - ay * bx;
+					out[7] = -ax * bx - ay * by - az * bz;
+					return out;
+				}
+
+				static fromTranslation(out,t){
+					out[0] = 0;
+					out[1] = 0;
+					out[2] = 0;
+					out[3] = 1;
+					out[4] = t[0] * 0.5;
+					out[5] = t[1] * 0.5;
+					out[6] = t[2] * 0.5;
+					out[7] = 0;
+					return out;
+				}
+
+				static fromRotation(out,q){
+					out[0] = q[0];
+					out[1] = q[1];
+					out[2] = q[2];
+					out[3] = q[3];
+					out[4] = 0;
+					out[5] = 0;
+					out[6] = 0;
+					out[7] = 0;
+					return out;
+				}
+
+				static getTranslation(out,a){    
+					var ax =  a[4], ay =  a[5], az =  a[6], aw = a[7],
+						bx = -a[0], by = -a[1], bz = -a[2], bw = a[3];
+
+					out[0] = (ax * bw + aw * bx + ay * bz - az * by)*2;
+					out[1] = (ay * bw + aw * by + az * bx - ax * bz)*2;
+					out[2] = (az * bw + aw * bz + ax * by - ay * bx)*2;
+					return out;
+				}
+
+				//Multiplies two dual quat's
+				static multi(out,a,b){
+					var ax0 = a[0], ay0 = a[1], az0 = a[2], aw0 = a[3],
+						ax1 = a[4], ay1 = a[5], az1 = a[6], aw1 = a[7],
+						bx0 = b[0], by0 = b[1], bz0 = b[2], bw0 = b[3],
+						bx1 = b[4], by1 = b[5], bz1 = b[6], bw1 = b[7];
+					out[0] = ax0 * bw0 + aw0 * bx0 + ay0 * bz0 - az0 * by0;
+					out[1] = ay0 * bw0 + aw0 * by0 + az0 * bx0 - ax0 * bz0;
+					out[2] = az0 * bw0 + aw0 * bz0 + ax0 * by0 - ay0 * bx0;
+					out[3] = aw0 * bw0 - ax0 * bx0 - ay0 * by0 - az0 * bz0;
+					out[4] = ax0 * bw1 + aw0 * bx1 + ay0 * bz1 - az0 * by1 + ax1 * bw0 + aw1 * bx0 + ay1 * bz0 - az1 * by0;
+					out[5] = ay0 * bw1 + aw0 * by1 + az0 * bx1 - ax0 * bz1 + ay1 * bw0 + aw1 * by0 + az1 * bx0 - ax1 * bz0;
+					out[6] = az0 * bw1 + aw0 * bz1 + ax0 * by1 - ay0 * bx1 + az1 * bw0 + aw1 * bz0 + ax1 * by0 - ay1 * bx0;
+					out[7] = aw0 * bw1 - ax0 * bx1 - ay0 * by1 - az0 * bz1 + aw1 * bw0 - ax1 * bx0 - ay1 * by0 - az1 * bz0;
+					return out;
+				}
+
+				//Translates a dual quat by the given vector
+				static translate(out,a,v){
+					var ax1 = a[0], ay1 = a[1], az1 = a[2], aw1 = a[3],
+						ax2 = a[4], ay2 = a[5], az2 = a[6], aw2 = a[7],
+						bx1 = v[0] * 0.5, by1 = v[1] * 0.5, bz1 = v[2] * 0.5;
+
+					out[0] = ax1;
+					out[1] = ay1;
+					out[2] = az1;
+					out[3] = aw1;
+					out[4] =  aw1 * bx1 + ay1 * bz1 - az1 * by1 + ax2;
+					out[5] =  aw1 * by1 + az1 * bx1 - ax1 * bz1 + ay2;
+					out[6] =  aw1 * bz1 + ax1 * by1 - ay1 * bx1 + az2;
+					out[7] = -ax1 * bx1 - ay1 * by1 - az1 * bz1 + aw2;
+					return out;
+				}
+
+				//Rotates a dual quat around the X axis
+				static rotateX(out,a,rad){
+					var bx = -a[0], by = -a[1], bz = -a[2], bw = a[3],
+						ax =  a[4], ay =  a[5], az =  a[6], aw = a[7];
+					//Trans
+					var ax1 = ax * bw + aw * bx + ay * bz - az * by,
+					ay1 = ay * bw + aw * by + az * bx - ax * bz,
+					az1 = az * bw + aw * bz + ax * by - ay * bx,
+					aw1 = aw * bw - ax * bx - ay * by - az * bz;
+
+					//Rotate it 
+					quat.rotateX(out, a, rad);
+
+					bx = out[0]; by = out[1]; bz = out[2]; bw = out[3];
+					out[4] = ax1 * bw + aw1 * bx + ay1 * bz - az1 * by;
+					out[5] = ay1 * bw + aw1 * by + az1 * bx - ax1 * bz;
+					out[6] = az1 * bw + aw1 * bz + ax1 * by - ay1 * bx;
+					out[7] = aw1 * bw - ax1 * bx - ay1 * by - az1 * bz;
+					return out;
+				}
+
+				static rotateY(out,a,rad){
+					var bx = -a[0], by = -a[1], bz = -a[2], bw = a[3],
+						ax =  a[4], ay =  a[5], az =  a[6], aw = a[7];
+					
+					//Trans
+					var ax1 = ax * bw + aw * bx + ay * bz - az * by,
+					ay1 = ay * bw + aw * by + az * bx - ax * bz,
+					az1 = az * bw + aw * bz + ax * by - ay * bx,
+					aw1 = aw * bw - ax * bx - ay * by - az * bz;
+
+					//Rotate it 
+					quat.rotateY(out, a, rad);
+
+					bx = out[0]; by = out[1]; bz = out[2]; bw = out[3];
+					out[4] = ax1 * bw + aw1 * bx + ay1 * bz - az1 * by;
+					out[5] = ay1 * bw + aw1 * by + az1 * bx - ax1 * bz;
+					out[6] = az1 * bw + aw1 * bz + ax1 * by - ay1 * bx;
+					out[7] = aw1 * bw - ax1 * bx - ay1 * by - az1 * bz;
+					return out;
+				}
+
+				static rotateZ(out,a,rad){
+					//Get the translation
+					var bx = -a[0], by = -a[1], bz = -a[2], bw = a[3],
+					ax =  a[4], ay =  a[5], az =  a[6], aw = a[7];
+
+					//Trans
+					var ax1 = ax * bw + aw * bx + ay * bz - az * by,
+					ay1 = ay * bw + aw * by + az * bx - ax * bz,
+					az1 = az * bw + aw * bz + ax * by - ay * bx,
+					aw1 = aw * bw - ax * bx - ay * by - az * bz;
+
+					//Rotate it 
+					quat.rotateZ(out, a, rad);
+
+					bx = out[0]; by = out[1]; bz = out[2]; bw = out[3];
+					out[4] = ax1 * bw + aw1 * bx + ay1 * bz - az1 * by;
+					out[5] = ay1 * bw + aw1 * by + az1 * bx - ax1 * bz;
+					out[6] = az1 * bw + aw1 * bz + ax1 * by - ay1 * bx;
+					out[7] = aw1 * bw - ax1 * bx - ay1 * by - az1 * bz;
+					return out;
+				}
+
+				//Rotates a dual quat by a given quaternion (a * q)
+				static rotateByQuatAppend(out,a,q){
+					var qx = q[0], qy = q[1], qz = q[2], qw = q[3],
+						ax = a[0], ay = a[1], az = a[2], aw = a[3];
+
+					out[0] = ax * qw + aw * qx + ay * qz - az * qy;
+					out[1] = ay * qw + aw * qy + az * qx - ax * qz;
+					out[2] = az * qw + aw * qz + ax * qy - ay * qx;
+					out[3] = aw * qw - ax * qx - ay * qy - az * qz;
+					
+					ax = a[4]; ay = a[5]; az = a[6]; aw = a[7];
+					out[4] = ax * qw + aw * qx + ay * qz - az * qy;
+					out[5] = ay * qw + aw * qy + az * qx - ax * qz;
+					out[6] = az * qw + aw * qz + ax * qy - ay * qx;
+					out[7] = aw * qw - ax * qx - ay * qy - az * qz;
+					return out;
+				}
+
+				//Rotates a dual quat by a given quaternion (q * a)
+				static rotateByQuatPrepend(out,q,a){
+					var qx = q[0], qy = q[1], qz = q[2], qw = q[3],
+					bx = a[0], by = a[1], bz = a[2], bw = a[3];
+
+					out[0] = qx * bw + qw * bx + qy * bz - qz * by;
+					out[1] = qy * bw + qw * by + qz * bx - qx * bz;
+					out[2] = qz * bw + qw * bz + qx * by - qy * bx;
+					out[3] = qw * bw - qx * bx - qy * by - qz * bz;
+
+					bx = a[4]; by = a[5]; bz = a[6]; bw = a[7];
+					out[4] = qx * bw + qw * bx + qy * bz - qz * by;
+					out[5] = qy * bw + qw * by + qz * bx - qx * bz;
+					out[6] = qz * bw + qw * bz + qx * by - qy * bx;
+					out[7] = qw * bw - qx * bx - qy * by - qz * bz;
+					return out;
+				}
+
+				//Rotates a dual quat around a given axis. Does the normalisation automatically
+				static rotateAroundAxis(out,a,axis,rad){
+					//Special case for rad = 0
+					if(Math.abs(rad) < glMatrix.EPSILON){ return dualquat.copy(out, a); } //TODO VOR- get Epsilon
+
+					var axisLength = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+
+					rad = rad * 0.5;
+					var s = Math.sin(rad);
+					var bx = s * axis[0] / axisLength;
+					var by = s * axis[1] / axisLength;
+					var bz = s * axis[2] / axisLength;
+					var bw = Math.cos(rad);
+
+					var ax1 = a[0], ay1 = a[1], az1 = a[2], aw1 = a[3];
+					out[0] = ax1 * bw + aw1 * bx + ay1 * bz - az1 * by;
+					out[1] = ay1 * bw + aw1 * by + az1 * bx - ax1 * bz;
+					out[2] = az1 * bw + aw1 * bz + ax1 * by - ay1 * bx;
+					out[3] = aw1 * bw - ax1 * bx - ay1 * by - az1 * bz;
+
+					var ax = a[4], ay = a[5], az = a[6], aw = a[7];
+					out[4] = ax * bw + aw * bx + ay * bz - az * by;
+					out[5] = ay * bw + aw * by + az * bx - ax * bz;
+					out[6] = az * bw + aw * bz + ax * by - ay * bx;
+					out[7] = aw * bw - ax * bx - ay * by - az * bz;
+
+					return out;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0;
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+
+	<script id="vertex_skinning" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		layout(location=3) in vec2 a_boneIdx;
+		layout(location=4) in vec2 a_boneWeight;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+		uniform mat4[3] uBones;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0;// + (5.0 * a_boneIdx.y);
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+			//int bIdx = int(a_boneIdx.x);
+			//mat4 bMat = uBones[bIdx];
+
+			/* */
+			mat4 m4Bone = uBones[int(a_boneIdx[0])] * a_boneWeight[0] +
+                			uBones[int(a_boneIdx[1])] * a_boneWeight[1];
+            gl_Position =  matProjection * matCameraView * uModalMatrix * m4Bone * vec4(a_position.xyz, 1.0);
+			
+
+			/*
+			vec4 pos = uBones[int(a_boneIdx[0])] * vec4(a_position.xyz,1.0) * a_boneWeight[0] +
+                		uBones[int(a_boneIdx[1])] * vec4(a_position.xyz,1.0) * a_boneWeight[1] ;
+
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(pos.xyz, 1.0);
+			*/
+
+			vUV = a_uv;
+			//gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_skinning" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+	<script id="vertex_skeleton" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+		layout(location=10) in mat4 a_offset;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			gl_PointSize = 8.0;
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 3.0) color = vec3(0.0,0.0,0.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position = matProjection * matCameraView * uModalMatrix * a_offset * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_skeleton" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+	<script id="qvertex_skinning" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		layout(location=3) in vec2 a_boneIdx;
+		layout(location=4) in vec2 a_boneWeight;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+		uniform mat2x4[3] uBones;
+		//uniform mat4[3] uBones;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		vec3 dqBoneTransform(){
+			mat2x4 mBone =	uBones[int(a_boneIdx[0])] * a_boneWeight[0] +
+                			uBones[int(a_boneIdx[1])] * a_boneWeight[1];
+
+			vec3 v = a_position.xyz;
+			vec4 Qr = mBone[0].xyzw; //real (rot)
+			vec4 Qd = mBone[1].xyzw; //dual (trans)
+
+			vec3 pos = v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);			//Rotate Vector
+			vec3 tran = 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+			return pos + tran;
+		}
+
+		void main(void){
+			gl_PointSize = 8.0;// + (5.0 * a_boneIdx.y);
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+            vec3 pos = dqBoneTransform();
+            gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+
+			vUV = a_uv;
+		}
+	</script>
+	<script id="qfragment_skinning" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+
+
+<!--
+http://donw.io/post/dual-quaternion-skinning/
+final vec transform when DQ converted to Q,V
+float3 QuatRotateVector(float4 Qr, float3 v)
+{
+    return v + 2 * cross(Qr.w * v + cross(v, Qr.xyz), Qr.xyz);
+}
+-->
+	<script id="qvertex_skeleton" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		layout(location=8) in vec4 a_QR; //Rotation
+		layout(location=9) in vec4 a_QD; //Position
+
+		layout(location=10) in vec4 a_offsetrot;
+		layout(location=11) in vec3 a_offsetpos;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		//https://github.com/robertsdionne/animus/blob/master/src/animus.htm
+		//https://www.cs.utah.edu/~ladislav/dq/dqs.cg
+		//http://donw.io/post/dual-quaternion-skinning/
+		vec3 dqTransform(vec4 Qr, vec4 Qd, vec3 v){
+			//Normalize - For my data I dont really need it but keep the src incase I do.
+			//float len = 1.0 / length(Qr);
+			//Qr *= len;
+			//Qd *= len;
+
+			//dqsFast example from dqs.cg has v + 2.0 * cross which allows rotation to work but translation fails
+			//but thanks to a shader written by robertsdionne, he changed it to v + cross(2.0 *
+			//Moving the 2.0 multiplication into the first cross makes it works correctly in webgl - SketchpunkLabs
+			vec3 pos = v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);			//Rotate Vector
+			vec3 tran = 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+			return pos + tran;
+		}
+
+		void main(void){
+			gl_PointSize = 8.0;
+			if(a_position.w == 0.0) color = vec3(1.0,0.0,0.0);
+			else if(a_position.w == 1.0) color = vec3(0.0,1.0,0.0);
+			else if(a_position.w == 2.0) color = vec3(0.0,0.0,1.0);
+			else if(a_position.w == 3.0) color = vec3(0.0,0.0,0.0);
+			else if(a_position.w == 9.0) color = vec3(1.0,0.5,0.5);
+			else color = vec3(0.6,0.6,0.6);
+
+        	vec3 pos = dqTransform(a_QR,a_QD,a_position.xyz);
+			gl_Position = matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+
+			vUV = a_uv;
+		}
+	</script>
+	<script id="qfragment_skeleton" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+</body>
+</html>
