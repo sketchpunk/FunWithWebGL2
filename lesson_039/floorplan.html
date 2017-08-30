@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid black;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; background:gray; color:white; font-weight:bold; padding:5px 5px; width:40px; text-align:center; font-family:arial; font-size:13px;}
+		</style>
+
+		<script src="fungi.core.js"></script>
+		<script src="fungi.primatives.js"></script>
+		<script src="fungi.KBMCtrl.js"></script>
+		<script src="fungi.Debug.js"></script>
+		<script src="fungiApp.js"></script>
+
+		<script>
+			var gModel;
+			//http://antongerdelan.net/opengl/raycasting.html
+			//https://www.dropbox.com/s/qkslys3p3xzh8av/MousePicker%20Code.txt?dl=0
+			//https://www.mvps.org/directx/articles/rayproj.htm
+			window.addEventListener("load",function(){
+				//FungiApp.startup();
+				FloorPlan.init();
+
+
+				FungiApp.ctrlCamera.onDownOverrideGood = function(e,ctrl,ix,iy){
+					//http://antongerdelan.net/opengl/raycasting.html
+					//Normalize Device Coordinate
+					var Mat4 = Fungi.Maths.Matrix4;
+					var Cam = FungiApp.mainCamera;
+
+					var nx = ix / Fungi.gl.fWidth * 2 - 1;
+					var ny = 1 - iy / Fungi.gl.fHeight * 2;
+
+					//..........................................
+					//4d Homogeneous Clip Coordinates
+					var vec4Clip = [nx,ny,-1.0,1.0]; // -Z is forward, W just needs to be 1.0.
+
+					//..........................................
+					//4d Eye (Camera) Coordinates
+					var vec4Eye = [0,0,0,0];
+					var matInvProj = new Fungi.Maths.Matrix4();
+					Mat4.invert(matInvProj,Cam.projectionMatrix);
+					Mat4.transformVec4(vec4Eye, vec4Clip, matInvProj);
+					vec4Eye[2] = -1; //Reset Forward Direction
+					vec4Eye[3] = 0.0; //Not a Point
+
+					//..........................................
+					//4d World Coordinates
+					var vec4World = [0,0,0,0];
+					//.Mat4.transformVec4(vec4World,vec4Clip,Cam.invertedLocalMatrix);
+					Mat4.transformVec4(vec4World,vec4Eye,Cam.localMatrix);
+
+					var ray = new Fungi.Maths.Vec3(vec4World[0],vec4World[1],vec4World[2]);
+					ray.normalize();
+
+					//..........................................
+					//FungiApp.debugLines.addVector(ray,[0,0,0],"000000").update()
+
+					//Orbit makes .Position unusable, need to put actual position from the matrix
+					var rayStart	= new Fungi.Maths.Vec3(Cam.localMatrix[12],Cam.localMatrix[13],Cam.localMatrix[14]),
+						rayEnd		= rayStart.clone().add( ray.multi(20) );
+
+					FungiApp.debugLines.addVector(rayStart,rayEnd,"000000").update()
+				}
+
+
+				FungiApp.ctrlCamera.onDownOverride = function(e,ctrl,ix,iy){
+					//http://antongerdelan.net/opengl/raycasting.html
+					//Normalize Device Coordinate
+					var nx = ix / Fungi.gl.fWidth * 2 - 1;
+					var ny = 1 - iy / Fungi.gl.fHeight * 2;
+
+					//Clip Cords would be [nx,ny,-1,1];
+
+					// inverseWorldMatrix = invert(ProjectionMatrix * ViewMatrix)
+					var matWorld = new Fungi.Maths.Matrix4();
+					Fungi.Maths.Matrix4.mult(matWorld,
+						FungiApp.mainCamera.projectionMatrix,
+						FungiApp.mainCamera.invertedLocalMatrix);
+					Fungi.Maths.Matrix4.invert(matWorld);
+
+					//https://stackoverflow.com/questions/20140711/picking-in-3d-with-ray-tracing-using-ninevehgl-or-opengl-i-phone/20143963#20143963
+					var vec4Near	= [0,0,0,0],
+						vec4Far		= [0,0,0,0];		
+					Fungi.Maths.Matrix4.transformVec4(vec4Near, [nx,ny,-1,1.0], matWorld); //using  4d Homogeneous Clip Coordinates
+					Fungi.Maths.Matrix4.transformVec4(vec4Far, [nx,ny,1,1.0], matWorld);
+					
+					//vec4Near[0] /= vec4Near[3]; //perspective divide ("normalize" homogeneous coordinates)
+					//vec4Near[1] /= vec4Near[3];
+					//vec4Near[2] /= vec4Near[3];
+
+					//vec4Far[0] /= vec4Far[3];
+					//vec4Far[1] /= vec4Far[3];
+					//vec4Far[2] /= vec4Far[3];
+
+					for(var i=0; i < 3; i++){
+						vec4Near[i] /= vec4Near[3];
+						vec4Far[i] /= vec4Far[3];
+					}
+
+					var rayNear	= new Fungi.Maths.Vec3(vec4Near[0],vec4Near[1],vec4Near[2]),
+						rayFar	= new Fungi.Maths.Vec3(vec4Far[0],vec4Far[1],vec4Far[2]);
+
+
+					FungiApp.debugLines.addVector(rayNear,rayFar,"000000").update();
+				}
+
+
+				//.......................................................
+				//Create Shaders and Materials
+				Fungi.Shaders.New("DomShader","vertex_shader","fragment_shader")
+					.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+					.prepareUniformBlocks(FungiApp.uboTransform,0);
+
+				Fungi.Shaders.Material.create("MatDomShader","DomShader");
+
+				
+
+				//.......................................................
+				//Prepare our Renderables
+				//var gModel = new Fungi.Renderable(Fungi.Primatives.FacedCube(),"MatDomShader").setPosition(0,0.5,0);
+				//FungiApp.scene.push(gModel);
+				//console.log(FloorPlan.GridBlockVao);
+				//var gModel = new FloorPlan.Wall(); //new Fungi.Renderable(FloorPlan.GridBlockVao,"MatDomShader");
+				//gModel.scale.set(10,4,1);
+				//gModel.rotation.ry(90 * Math.PI/180);
+				//gModel.position.set(1,0,0.2);
+
+				//var gModel = new FloorPlan.Wall(6,0,0,0);
+				//FungiApp.scene.push(gModel);
+
+
+				FungiApp.scene.push(new FloorPlan.Wall(60,0,-30,-20));	//Top
+				FungiApp.scene.push(new FloorPlan.Wall(60,0,-30,20));	//Bottom
+				FungiApp.scene.push(new FloorPlan.Wall(39,90,-30,20));	//Left
+				FungiApp.scene.push(new FloorPlan.Wall(32,90,29,13));	//Upper Right
+				FungiApp.scene.push(new FloorPlan.Wall(2,90,29,20));	//Bottom Right
+
+				FungiApp.scene.push(new FloorPlan.Wall(6,90,18,20));	//SunRm Bot
+				FungiApp.scene.push(new FloorPlan.Wall(23,90,18,4));	//SunRm Top
+
+				FungiApp.scene.push(new FloorPlan.Wall(23,90,-1,4));	//LivRm Top
+				FungiApp.scene.push(new FloorPlan.Wall(2,90,-1,20));	//LivRm Bot
+
+				FungiApp.scene.push(new FloorPlan.Wall(17,0,-18,1));	//DinRm Bot
+				FungiApp.scene.push(new FloorPlan.Wall(6,0,-29,1));		//DinRm top
+
+				//.......................................................
+				//Start Render Loop
+				FungiApp.renderLoop.start();
+			});
+
+			function onRender(dt){
+				FungiApp.update();
+				Fungi.Render(FungiApp.scene);
+			}
+
+
+			var FloorPlan = (function(){
+				var GridSize = 0.2;
+
+				function init(){
+					Fungi.Init("FungiCanvas").fClearColor("FFFFFF").fFitScreen(1,1).fClear();
+
+					FungiApp.uboTransform	= Fungi.Shaders.UBO.createTransformUBO();
+					FungiApp.mainCamera		= new Fungi.CameraOrbit(45,0.1,100.0).setEulerDegrees(-90,0,0).setPosition(0,0,10);//.setPosition(0,0,8).setEulerDegrees(-30,25,0);
+					FungiApp.ctrlCamera		= new Fungi.KBMCtrl().addHandler("camera",new Fungi.KBMCtrl_Viewport(FungiApp.mainCamera),true);
+
+					FungiApp.renderLoop		= new Fungi.RenderLoop(onRender);
+					FungiApp.debugLines		= Fungi.Debug.Lines.getRenderable().update();
+					//FungiApp.gridFloor 		= Fungi.Debug.GridFloor.getRenderable()
+
+					FungiApp.scene.push(FungiApp.debugLines); //,FungiApp.gridFloor
+
+					FungiApp.lblFPS = document.getElementById("lblFPS");
+					setInterval(function(){ FungiApp.lblFPS.innerHTML = FungiApp.renderLoop.fps; },200);
+
+					prepareGridFloor();
+					prepareGridBlock();
+				}
+
+				function prepareGridFloor(){
+					//------------------------------------
+					var vShader = '#version 300 es\n' +
+						'layout(location=0) in vec4 a_position;' +
+						'uniform UBOTransform{ mat4 matProjection; mat4 matCameraView; };' +
+						'uniform mat4 uModalMatrix;' +
+						'out lowp vec4 color; ' +
+						'void main(void){'+
+							'if(a_position.w == 1.0) color = vec4(1.0,0.5,0.5,1.0); '+
+							'else if(a_position.w == 2.0) color = vec4(0.5,1.0,0.5,1.0); '+
+							'else color = vec4(0.9,0.9,0.9,1.0); '+
+							'gl_Position = matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);'+
+						'}';
+					var fShader = '#version 300 es\n' +
+						'precision mediump float;' +
+						'in lowp vec4 color; ' +
+						'out vec4 finalColor; ' +
+						'void main(void){ finalColor = color; }';
+
+					Fungi.Shaders.New("FungiFloorPlanGrid",vShader,fShader)
+						.prepareUniforms(Fungi.UNI_MODEL_MAT_NAME,"mat4")
+						.prepareUniformBlocks(Fungi.Res.Ubo[Fungi.UBO_TRANSFORM],0);
+
+					var mat = Fungi.Shaders.Material.create("FungiFloorPlanGrid","FungiFloorPlanGrid");
+					mat.drawMode = Fungi.gl.LINES;
+
+					//------------------------------------
+					var len	= 70,
+						t 	= len * GridSize,
+						p	= 0,
+						v 	= [ ];
+
+					for(var i=1; i <= len; i++){ //build grid
+						p = i * GridSize;
+						v.push(	p,0,t,0, p,0,-t,0,
+								-p,0,t,0, -p,0,-t,0,
+								-t,0,p,0, t,0,p,0,
+								-t,0,-p,0, t,0,-p,0
+						);
+					}
+					v.push(-t,0,0,1, t,0,0,1, 0,0,t,2, 0,0,-t,2); //origin x,z lines
+
+					var vao = Fungi.Shaders.VAO.standardMesh("FungiFloorPlanGrid",4,v,null,null,null,false);
+					FungiApp.gridFloor = new Fungi.Renderable(vao,"FungiFloorPlanGrid");
+
+					FungiApp.scene.push(FungiApp.gridFloor);
+				}
+
+				function prepareGridBlock(){
+					var x0 = 0, x1 = GridSize, y0 = 0, y1 = GridSize, z0 = 0, z1 = GridSize;
+
+					//Starting bottom left corner, then working counter clockwise to create the front face.
+					//Backface is the first face but in reverse (3,2,1,0)
+					//keep each quad face built the same way to make index and uv easier to assign
+					var aVert = [
+						x0, y1, z1, 0,	//0 Front
+						x0, y0, z1, 0,	//1
+						x1, y0, z1, 0,	//2
+						x1, y1, z1, 0,	//3 
+
+						x1, y1, z0, 1,	//4 Back
+						x1, y0, z0, 1,	//5
+						x0, y0, z0, 1,	//6
+						x0, y1, z0, 1,	//7 
+
+						x0, y1, z0, 2,	//7 Left
+						x0, y0, z0, 2,	//6
+						x0, y0, z1, 2,	//1
+						x0, y1, z1, 2,	//0
+
+						x0, y0, z1, 3,	//1 Bottom
+						x0, y0, z0, 3,	//6
+						x1, y0, z0, 3,	//5
+						x1, y0, z1, 3,	//2
+
+						x1, y1, z1, 4,	//3 Right
+						x1, y0, z1, 4,	//2 
+						x1, y0, z0, 4,	//5
+						x1, y1, z0, 4,	//4
+
+						x0, y1, z0, 5,	//7 Top
+						x0, y1, z1, 5,	//0
+						x1, y1, z1, 5,	//3
+						x1, y1, z0, 5	//4
+					];
+
+					//Build the index of each quad [0,1,2, 2,3,0]
+					var aIndex = [];
+					for(var i=0; i < aVert.length / 4; i+=2) aIndex.push(i, i+1, (Math.floor(i/4)*4)+((i+2)%4));
+
+					//Build UV data for each vertex
+					var aUV = [];
+					for(var i=0; i < 6; i++) aUV.push(0,0,	0,1,  1,1,  1,0);
+
+					//Build Normal data for each vertex
+					var aNorm = [
+						 0, 0, 1,	 0, 0, 1,	 0, 0, 1,	 0, 0, 1,		//Front
+						 0, 0,-1,	 0, 0,-1,	 0, 0,-1,	 0, 0,-1,		//Back
+						-1, 0, 0,	-1, 0, 0,	-1, 0, 0,	-1, 0, 0,		//Left
+						 0,-1, 0,	 0,-1, 0,	 0,-1, 0,	 0,-1, 0,		//Bottom
+						 1, 0, 0,	 1, 0, 0,	 1, 0, 0,	 1, 0, 0,		//Right
+						 0, 1, 0,	 0, 1, 0,	 0, 1, 0,	 0, 1, 0		//Top
+					];
+
+					FloorPlan.GridBlockVao = Fungi.Shaders.VAO.standardMesh("FungiGridBlock",4,aVert,aNorm,aUV,aIndex,false);
+				}
+
+				class Wall extends Fungi.Renderable{
+					constructor(len,rot,x,z){
+						super(FloorPlan.GridBlockVao,"MatDomShader");
+						this.scale.set(len,5,1);
+						this.rotation.setAxisAngle([0,1,0], rot * Math.PI/180);
+						this.position.set(x*GridSize,0,z*GridSize);
+					}
+
+					setLength(x){ this.scale.set(x,5,1); return this; }
+					setPosition(x,z){ this.position.set(x*GridSize,0,z*GridSize); return this; }
+					setRotate(y){ this.rotation.setAxisAngle([0,1,0], y * Math.PI/180); return this; }
+				}
+
+
+				return {init:init, GridBlockVao:null, Wall:Wall};
+			})();
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="vertex_shader" type="x-shader/x-vertex">#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=1) in vec3 a_norm;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 matProjection;
+			mat4 matCameraView;
+			vec3 posCamera;
+		};
+
+		uniform mat4 uModalMatrix;
+		uniform mat3 uNormalMatrix;
+
+		out highp vec2 vUV;
+		out lowp vec3 color;
+
+		void main(void){
+			if(a_position.w == 0.0) color = vec3(0.8,0.8,0.8);
+			else if(a_position.w == 1.0) color = vec3(0.8,0.8,0.8);
+			else if(a_position.w == 2.0) color = vec3(0.7,0.7,0.7);
+			else if(a_position.w == 4.0) color = vec3(0.7,0.7,0.7);
+			else color = vec3(0.6,0.6,0.6);
+
+			vUV = a_uv;
+			gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz, 1.0);
+		}
+	</script>
+	<script id="fragment_shader" type="x-shader/x-fragment">#version 300 es
+		precision mediump float;
+		in highp vec2 vUV;
+		in lowp vec3 color;
+		out vec4 outColor;
+
+		void main(void){
+			outColor = vec4(color,1.0);
+		}
+	</script>
+</body>
+</html>
