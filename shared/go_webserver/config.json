@@ -1,0 +1,4 @@
+{
+	"httpPort":"1337",
+	"httpRootPath":"../fungi"
+}
