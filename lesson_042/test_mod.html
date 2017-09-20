@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<script type="module">
+			import modA from "./modA.js"; 			//Brings in default only
+			//import * as modA from "./modA.js"; 		//Export Everything as one struct, defaults exist in .default
+			//import modA, { log,Other } from "./modA.js"; 	//Export default with a name, plus specific named items
+			//import modB from "./modB.js";
+
+			window.addEventListener("load",function(){
+				console.log(modA);
+				//console.log(log);
+				//modA();
+
+				//console.log(modB, modB.one);
+				//modB.func();
+			});
+		</script>
+	</head>
+<body>
+
+</body>
+</html>

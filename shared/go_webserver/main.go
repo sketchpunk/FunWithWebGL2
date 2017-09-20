@@ -10,6 +10,7 @@ import (
 	"strconv"
 	//"time"
 	"encoding/json"
+	"regexp"
 )
 
 /*
@@ -41,7 +42,24 @@ func main() {
 	//	fmt.Fprintf(w, "Hello %q", html.EscapeString(r.URL.Path))
 	//})
 
-	http.Handle("/", http.FileServer(http.Dir(config.HttpRootPath)))
+
+	//Setup fileServer to change mime types for specific types that may be required by browser
+	//https://www.lemoda.net/go/override-mime-type/
+	var fileServer = http.FileServer(http.Dir(config.HttpRootPath))
+	var jsExt = regexp.MustCompile("\\.js$");
+	//http.Handle("/", fileServer)
+	http.HandleFunc("/",func(w http.ResponseWriter, r *http.Request){
+		uri := r.RequestURI
+
+		//To handle JS Modules in chrome, need this content type sent
+		if jsExt.MatchString(uri){ 
+			w.Header().Set("Content-Type","application/javascript")
+		}	
+		fileServer.ServeHTTP(w,r);
+	})
+
+
+	//http.Handle("/", http.FileServer(http.Dir(config.HttpRootPath)))
 	http.HandleFunc("/exit", func(w http.ResponseWriter, r *http.Request) {
 		msg := "bye"
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
