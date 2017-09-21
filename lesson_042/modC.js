@@ -1,4 +1,4 @@
-import modB from "./modB.js";
+import modB from "./ModB.js";
 console.log("Loading ModC");
 
 
