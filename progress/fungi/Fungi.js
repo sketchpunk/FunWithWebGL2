@@ -1,6 +1,6 @@
 import gl			from "./gl.js";
 import CameraOrbit	from "./cameras/Orbit.js";
-import GridFloor	from "./primitives/gridFloor.js";
+import GridFloor	from "./primitives/GridFloor.js";
 import Renderer		from "./util/Renderer.js";
 import RenderLoop 	from "./util/RenderLoop.js";
 import {KBMCtrl, KBMCtrl_Viewport} from "./util/KBMCtrl.js"
@@ -13,6 +13,9 @@ export default{
 	mainCamera		:null,		//Main camera for the scene
 	ctrlCamera		:null,		//Keyboard and Mouse controls for the camera
 	
+	debugLine		:null,		//Renderable used to help debug data or models
+	debugPoint		:null,		//Same but with points.
+
 	gridFloor		:null,		//Just a reference to the renderable for the grid floor.
 	scene			:[],		//Array that holds the heirarchy of transforms / renderables.
 

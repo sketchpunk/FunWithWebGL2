@@ -373,20 +373,15 @@ class UBO{
 	}
 }
 
-//Vertex Array Object
 class VAO{
-	static create(out){
-		out.buffers = [];
-		out.id = ctx.createVertexArray();
-		out.isIndexed = false;
-		out.count = 0;
-
-		ctx.bindVertexArray(out.id);
-		return VAO;
+	static create(){
+		var vao = { ptr:ctx.createVertexArray(), count:0,isIndexed:false };
+		ctx.bindVertexArray(vao.ptr);
+		return vao;
 	}
 
 	static finalize(out,name){
-		if(out.count == 0 && out.buffers["vert"] !== undefined) out.count = out.buffers["vert"].count;
+		if(out.count == 0 && out.bVertices !== undefined) out.count = out.bVertices.count;
 
 		ctx.bindVertexArray(null);
 		ctx.bindBuffer(ctx.ARRAY_BUFFER,null);
@@ -394,67 +389,79 @@ class VAO{
 		mod.res.vao[name] = out;
 	}
 
-	static emptyFloatArrayBuffer(out,name,aryCount,attrLoc,size,stride,offset,isStatic){
+	static updateAryBufSubData(bufPtr,offset,data){
+		ctx.bindBuffer(ctx.ARRAY_BUFFER, bufPtr);
+		ctx.bufferSubData(ctx.ARRAY_BUFFER, offset, data, 0, null);
+		ctx.bindBuffer(ctx.ARRAY_BUFFER, null);
+	}
+
+
+	//----------------------------------------------------------
+	//Float Array Buffers
+	static floatArrayBuffer(out,name,aryData,attrLoc,compLen,stride,offset,isStatic,isInstance){
 		var rtn = {
-			buf:ctx.createBuffer(),
-			size:size,
+			ptr:ctx.createBuffer(),
+			compLen:compLen,
 			stride:stride,
 			offset:offset,
-			count:0
+			count:aryData.length / compLen
 		};
 
-		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.buf);
-		ctx.bufferData(ctx.ARRAY_BUFFER,aryCount,(isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW);		//Allocate Space needed
-		ctx.enableVertexAttribArray(attrLoc);
-		ctx.vertexAttribPointer(attrLoc,size,ctx.FLOAT,false,stride || 0,offset || 0);
+		var ary = (aryData instanceof Float32Array)? aryData : new Float32Array(aryData);
 
-		out.buffers[name] = rtn;
+		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.ptr);
+		ctx.bufferData(ctx.ARRAY_BUFFER, ary, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
+		ctx.enableVertexAttribArray(attrLoc);
+		ctx.vertexAttribPointer(attrLoc,compLen,ctx.FLOAT,false,stride || 0,offset || 0);
+
+		if(isInstance == true) ctx.vertexAttribDivisor(attrLoc, 1);
+
+		out[name] = rtn;
 		return VAO;
 	}
 
-	static partitionBuffer(attrLoc,size,stride,offset,isInstance){
+	static partitionFloatBuffer(attrLoc,compLen,stride,offset,isInstance){
 		ctx.enableVertexAttribArray(attrLoc);
-		ctx.vertexAttribPointer(attrLoc,size,ctx.FLOAT,false,stride,offset);
+		ctx.vertexAttribPointer(attrLoc,compLen,ctx.FLOAT,false,stride,offset);
 
 		if(isInstance == true) ctx.vertexAttribDivisor(attrLoc, 1);
 		
 		return VAO;
 	}
 
-	static floatArrayBuffer(out,name,aryFloat,attrLoc,size,stride,offset,isStatic,keepData,isInstance){
+	static emptyFloatArrayBuffer(out,name,aryCount,attrLoc,compLen,stride,offset,isStatic){
 		var rtn = {
-			buf:ctx.createBuffer(),
-			size:size,
+			ptr:ctx.createBuffer(),
+			compLen:compLen,
 			stride:stride,
 			offset:offset,
-			count:aryFloat.length / size
+			count:0
 		};
-		if(keepData == true) rtn.data = aryFloat;
-		var ary = (aryFloat instanceof Float32Array)? aryFloat : new Float32Array(aryFloat);
 
-		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.buf);
-		ctx.bufferData(ctx.ARRAY_BUFFER, ary, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
+		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.ptr);
+		ctx.bufferData(ctx.ARRAY_BUFFER,aryCount,(isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW);		//Allocate Space needed
 		ctx.enableVertexAttribArray(attrLoc);
-		ctx.vertexAttribPointer(attrLoc,size,ctx.FLOAT,false,stride || 0,offset || 0);
+		ctx.vertexAttribPointer(attrLoc,compLen,ctx.FLOAT,false,stride || 0,offset || 0);
 
-		if(isInstance == true) ctx.vertexAttribDivisor(attrLoc, 1);
-
-		out.buffers[name] = rtn;
+		out[name] = rtn;
 		return VAO;
 	}
 
-	static mat4ArrayBuffer(out,name,aryFloat,attrLoc,isStatic,keepData,isInstance){
+
+	//----------------------------------------------------------
+	//Matrix 4 Array Buffer
+	static mat4ArrayBuffer(out,name,aryData,attrLoc,isStatic,isInstance){
 		var rtn = {
-			buf:ctx.createBuffer(),
-			size:4,
+			ptr:ctx.createBuffer(),
+			compLen:4,
 			stride:64,
 			offset:0,
 			count:aryFloat.length / 16
 		};
-		if(keepData == true) rtn.data = aryFloat;
-		var ary = (aryFloat instanceof Float32Array)? aryFloat : new Float32Array(aryFloat);
 
-		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.buf);
+		var ary = (aryData instanceof Float32Array)? aryData : new Float32Array(aryData);
+
+		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.ptr);
 		ctx.bufferData(ctx.ARRAY_BUFFER, ary, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
 		
 		//Matrix is treated like an array of vec4, So there is actually 4 attributes to setup that
@@ -478,58 +485,53 @@ class VAO{
 			ctx.vertexAttribDivisor(attrLoc+3, 1);
 		}
 
-		out.buffers[name] = rtn;
+		out[name] = rtn;
 		return VAO;
 	}
 
 
-	static emptyIndexBuffer(out,name,aryCount,isStatic){
-		var rtn = { buf:ctx.createBuffer(), count:0 };
+	//----------------------------------------------------------
+	//Indexes
+	static indexBuffer(out,name,aryData,isStatic){
+		var rtn = { ptr:ctx.createBuffer(), count:aryData.length },
+			ary = (aryData instanceof Uint16Array)? aryUInt : new Uint16Array(aryData);
 
-		ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, rtn.buf );  
-		ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, aryCount, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
-
-		out.buffers[name] = rtn;
-		out.isIndexed = true;
-
-		return VAO;
-	}
-
-	static indexBuffer(out,name,aryUInt,isStatic,keepData){
-		var rtn = { buf:ctx.createBuffer(), count:aryUInt.length };
-		if(keepData == true) rtn.data = aryUInt;
-
-		var ary = (aryUInt instanceof Uint16Array)? aryUInt : new Uint16Array(aryUInt);
-
-		ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, rtn.buf );  
+		ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, rtn.ptr );  
 		ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, ary, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
 
-		out.buffers[name] = rtn;
+		out[name] = rtn;
 		out.isIndexed = true;
-		out.count = aryUInt.length;
+		out.count = aryData.length;
 
 		return VAO;
 	}
 
-	static standardMesh(name,vertSize,aryVert,aryNorm,aryUV,aryInd,keepData){
-		var rtn = {};
-		VAO.create(rtn).floatArrayBuffer(rtn,"vert",aryVert,ATTR_POSITION_LOC,vertSize,0,0,true,keepData);
-		rtn.count = rtn.buffers["vert"].count;
+	static emptyIndexBuffer(out,name,aryCount,isStatic){
+		var rtn = { ptr:ctx.createBuffer(), count:0 };
 
-		if(aryNorm)	VAO.floatArrayBuffer(rtn,"norm",aryNorm,ATTR_NORM_LOC,3,0,0,true,keepData);
-		if(aryUV)	VAO.floatArrayBuffer(rtn,"uv",aryUV,ATTR_UV_LOC,2,0,0,true,keepData);
-		if(aryInd)	VAO.indexBuffer(rtn,"index",aryInd,true,keepData);
+		ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, rtn.ptr );  
+		ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, aryCount, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
 
-		if(rtn.count == 0) rtn.count = aryVert.length / vertSize;
+		out[name] = rtn;
+		out.isIndexed = true;
 
-		VAO.finalize(rtn);
-		return rtn;
+		return VAO;
 	}
 
-	static updateAryBufSubData(bufID,offset,data){
-		ctx.bindBuffer(ctx.ARRAY_BUFFER, bufID);
-		ctx.bufferSubData(ctx.ARRAY_BUFFER, offset, data, 0, null);
-		ctx.bindBuffer(ctx.ARRAY_BUFFER, null);
+
+	//----------------------------------------------------------
+	//Templates
+	static standardRenderable(name,vertCompLen,aryVert,aryNorm,aryUV,aryInd){
+		var rtn = VAO.create();
+		VAO.floatArrayBuffer(rtn,"bVertices",aryVert,ATTR_POSITION_LOC,vertCompLen,0,0,true);
+
+		if(aryNorm)	VAO.floatArrayBuffer(rtn,	"bNormal",	aryNorm,	ATTR_NORM_LOC,	3,0,0,true);
+		if(aryUV)	VAO.floatArrayBuffer(rtn,	"bUV",		aryUV,		ATTR_UV_LOC,	2,0,0,true);
+		if(aryInd)	VAO.indexBuffer(rtn,		"bIndex",	aryInd, true);
+
+		VAO.finalize(rtn,name);
+
+		return rtn;
 	}
 }
 
@@ -669,7 +671,13 @@ var mod = {
 	createProgramFromText:createProgramFromText,
 	
 	//.........................................	
-	res:{ textures:[], videos:[], images:[], shaders:[], ubo:[], vao:[], fbo:[], materials:[] },
+	res:{ textures:[], videos:[], images:[], shaders:[], ubo:[], vao:[], fbo:[], materials:[],
+		getMaterial:function(matName){
+			if(matName === undefined || matName == null) return null;
+			if(this.materials[matName] === undefined){ console.log("Material Not Found :", matName); return null; }
+			return this.materials[matName];
+		}
+	},
 
 	//.........................................
 	UBOTransform: null

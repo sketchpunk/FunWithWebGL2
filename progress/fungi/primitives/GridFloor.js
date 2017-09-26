@@ -1,5 +1,5 @@
 import gl,{ VAO }	from "../gl.js";
-import Renderable	from "../entities/renderable.js";
+import Renderable	from "../entities/Renderable.js";
 
 function GridFloor(){
 	var GridSize	= 0.2,				//Distance between lines
@@ -18,7 +18,7 @@ function GridFloor(){
 	}
 	v.push(-t,0,0,1, t,0,0,1, 0,0,t,2, 0,0,-t,2); //origin x,z lines
 
-	var vao 	= VAO.standardMesh("GridFloor",4,v,null,null,null,false),
+	var vao 	= VAO.standardRenderable("GridFloor",4,v), //VAO.standardMesh("GridFloor",4,v,null,null,null,false),
 		model 	= new Renderable(vao,"MatGridFloor");
 
 	model.drawMode = gl.ctx.LINES;

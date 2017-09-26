@@ -1,5 +1,5 @@
 import gl,{ VAO }	from "../gl.js";
-import Renderable	from "../entities/renderable.js";
+import Renderable	from "../entities/Renderable.js";
 
 function FacedCube(matName){
 	//If the vao exists, create a new renderable using it.
@@ -63,9 +63,10 @@ function FacedCube(matName){
 		 0, 1, 0,	 0, 1, 0,	 0, 1, 0,	 0, 1, 0		//Top
 	];
 
-	var vao = VAO.standardMesh("FungiFCube",4,aVert,aNorm,aUV,aIndex,false),
+	var vao = VAO.standardRenderable("FungiFCube",4,aVert,aNorm,aUV,aIndex),
 		entity = new Renderable(vao,matName);
-		entity.name = "facedCube";
+	
+	entity.name = "facedCube";
 	return entity;
 }
 

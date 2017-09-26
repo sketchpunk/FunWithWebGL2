@@ -58,11 +58,20 @@ class Vec3 extends Float32Array{
 			return this;
 		}
 
-		multi(v,out){
+		scale(v,out){
 			out = out || this;
 			out[0] = this[0] * v;
 			out[1] = this[1] * v;
 			out[2] = this[2] * v;
+			if(out === this) this.isModified = true;
+			return this;
+		}
+
+		mul(v,out){
+			out = out || this;
+			out[0] = this[0] * v[0];
+			out[1] = this[1] * v[1];
+			out[2] = this[2] * v[2];
 			if(out === this) this.isModified = true;
 			return this;
 		}
@@ -84,6 +93,15 @@ class Vec3 extends Float32Array{
 			if(out === this) this.isModified = true;
 			return this;
 		}
+
+		div(v,out){
+			out = out || this;
+			out[0] = (v[0] != 0)? this[0] / v[0] : 0;
+			out[1] = (v[1] != 0)? this[1] / v[1] : 0;
+			out[2] = (v[2] != 0)? this[2] / v[2] : 0;
+			if(out === this) this.isModified = true;
+			return this;
+		}	
 
 		clone(){ return new Vec3().set(this.x,this.y,this.z); }
 		

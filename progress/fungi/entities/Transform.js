@@ -1,4 +1,4 @@
-import { Vec3,Mat4,Quat } from "../maths.js";
+import { Vec3,Mat4,Quat } from "../Maths.js";
 
 class Transform{
 	constructor(){
@@ -56,20 +56,6 @@ class Transform{
 
 	//----------------------------------------------
 	//region Methods
-		updateMatrixOLD(){
-			//Only Update the Matrix if its needed.
-			if(!this.position.isModified && !this.scale.isModified && !this.rotation.isModified) return this.localMatrix;
-
-			//Update our local Matrix
-			Mat4.fromQuaternionTranslationScale(this.localMatrix, this.rotation, this.position, this.scale);
-
-			//Set the modified indicator to false on all the transforms.
-			this.position.isModified	= false;
-			this.scale.isModified		= false;
-			this.rotation.isModified	= false;
-			return this.localMatrix;
-		}
-
 		updateMatrix(forceWorldUpdate){
 			var isDirty = (this.position.isModified || this.scale.isModified || this.rotation.isModified);
 

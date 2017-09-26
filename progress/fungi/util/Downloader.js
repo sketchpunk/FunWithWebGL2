@@ -1,4 +1,4 @@
-import Shader		from "./shader.js";
+import Shader		from "./Shader.js";
 
 /* SAMPLE ------------------------------------------------------
 var p = Downloader.start([

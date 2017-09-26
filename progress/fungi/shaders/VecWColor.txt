@@ -13,7 +13,7 @@ uses less data to. 1 float from 3 foats
 
 <materials>
 [
-	{ "name":"MatVecWColor", "uniforms":[ "uColorAry", "color", ["ff0000","00ff00","0000ff","555555","999999","dddddd"] ] },
+	{ "name":"MatVecWColor", "uniforms":[ "uColorAry", "color", ["ff0000","00ff00","0000ff","555555","999999","dddddd","000000"] ] },
 	{ "name":"MatGridFloor", "uniforms":[ "uColorAry", "color", ["e6e6e6","ff9999","66ff66"] ] }
 ]
 </materials>
@@ -29,11 +29,12 @@ uses less data to. 1 float from 3 foats
 	};
 
 	uniform mat4 uModalMatrix;
-	uniform vec3 uColorAry[10];
+	uniform vec3 uColorAry[20];
 
 	out vec3 oColor;
 
 	void main(void){
+		gl_PointSize = 10.0;
 		oColor = uColorAry[ int(a_position.w) ];
 		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
 	}
