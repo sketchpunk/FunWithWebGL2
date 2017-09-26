@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import VDebug 		from "./fungi/entities/VisualDebugger.js";
+			import Quad			from "./fungi/primitives/Quad1U.js";
+			import { Vec3 }		from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				Fungi.scene.push( Fungi.debugLine = new VDebug() );
+
+				//---------------------
+				/*Determine our Planes Position and Direction*/
+				var planePos = new Vec3(0,0.5,0),
+					planeNorm = new Vec3(0,0,1);
+
+				var quad = Quad("MatVecWColor");
+				quad.position.copy(planePos);
+				Fungi.scene.push(quad);
+				Fungi.debugLine.addVecLine(planePos,0, planePos.clone().add(planeNorm),0); //See the Normal Direction Vector
+				
+
+				//---------------------
+				/*Setup Our Ray*/
+				var rayStart	= new Vec3(1,1,2), //Vec3(1,1,2)
+					rayEnd		= new Vec3(-1.5,-0.5,-2); //new Vec3(-1.5,-0.5,-2); 0.4,0.7,0.4
+
+				Fungi.debugLine.addVecLine(rayStart,7, rayEnd,0); //Visualize the ray
+				
+
+				//.......................
+				// Figure out ray direction
+				var rayDelta = rayEnd.clone().sub(rayStart);
+				//var rayNorm = rayDelta.clone().normalize();
+				//Fungi.debugLine.addVecLine(rayStart,1, rayNorm.clone().add(rayStart),1); //Visualize Direction on Ray
+
+				//.......................
+				/*Get distance */
+				var rayToPlaneDelta = planePos.clone().sub(rayStart); //Distance from ray start to Plane Position.
+				Fungi.debugLine.addVecLine(planePos,3, rayStart,3); //Visualize a connection from Ray Start to Plane Positionposition on plane.
+				
+
+				//.......................
+				//View projection of the two rags
+				/*  (v . n) * n; */
+				var ratio = Vec3.dot(rayDelta,planeNorm);
+				var proj = planeNorm.clone().scale(ratio);
+
+				//var ratio = Vec3.dot(rayToPlaneDelta,planeNorm);
+				//var proj = planeNorm.clone().scale(ratio);
+
+				Fungi.debugLine.addVecLine(rayStart,0, rayStart.clone().add(proj),2);
+
+				//.......................
+				/*Find Intersection*/
+				var wp = Vec3.dot(rayToPlaneDelta,planeNorm);
+				var vp = Vec3.dot(rayDelta,planeNorm);
+				var k = wp/vp; //Check for zero
+				console.log("k",k);
+				
+				//if K is infinite then  the ray and plane are parallel
+				//if K is between 0 and 1, the line touches with the plane
+				//if k is over 1, it does not touch BUT if you only care aboute infinite distance, you still get I where it intersects if it continues to travel in that direction.
+
+				/**/
+				var iPos = rayDelta.clone().scale(k).add(rayStart);
+				Fungi.debugLine.addVecLine(rayStart,5, iPos,5);				
+				console.log("Intersection Pos",iPos);
+				
+
+
+				/* Original C++ Code
+				Vec v = x1 - x0;
+				Vec w = c - x0;
+				float k = w.dot(n) / v.dot(n);
+				intersection =  x0 + k*v;
+				isInter = k >=0 && k <= 1;
+				
+				//Different Vars to make more sense
+				Vec rayDelta = rayEnd - rayStart;
+				Vec rayToPlaneDelta = planePos - rayStart;
+				float scale = rayToPlaneDelta.dot(planeNorm) / rayDelta.dot(planeNorm);
+				intersection =  rayStart + scale*rayDelta;
+
+				isInter = scale >=0 && scale <= 1;
+				*/
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
