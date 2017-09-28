@@ -28,9 +28,9 @@ class VisualDebugger extends Renderable{
 		
 	}
 
-	drawPoints(){		this.drawMode = gl.clx.POINTS;		return this; }
-	drawLines(){		this.drawMode = gl.clx.LINES;		return this; }
-	drawTriangles(){	this.drawMode = gl.clx.TRIANGLES;	return this; }
+	drawPoints(){		this.drawMode = gl.ctx.POINTS;		return this; }
+	drawLines(){		this.drawMode = gl.ctx.LINES;		return this; }
+	drawTriangles(){	this.drawMode = gl.ctx.TRIANGLES;	return this; }
 
 	addRawPoint(x,y,z,w){
 		this.vertBuffer.data.push(x,y,z,w);
@@ -49,7 +49,7 @@ class VisualDebugger extends Renderable{
 		return this;
 	}
 	addVecLine(v1,w1, v2,w2){
-		this.vertBuffer.data.push(v1.x,v1.y,v1.z,w1, v2.x,v2.y,v2.z,w2);
+		this.vertBuffer.data.push(v1[0],v1[1],v1[2],w1, v2[0],v2[1],v2[2],w2);
 		this.isModified = true;	
 		return this;
 	}
