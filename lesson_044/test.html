@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Ray 			from "./fungi/util/Ray.js";
+			import { Vec3 }		from "./fungi/Maths.js";
+			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var geo;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,3);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+
+				//-----------------------------
+				//Setup our Triangle
+				geo = new GeometryData();
+				geo.newPoint(-0.5,0.5,0, 2.5,0.5,0, 0,2.5,0);
+
+				Fungi.scene.push(new GeometryRender(geo,"MatVecWColor").drawTriangles().setOptions(false,true));
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				var ray = Ray.pointsFromMouse(ix,iy);
+
+				Fungi.debugLine.reset().addVecLine(ray.start,7,ray.end,0);
+
+				ray2Triangle_Geo(ray);
+				return true;
+			}
+
+			function ray2Triangle_Geo(ray){
+				//----------------------------- 
+				/*Calculate Plane Normal and Position 
+				var planeNorm = new Vec3();
+				var planePos = new Vec3(geo.points[0].verts); //Any point of the triangle will do.
+
+				// cross(v1-v0, v2-v0) :: Counter Clock Wise to get correct direction.
+				var v0 = new Vec3(geo.points[1].verts).sub(planePos), 
+					v1 = new Vec3(geo.points[2].verts).sub(planePos);
+				Vec3.cross(v0,v1,planeNorm);
+
+				Fungi.debugLine.addVecLine(planePos,0, planePos.clone().add(planeNorm),0); //See the Normal Direction Vector
+*/
+
+				//-----------------------------
+				/* Prepare some Ray information 
+				var rayDelta = new Vec3(ray.end).sub(ray.start);	//Vector Length of the ray.
+				var rayToPlaneDelta = new Vec3(planePos).sub(ray.start);
+				console.log(rayDelta);
+
+				Fungi.debugLine.addVecLine(planePos,4, ray.start,4); //See rayToPlaneDetal
+				
+				//for fun visualize the WP projection 
+				var ratio = Vec3.dot(rayToPlaneDelta,planeNorm);
+				var proj = planeNorm.clone().scale(ratio);
+				Fungi.debugLine.addVecLine(ray.start,0, ray.start.clone().add(proj),2);
+*/
+
+				//-----------------------------
+				/* Find Intersection by dividing two projections  
+				var vp = Vec3.dot(rayDelta,planeNorm);	//Compute this first, if its zero then there won't be an intersection, cant divide 0
+				var wp = Vec3.dot(rayToPlaneDelta,planeNorm);
+				var t = wp/vp;
+				console.log("t",t);
+				//if t is infinite then  the ray and plane are parallel
+				//if 0 < t <= 1, the line touches with the plane
+				//if t is over 1, it does not touch BUT if you only care aboute infinite distance, you still get I where it intersects if it continues to travel in that direction.
+				//if t < 0, plane is behind the start of the ray can still get intersection point behind the ray but worthless since its not in front
+
+				var iPos = rayDelta.clone().scale(t).add(ray.start);
+				Fungi.debugPoint.addVecPoint(iPos,0);
+
+				//Fungi.debugLine.addVecLine(ray.start,2, iPos,2);
+				console.log("Intersection Pos",iPos);
+*/
+
+				//-----------------------------
+				/* Edge Checking
+					Vec3f edge0 = v1 - v0;
+					Vec3f edge1 = v2 - v1;
+					Vec3f edge2 = v0 - v2;
+					Vec3f C0 = P - v0;
+					Vec3f C1 = P - v1;
+					Vec3f C2 = P - v2;
+					if (dot(N, cross(edge0, C0)) > 0 &&
+						dot(N, cross(edge1, C1)) > 0 &&
+						dot(N, cross(edge2, C2)) > 0) return true; // P is inside the triangle
+				
+				var edge = new Vec3();
+				var ilen = new Vec3(); //intersection point length from starting of edge
+				var cp = new Vec3();	//cross product of Edge and iLen
+
+				/
+				edge.copy(geo.points[1].verts).sub(geo.points[0].verts);
+				ilen.copy(iPos).sub(geo.points[0].verts);
+				Vec3.cross(edge,ilen,cp);
+				console.log( Vec3.dot(planeNorm,cp) );
+
+				Fungi.debugLine.addVecLine(geo.points[0].verts,7, geo.points[1].verts,7); //Visualize the Edge for testing
+				Fungi.debugLine.addVecLine(iPos,0, geo.points[0].verts,0);	//Visualize the Length of edge to Intersection Point.
+				Fungi.debugLine.addVecLine(cp,2, geo.points[0].verts,2);	//Visualize the Cross Product
+				/
+
+				var ii;
+				for(var i=0; i < 3; i++){
+					ii = (i+1)%3;
+
+					edge.copy(geo.points[ii].verts).sub(geo.points[i].verts);
+					ilen.copy(iPos).sub(geo.points[i].verts);
+					Vec3.cross(edge,ilen,cp);
+					console.log(i, Vec3.dot(planeNorm,cp) );
+
+					Fungi.debugLine.addVecLine(geo.points[i].verts,7, geo.points[ii].verts,7); //Visualize the Edge for testing
+					Fungi.debugLine.addVecLine(iPos,0, geo.points[i].verts,0);	//Visualize the Length of edge to Intersection Point.
+					Fungi.debugLine.addVecLine(cp,2, geo.points[i].verts,2);	//Visualize the Cross Product
+				}*/
+
+				//-----------------------------
+				/* Barycentric Coordinates 
+
+				var edgeA = new Vec3();
+				var edgeB = new Vec3();
+				var perp = new Vec3();
+				var perpLen = new Vec3();
+				var iLen = new Vec3();
+				var dotN, dotD;
+
+				edgeA.copy(geo.points[0].verts).sub(geo.points[1].verts); //Vector BA
+				edgeB.copy(geo.points[2].verts).sub(geo.points[1].verts); //Vector BC
+
+				var dotE = Vec3.dot(edgeA,edgeB) / Vec3.dot(edgeB,edgeB); //Projection |a|.|b| / |b|.|b| = t  :: Project A onto B.
+				perp.copy(edgeB).scale(dotE).add(geo.points[1].verts);
+
+				Fungi.debugPoint.addVecPoint(perp,2);
+				Fungi.debugLine.addVecLine(geo.points[0].verts,2, perp,2); //Visualize perpendicular line from point A onto Line BC
+*/
+				/*Now project the vector length of point A to I onto A to Perp 
+				perpLen.copy(perp).sub(geo.points[0].verts); //Get length from A to P
+				iLen.copy(iPos).sub(geo.points[0].verts);
+				var dot = 1 - (Vec3.dot(iLen,perpLen) / Vec3.dot(perpLen,perpLen)); // Dont really need 1- unless you care about Barycentric Coord, remove 1- if you only care to check if ray is in the triangle
+
+				Fungi.debugLine.addVecLine(geo.points[0].verts,2, iPos,2); //Visually see the line between A and I
+				Fungi.debugPoint.addVecPoint( perpLen.scale(dot).add(geo.points[0].verts),2);
+				console.log("Final Dot",dot); //Between 0 and 1 if inside the triangle
+				*/
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
