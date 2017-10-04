@@ -15,7 +15,9 @@
 			import Downloader	from "./fungi/util/Downloader.js";
 			import Ray 			from "./fungi/util/Ray.js";
 			import { Vec3 }		from "./fungi/Maths.js";
-			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
+			import Quad1U	from "./fungi/primitives/Quad1U.js";
+
+			import BoundingCapsule	from "./fungi/entities/BoundingCapsule.js";
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -23,7 +25,8 @@
 				//........................................
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
-					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/Circle.txt"}
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -31,7 +34,7 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
-			var geo;
+			var mesh;
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
@@ -39,11 +42,10 @@
 				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
 
 				//-----------------------------
-				//Setup our Triangle
-				geo = new GeometryData();
-				geo.newPoint(-0.5,0.5,0, 2.5,0.5,0, 0,2.5,0);
+				//Fungi.scene.push(mesh = Quad1U("MatCircle").setPosition(0,1,0));
 
-				Fungi.scene.push(new GeometryRender(geo,"MatVecWColor").drawTriangles().setOptions(false,true));
+				Fungi.scene.push(new BoundingCapsule("MatVecWColor"));
+
 
 				//........................................
 				//Begin rendering the scene
@@ -56,28 +58,82 @@
 				if(!e.ctrlKey) return false;
 
 				var ray = Ray.pointsFromMouse(ix,iy);
+				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
+				Fungi.debugPoint.reset();
 
-				Fungi.debugLine.reset().addVecLine(ray.start,7,ray.end,0);
-
-				/* Show Plane Intersection */
-				var i = Ray.inPlane(ray.start,ray.end,new Vec3(0,0,1),new Vec3(0,0.5,0));
-				if(i != null) Fungi.debugPoint.addVecPoint(i,0);
-				else console.log("no intersection")
-				
-
-				/* Polygon Edge Testing  
-				var i = Ray.inPolygon(ray.start,ray.end, [ new Vec3(-0.5,0.5,0), new Vec3(2.5,0.5,0), new Vec3(0,2.5,0) ]);
-				if(i != null) Fungi.debugPoint.addVecPoint(i,0);
-				else console.log("no intersection")
-				*/
-
-				/* Barycentric Triangle Testing 
-				var i = Ray.inTriangle(ray.start,ray.end, [ new Vec3(-0.5,0.5,0), new Vec3(2.5,0.5,0), new Vec3(0,2.5,0) ]);
-				if(i != null) Fungi.debugPoint.addVecPoint(i,0);
-				else console.log("no intersection")
- 				*/
+				//inQuad(mesh,ray);
+				inCircle(ray,mesh,0.5);
 
 				return true;
+			}
+
+			function inQuad(quad,ray){
+				console.log(quad.position);
+				//Calc the 4 corner positions of the quad.
+				//If needing to find normal direction, take 3 sequential corners, get two vector lengths then cross apply.
+				////v1 - v0 CROSS v2 - v0 :: Counter Clock Wise to get correct direction. 
+				var planePos	= quad.position.clone(),
+					planeNorm	= new Vec3(0,0,1);
+
+				var iPos = Ray.inPlane(ray.start,ray.end,planeNorm,planePos);
+				if(iPos == null){
+					console.log("Not in Quad");
+					return false;
+				}
+				Fungi.debugPoint.addVecPoint(iPos,1);
+
+				//Figure out the 4 points in the quad based on center position and known width/height;
+				var v0 = quad.position.clone().add([-0.5,0.5,0]),
+					v1 = quad.position.clone().add([-0.5,-0.5,0]),
+					v2 = quad.position.clone().add([0.5,-0.5,0]),
+					v3 = quad.position.clone().add([0.5,0.5,0]),
+					vlen,plen,t;
+
+				//First Diagonal Test
+				vlen = v2.clone().sub(v0);
+				plen = iPos.clone().sub(v0);
+				t = Vec3.dot(plen,vlen) / Vec3.dot(vlen,vlen);
+				console.log("Endge1",t);
+
+				Fungi.debugLine.addVecLine(v0,2,v2,2);
+				Fungi.debugLine.addVecLine(v0,2,iPos,2);
+				Fungi.debugLine.addVecLine(iPos,2,vlen.clone().scale(t).add(v0),2);
+				Fungi.debugPoint.addVecPoint(vlen.clone().scale(t).add(v0),2);
+
+				//Second Diagonal Test
+				vlen = v3.clone().sub(v1);
+				plen = iPos.clone().sub(v1);
+				t = Vec3.dot(plen,vlen) / Vec3.dot(vlen,vlen);
+				console.log("Endge2",t);
+
+				Fungi.debugLine.addVecLine(v1,0,v3,0);
+				Fungi.debugLine.addVecLine(v1,0,iPos,0);
+				Fungi.debugLine.addVecLine(iPos,0,vlen.clone().scale(t).add(v1),0);
+				Fungi.debugPoint.addVecPoint(vlen.clone().scale(t).add(v1),0);
+			}
+
+			function inCircle(ray,quad,radius){
+				var planePos	= quad.position.clone(),
+					planeNorm	= new Vec3(0,0,1);
+
+				var iPos = Ray.inPlane(ray.start,ray.end,planeNorm,planePos);
+
+				console.log(iPos);
+				if(iPos == null){
+					console.log("Not in Quad");
+					return false;
+				}
+				Fungi.debugPoint.addVecPoint(iPos,1); //See intersection point
+
+				var vLen = iPos.clone().sub(planePos),
+					lenSqr = Vec3.dot(vLen,vLen);
+	
+				console.log(lenSqr);
+				Fungi.debugLine.addVecLine(iPos,2,planePos,2);
+				Fungi.debugPoint.addVecPoint(planePos,2);
+
+				if(lenSqr <= radius*radius) console.log("In Circle");
+				else console.log("Not In Circle");
 			}
 		</script>
 	</head>

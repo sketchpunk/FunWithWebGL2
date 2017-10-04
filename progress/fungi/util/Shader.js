@@ -34,9 +34,10 @@ function loadShader(js){
 	for(var i=0; i < js.materials.length; i++){
 		mat = Material.create(js.materials[i].name,js.shader.name);
 
+		if(js.materials[i].useBlending !== undefined) mat.useBlending = js.materials[i].useBlending;
+
 		if(js.materials[i].uniforms){
 			uni = js.materials[i].uniforms;
-
 			
 			//Process special uniforms
 			var uList = [];
