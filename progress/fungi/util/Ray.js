@@ -70,6 +70,122 @@ class Ray{
 		return ray.normalize();
 	}
 
+	//planeNorm should be normalized.
+	static inPlane(rayStart,rayEnd,planeNorm,planePos){
+		// t = ray2PlaneLen.planeNorm / rayLen.planeNorm
+		// i = rayStart + (t * rayLen)
+		var rayLen	= new Vec3(rayEnd).sub(rayStart),						//Ray Length
+			denom	= Vec3.dot(rayLen,planeNorm);							//Dot product of rayPlen Length and plane normal
+
+		if(denom <= 0.000001 && denom >= -0.000001) return null;			//abs(denom) < epsilon, using && instead to not perform absolute.
+
+		var ray2PlaneLen	= new Vec3(planePos).sub(rayStart),				//Distance between start of ray and plane position.
+			t 				= Vec3.dot(ray2PlaneLen,planeNorm) / denom;
+
+		if(t >= 0) return rayLen.clone().scale(t).add(rayStart);			//include && t <= 1 to limit to range of ray, else its infinite in fwd dir.
+
+		return null;
+	}
+
+	static inPolygon(rayStart,rayEnd,vecAry){
+		//....................................................
+		//Figure out he plane direction and position for poly
+		var planeNorm = new Vec3(),
+			planePos = new Vec3(vecAry[0]), 			//Any point will do really.
+			v0 = new Vec3(vecAry[1]).sub(planePos),		//v1 - v0 CROSS v2 - v0 :: Counter Clock Wise to get correct direction.
+			v1 = new Vec3(vecAry[vecAry.length-1]).sub(planePos);
+		Vec3.cross(v0,v1,planeNorm);
+		planeNorm.normalize();
+
+		//....................................................
+		//Find Intersection Point
+
+		var iPos = Ray.inPlane(rayStart,rayEnd,planeNorm,planePos);
+		if(iPos == null) return null;
+
+		//....................................................
+		/* Edge Checking - C++ Sample
+			Vec3f edge0 = v1 - v0;
+			Vec3f edge1 = v2 - v1;
+			Vec3f edge2 = v0 - v2;
+			Vec3f C0 = P - v0;
+			Vec3f C1 = P - v1;
+			Vec3f C2 = P - v2;
+			if (dot(N, cross(edge0, C0)) > 0 &&
+				dot(N, cross(edge1, C1)) > 0 &&
+				dot(N, cross(edge2, C2)) > 0) return true; // P is inside the triangle*/
+				
+		var edge	= new Vec3(),	//length of edge
+			ilen	= new Vec3(),	//intersection point length from starting of edge
+			cp		= new Vec3(),	//cross product of Edge and iLen
+			ii;						
+
+		for(var i=0; i < vecAry.length; i++){
+			ii = (i+1)%3;
+
+			edge.copy(vecAry[ii]).sub(vecAry[i]);	//Edge Length
+			ilen.copy(iPos).sub(vecAry[i]);			//intersection to edge length
+			Vec3.cross(edge,ilen,cp);				//Cross Product of Edge and Inter 
+
+			if(Vec3.dot(planeNorm,cp) < 0) return null; //if angle is in the negative, then its outside the polygon.
+		}
+
+		return iPos;
+	}
+
+	//NOTE: Think the Barycentric approach is more comberson then the poly edge detection
+	//TODO:moller-trumbore algoritham might be better - https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
+	//Another better Triangle Intersection algoritham - https://graphics.stanford.edu/courses/cs348b-98/gg/intersect.html
+	static inTriangle(rayStart,rayEnd,vecAry){
+		//....................................................
+		//Figure out he plane direction and position for poly
+		var planeNorm = new Vec3(),
+			planePos = new Vec3(vecAry[0]), 			//Any point will do really.
+			v0 = new Vec3(vecAry[1]).sub(planePos),		//v1 - v0 CROSS v2 - v0 :: Counter Clock Wise to get correct direction.
+			v1 = new Vec3(vecAry[2]).sub(planePos);
+		Vec3.cross(v0,v1,planeNorm);
+		planeNorm.normalize();
+
+		//....................................................
+		//Find Intersection Point
+		var iPos = Ray.inPlane(rayStart,rayEnd,planeNorm,planePos);
+		if(iPos == null) return null;
+
+		//....................................................
+		// Barycentric Coordinates 
+		var edgeA	= new Vec3(),
+			edgeB	= new Vec3(),
+			perp	= new Vec3(),
+			perpLen	= new Vec3(),
+			iLen	= new Vec3(),
+			t;
+
+		var ii,iii;
+		for(var i=0; i < vecAry.length; i++){
+			ii	= (i+1)%3;
+			iii	= (i+2)%3;
+
+			//Get the first two edges a = v0-v1, b = v2-v1
+			edgeA.copy(vecAry[i]).sub(vecAry[ii]); //Vector Length BA
+			edgeB.copy(vecAry[iii]).sub(vecAry[ii]); //Vector Length BC
+
+			//Project EdgeA onto EdgeB to create a perpendicular line from the first point to the opposite edge.
+			t = Vec3.dot(edgeA,edgeB) / Vec3.dot(edgeB,edgeB);	//Projection |a|.|b| / |b|.|b| = t  :: Project A onto B.
+			perp.copy(edgeB).scale(t).add(vecAry[ii]);			//start + len*t
+
+			Fungi.debugLine.addVecLine(vecAry[i],2, perp,2);
+
+			//Project triangle point to i point onto perpendicular line
+			perpLen.copy(perp).sub(vecAry[i]);	//Get length of perpendicular line from point to opposite edge
+			iLen.copy(iPos).sub(vecAry[i]);		//Get Length of ipos from the starting point.
+			t = Vec3.dot(iLen,perpLen) / Vec3.dot(perpLen,perpLen); //(1 - Projection) if needing Barycentric coord, else leave as is
+
+			Fungi.debugPoint.addVecPoint(perpLen.scale(t).add(vecAry[ii]),2);
+
+			if(t < 0 || t > 1) return null; //t must be between 0 and 1 to be successful
+		}
+		return iPos;
+	}
 }
 
 export default Ray;

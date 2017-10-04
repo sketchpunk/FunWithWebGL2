@@ -101,6 +101,15 @@ class Vec3 extends Float32Array{
 			out[2] = (v[2] != 0)? this[2] / v[2] : 0;
 			if(out === this) this.isModified = true;
 			return this;
+		}
+
+		divInvScale(v,out){
+			out = out || this;
+			out[0] = (this[0] != 0)? v / this[0] : 0;
+			out[1] = (this[1] != 0)? v / this[1] : 0;
+			out[2] = (this[2] != 0)? v / this[2] : 0;
+			if(out === this) this.isModified = true;
+			return this;
 		}	
 
 		clone(){ return new Vec3().set(this.x,this.y,this.z); }

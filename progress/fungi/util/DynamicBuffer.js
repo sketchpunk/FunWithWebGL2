@@ -4,7 +4,7 @@ class DynamicBuffer{
 	constructor(){
 		this.GLArrayPtr			= null; 				//Pointer to special array types, like Float32Array
 		this.GLBufferPtr		= null;					//GL Buffer Pointer
-		this.GLBufType			= gl.ctx.ARRAY_BUFFER;	//GL Buffer Type
+		this.GLBufferType		= gl.ctx.ARRAY_BUFFER;	//GL Buffer Type
 		this.ComponentLen		= 3;					//How many Array Elements needed to make on item, ie 3 floats = Vertex
 		this.BufByteSize		= 0;					//How big is the buffer in bytes
 		this.BufSizeUsed		= 0;					//How much data was pushed to the GPU.
@@ -29,22 +29,22 @@ class DynamicBuffer{
 		var finalData = new this.GLArrayPtr(this.data);
 		var pushSize = finalData.length * this.GLArrayPtr.BYTES_PER_ELEMENT;	//How many bytes to push to gpu.
 
-		gl.ctx.bindBuffer(this.GLBufType,this.GLBufferPtr);						//Activate Buffer
+		gl.ctx.bindBuffer(this.GLBufferType,this.GLBufferPtr);						//Activate Buffer
 
 		//If data being push fits the existing buffer, send it up
 		if(pushSize <= this.BufByteSize){
-			gl.ctx.bufferSubData(this.GLBufType, 0, finalData, 0, null);
+			gl.ctx.bufferSubData(this.GLBufferType, 0, finalData, 0, null);
 
 		//if not, we need to wipe out the data and resize the buffer with the new set of data.
 		}else{ 
 			mBufferSize = pushSize;
 
-			if(this.BufSizeUsed > 0) gl.ctx.bufferData(this.GLBufType, null, gl.ctx.DYNAMIC_DRAW); //Clean up previus data
+			if(this.BufSizeUsed > 0) gl.ctx.bufferData(this.GLBufferType, null, gl.ctx.DYNAMIC_DRAW); //Clean up previus data
 
-			gl.ctx.bufferData(this.GLBufType, finalData, gl.ctx.DYNAMIC_DRAW);
+			gl.ctx.bufferData(this.GLBufferType, finalData, gl.ctx.DYNAMIC_DRAW);
 		}
 
-		gl.ctx.bindBuffer(this.GLBufType,null);		//unbind buffer
+		gl.ctx.bindBuffer(this.GLBufferType,null);		//unbind buffer
 		this.BufByteSizeUsed = finalData.length;	//save cnt so we can delete the buffer later on resize if need be.
 	}
 }

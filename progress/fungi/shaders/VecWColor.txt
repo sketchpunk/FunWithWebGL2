@@ -13,7 +13,7 @@ uses less data to. 1 float from 3 foats
 
 <materials>
 [
-	{ "name":"MatVecWColor", "uniforms":[ "uColorAry", "color", ["ff0000","00ff00","0000ff","555555","999999","dddddd","000000"] ] },
+	{ "name":"MatVecWColor", "uniforms":[ "uColorAry", "color", ["ff0000","00ff00","0000ff","555555","999999","dddddd","000000","ff7f7f"] ] },
 	{ "name":"MatGridFloor", "uniforms":[ "uColorAry", "color", ["e6e6e6","ff9999","66ff66"] ] }
 ]
 </materials>

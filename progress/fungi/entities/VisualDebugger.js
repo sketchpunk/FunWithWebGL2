@@ -38,7 +38,7 @@ class VisualDebugger extends Renderable{
 		return this;
 	}
 	addVecPoint(v,w){
-		this.vertBuffer.data.push(v.x,v.y,v.z,w);
+		this.vertBuffer.data.push(v[0],v[1],v[2],w);
 		this.isModified = true;
 		return this;
 	}
