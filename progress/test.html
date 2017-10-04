@@ -42,10 +42,7 @@
 				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
 
 				//-----------------------------
-				//Fungi.scene.push(mesh = Quad1U("MatCircle").setPosition(0,1,0));
-
-				Fungi.scene.push(new BoundingCapsule("MatVecWColor"));
-
+				Fungi.scene.push(mesh = Quad1U("MatCircle").setPosition(0,1,0));
 
 				//........................................
 				//Begin rendering the scene
@@ -61,20 +58,33 @@
 				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
 				Fungi.debugPoint.reset();
 
-				//inQuad(mesh,ray);
-				inCircle(ray,mesh,0.5);
+				inQuad(mesh,ray);
+				//inCircle(ray,mesh,0.5);
 
 				return true;
 			}
 
 			function inQuad(quad,ray){
-				console.log(quad.position);
-				//Calc the 4 corner positions of the quad.
-				//If needing to find normal direction, take 3 sequential corners, get two vector lengths then cross apply.
-				////v1 - v0 CROSS v2 - v0 :: Counter Clock Wise to get correct direction. 
 				var planePos	= quad.position.clone(),
-					planeNorm	= new Vec3(0,0,1);
+					planeNorm	= new Vec3();
 
+				//Figure out the 4 points in the quad based on center position and known width/height;
+				//Note: If the quad has been rotated or scaled, need to apply those to the 4 points as well.
+				var v0 = quad.position.clone().add([-0.5,0.5,0]),
+					v1 = quad.position.clone().add([-0.5,-0.5,0]),
+					v2 = quad.position.clone().add([0.5,-0.5,0]),
+					v3 = quad.position.clone().add([0.5,0.5,0]),
+					vlen,plen,t;
+
+				//Figure out the normal direction of the quad
+				//to find normal direction, take 3 sequential corners, get two vector lengths then cross apply in counter-clockwise order
+				var L0 = v0.clone().sub(v1);
+				var L1 = v2.clone().sub(v1);
+				Vec3.cross(L1,L0,planeNorm);
+				//Fungi.debugLine.addVecLine(planePos,5,planeNorm.clone().add(planePos),5);
+				
+
+				/*Determine if the ray intersects the same plane of the quad.*/
 				var iPos = Ray.inPlane(ray.start,ray.end,planeNorm,planePos);
 				if(iPos == null){
 					console.log("Not in Quad");
@@ -82,34 +92,31 @@
 				}
 				Fungi.debugPoint.addVecPoint(iPos,1);
 
-				//Figure out the 4 points in the quad based on center position and known width/height;
-				var v0 = quad.position.clone().add([-0.5,0.5,0]),
-					v1 = quad.position.clone().add([-0.5,-0.5,0]),
-					v2 = quad.position.clone().add([0.5,-0.5,0]),
-					v3 = quad.position.clone().add([0.5,0.5,0]),
-					vlen,plen,t;
+				
 
-				//First Diagonal Test
-				vlen = v2.clone().sub(v0);
+				/*First Diagonal Test */
+				vlen = v1.clone().sub(v0);
 				plen = iPos.clone().sub(v0);
-				t = Vec3.dot(plen,vlen) / Vec3.dot(vlen,vlen);
+				t = Vec3.dot(plen,vlen) / Vec3.dot(vlen,vlen); //|a|.|b| / |b|.|b|
 				console.log("Endge1",t);
 
-				Fungi.debugLine.addVecLine(v0,2,v2,2);
+				Fungi.debugLine.addVecLine(v0,2,v1,2);
 				Fungi.debugLine.addVecLine(v0,2,iPos,2);
 				Fungi.debugLine.addVecLine(iPos,2,vlen.clone().scale(t).add(v0),2);
 				Fungi.debugPoint.addVecPoint(vlen.clone().scale(t).add(v0),2);
+				
 
-				//Second Diagonal Test
-				vlen = v3.clone().sub(v1);
+				/*Second Diagonal Test */
+				vlen = v2.clone().sub(v1);
 				plen = iPos.clone().sub(v1);
 				t = Vec3.dot(plen,vlen) / Vec3.dot(vlen,vlen);
 				console.log("Endge2",t);
 
-				Fungi.debugLine.addVecLine(v1,0,v3,0);
+				Fungi.debugLine.addVecLine(v1,0,v2,0);
 				Fungi.debugLine.addVecLine(v1,0,iPos,0);
 				Fungi.debugLine.addVecLine(iPos,0,vlen.clone().scale(t).add(v1),0);
 				Fungi.debugPoint.addVecPoint(vlen.clone().scale(t).add(v1),0);
+				
 			}
 
 			function inCircle(ray,quad,radius){
