@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Ray 			from "./fungi/util/Ray.js";
+			import { Vec3 }		from "./fungi/Maths.js";
+			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var geo;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,3);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+
+				//-----------------------------
+				//Setup our Triangle
+				geo = new GeometryData();
+				geo.newPoint(-0.5,0.5,0, 2.5,0.5,0, 0,2.5,0);
+
+				Fungi.scene.push(new GeometryRender(geo,"MatVecWColor").drawTriangles().setOptions(false,true));
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				var ray = Ray.pointsFromMouse(ix,iy);
+
+				Fungi.debugLine.reset().addVecLine(ray.start,7,ray.end,0);
+
+				/* Show Plane Intersection */
+				var i = Ray.inPlane(ray.start,ray.end,new Vec3(0,0,1),new Vec3(0,0.5,0));
+				if(i != null) Fungi.debugPoint.addVecPoint(i,0);
+				else console.log("no intersection")
+				
+
+				/* Polygon Edge Testing  
+				var i = Ray.inPolygon(ray.start,ray.end, [ new Vec3(-0.5,0.5,0), new Vec3(2.5,0.5,0), new Vec3(0,2.5,0) ]);
+				if(i != null) Fungi.debugPoint.addVecPoint(i,0);
+				else console.log("no intersection")
+				*/
+
+				/* Barycentric Triangle Testing 
+				var i = Ray.inTriangle(ray.start,ray.end, [ new Vec3(-0.5,0.5,0), new Vec3(2.5,0.5,0), new Vec3(0,2.5,0) ]);
+				if(i != null) Fungi.debugPoint.addVecPoint(i,0);
+				else console.log("no intersection")
+ 				*/
+
+				return true;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
