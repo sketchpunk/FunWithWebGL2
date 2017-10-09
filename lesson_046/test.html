@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Ray 			from "./fungi/util/Ray.js";
+			import { Vec3 }		from "./fungi/Maths.js";
+			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
+			import BoundingBox	from "./fungi/entities/BoundingBox.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var box;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,3);
+				Fungi.mainCamera.setPosition(0,1,6);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+
+				//-----------------------------
+				box = new BoundingBox(new Vec3(-1,0.5,-1), new Vec3(1,2.5,1), "MatVecWColor");
+
+				Fungi.scene.push(box);
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				var ray = Ray.pointsFromMouse(ix,iy);
+
+				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
+
+				inAABB_test(ray);
+				//inAABB(box,ray);
+
+				return true;
+			}
+
+			function inAABB_test(ray){
+				var rayDir = ray.end.clone().sub(ray.start);
+				var tmp;
+
+				/*X */
+				var txMin = (box.vMin.x - ray.start.x) / rayDir.x;
+				var txMax = (box.vMax.x - ray.start.x) / rayDir.x;
+				if(txMax < txMin){ tmp = txMax; txMax = txMin; txMin = tmp; }
+
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(txMin).add(ray.start),0);
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(txMax).add(ray.start),0);
+				
+
+				/* Y */
+				var tyMin = (box.vMin.y - ray.start.y) / rayDir.y;
+				var tyMax = (box.vMax.y - ray.start.y) / rayDir.y;
+				if(tyMax < tyMin){ tmp = tyMax; tyMax = tyMin; tyMin = tmp; }
+
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tyMin).add(ray.start),1);
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tyMax).add(ray.start),1);
+				
+
+				/* Z */
+				var tzMin = (box.vMin.z - ray.start.z) / rayDir.z;
+				var tzMax = (box.vMax.z - ray.start.z) / rayDir.z;
+				if(tzMax < tzMin){ tmp = tzMax; tzMax = tzMin; tzMin = tmp; }
+
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tzMin).add(ray.start),2);
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tzMax).add(ray.start),2);
+				
+
+				/*
+				var tMin = (txMin > tyMin)? txMin : tyMin; //Get Greatest Min
+				var tMax = (txMax < tyMax)? txMax : tyMax; //Get Smallest Max
+				
+				if(txMin > tyMax || tyMin > txMax) return false
+				if(tMin > tzMax || tzMin > tMax) return false
+				if(tzMin > tMin) tMin = tzMin;
+				if(tzMax < tMax) tMax = tzMax;
+
+				console.log("success"); 
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tMin).add(ray.start),4);
+				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tMax).add(ray.start),4);
+				*/
+			}
+
+
+			//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+			//https://www.youtube.com/watch?v=USjbg5QXk3g&t=1s
+			function inAABB(box,ray){
+				var dir = ray.end.clone().sub(ray.start), 
+					dirInv = dir.clone().divInvScale(1),//Do inverse of distance, to use mul instead of div for speed.
+					tMin, min,
+					tMax, max,
+					b = [ (dirInv.x < 0)? 1 : 0, (dirInv.y < 0)? 1 : 0, (dirInv.z < 0)? 1 : 0 ]; //This should be done outside and cached at the ray level for reuse on an array of aabb boxes. This sort of thing is only optimization for AABB checking.
+
+				//X Axis ---------------------------
+				//var txMin = (box.vMin.x - ray.start.x) / rayDir.x;
+				//var txMax = (box.vMax.x - ray.start.x) / rayDir.x;
+				//if(txMax < txMin){ tmp = txMax; txMax = txMin; txMin = tmp; }
+
+				//if(dirInv.x >= 0){
+				//	tMin = (box.bounds[0].x - ray.start.x) * dirInv.x;
+				//	tMax = (box.bounds[1].x - ray.start.x) * dirInv.x;
+				//}else{
+				//	tMin = (box.bounds[1].x - ray.start.x) * dirInv.x;
+
+				//	tMax = (box.bounds[0].x - ray.start.x) * dirInv.x;
+				//}
+
+				tMin = (box.bounds[		b[0]].x - ray.start.x) * dirInv.x;
+				tMax = (box.bounds[1 - 	b[0]].x - ray.start.x) * dirInv.x;
+
+				//Y Axis ---------------------------
+				min = (box.bounds[		b[1]].y - ray.start.y) * dirInv.y;
+				max = (box.bounds[1 - 	b[1]].y - ray.start.y) * dirInv.y;
+
+				if(max < tMin || min > tMax) return null; //if it criss crosses, its a miss
+				if(min > tMin) tMin = min; //Get the greatest min
+				if(max < tMax) tMax = max; //Get the smallest max
+
+				//Z Axis ---------------------------
+				min = (box.bounds[		b[2]].z - ray.start.z) * dirInv.z;
+				max = (box.bounds[1 - 	b[2]].z - ray.start.z) * dirInv.z;
+
+				if(max < tMin || min > tMax) return null; //if criss crosses, its a miss
+				if(min > tMin) tMin = min; //Get the greatest min
+				if(max < tMax) tMax = max; //Get the smallest max
+
+				//Finish ------------------------------
+				var ipos = dir.clone().scale(tMin).add(ray.start); //with the shortist distance from start of ray, calc intersection
+				Fungi.debugPoint.addVecPoint(ipos,1);
+
+				return ipos;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

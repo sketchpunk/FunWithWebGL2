@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Ray 			from "./fungi/util/Ray.js";
+			import { Vec3 }		from "./fungi/Maths.js";
+			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
+			import BoundingBox	from "./fungi/entities/BoundingBox.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var box;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,3);
+				Fungi.mainCamera.setPosition(0,1,6);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+
+				//-----------------------------
+				box = new BoundingBox(new Vec3(-1,-1,-1), new Vec3(1,1,1), "MatVecWColor").setPosition(0,1.5,0);
+				box.rotation.rx(-20*Math.PI/180);
+				box.rotation.rz(-20*Math.PI/180);
+				box.rotation.ry(-20*Math.PI/180);
+
+
+				Fungi.scene.push(box);
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				var ray = Ray.pointsFromMouse(ix,iy);
+				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
+
+				inOBB_test(ray);
+				
+				/*
+				box.updateMatrix();
+				var pos = inOBB(box,ray);
+				if(pos != null) Fungi.debugPoint.addVecPoint(pos,6);
+				else console.log("no intersections");
+				*/
+
+				return true;
+			}
+
+			function inOBB_test(ray){
+				var vRayDir = ray.end.clone().sub(ray.start);
+
+				//.....................................................
+				//Determine where are Axis Directions are
+				box.updateMatrix();
+				var wMat		= box.worldMatrix,
+					vRight		= new Vec3(wMat[0],wMat[1],wMat[2]),
+					vUp			= new Vec3(wMat[4],wMat[5],wMat[6]),
+					vForward	= new Vec3(wMat[8],wMat[9],wMat[10]);
+
+				Fungi.debugLine.addVecLine(box.position,0, vRight.clone().add(box.position),0);
+				Fungi.debugLine.addVecLine(box.position,1, vForward.clone().add(box.position),1);
+				Fungi.debugLine.addVecLine(box.position,2, vUp.clone().add(box.position),2);
+
+				var bbRayDelta = box.position.clone().sub(ray.start);
+				Fungi.debugLine.addVecLine(ray.start,4, box.position,4);
+
+				//.....................................................
+				/* Figure out X Axis */
+				var nomLen = Vec3.dot(vRight,bbRayDelta),
+					denomLen = Vec3.dot(vRayDir,vRight);
+				var tMin,tMax,min,max;
+
+				if(Math.abs(denomLen) > 0.00001){
+					min = (nomLen + box.bounds[0].x) / denomLen,
+					max = (nomLen + box.bounds[1].x) / denomLen;
+					console.log(box.bounds[0].x,box.bounds[1].x,min,max,nomLen,denomLen);
+
+					if(min < max){	tMin = min; tMax = max; }
+					else{			tMin = max; tMax = min; }
+
+					if(tMax < tMin){ console.log("no intersect"); return null; } 
+
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMin).add(ray.start),0);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMax).add(ray.start),0);
+				}else{
+					if(-nomLen + box.bounds[0].x > 0 || -nomLen + box.bounds[1].x < 0){ console.log("x no intersect"); return null; } 
+				}
+
+				//.....................................................
+				/* Figure out Y Axis */
+				nomLen = Vec3.dot(vUp,bbRayDelta);
+				denomLen = Vec3.dot(vRayDir,vUp);
+				if(Math.abs(denomLen) > 0.00001){
+
+					min = (nomLen + box.bounds[0].y) / denomLen,
+					max = (nomLen + box.bounds[1].y) / denomLen;
+
+					if(min < max){	tMin = Math.max(tMin,min); tMax = Math.min(tMax,max); }
+					else{			tMin = Math.max(tMin,max); tMax = Math.min(tMax,min); }
+
+					if(tMax < tMin){ console.log("no intersect"); return null; } 
+
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMin).add(ray.start),1);
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMax).add(ray.start),1);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(min).add(ray.start),2);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(max).add(ray.start),2);
+				}else{
+					if(-nomLen + box.bounds[0].y > 0 || -nomLen + box.bounds[1].y < 0){ console.log("y no intersect"); return null; } 
+				}
+
+				//.....................................................
+				/*Figure out Z Axis */
+				nomLen = Vec3.dot(vForward,bbRayDelta);
+				denomLen = Vec3.dot(vRayDir,vForward);
+				if(Math.abs(denomLen) > 0.00001){
+
+					min = (nomLen + box.bounds[0].z) / denomLen,
+					max = (nomLen + box.bounds[1].z) / denomLen;
+
+					if(min < max){	tMin = Math.max(tMin,min); tMax = Math.min(tMax,max); }
+					else{			tMin = Math.max(tMin,max); tMax = Math.min(tMax,min); }
+
+					if(tMax < tMin){ console.log("no intersect"); return null; } 
+
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMin).add(ray.start),2);
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMax).add(ray.start),2);
+
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(min).add(ray.start),1);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(max).add(ray.start),1);
+
+					console.log("t",tMin,tMax);
+				}else{
+					if(-nomLen + box.bounds[0].z > 0 || -nomLen + box.bounds[1].z < 0){ console.log("z no intersect"); return null; } 
+				}
+			}
+
+
+			function inOBB(box,ray){
+				var vRayDir		= ray.end.clone().sub(ray.start),		//NOTE: This should be done when ray is created and cached.
+					bbRayDelta	= box.position.clone().sub(ray.start),	//Distance between Ray start and Box Position
+					wMat		= box.worldMatrix,						//Alias to the world matrix object
+					axis 		= new Vec3(),							//Current Axis being tested.
+					tMin 		= 0,
+					tMax 		= 1000000,
+					p,nomLen,denomLen,tmp,min,max;
+					
+				for(var i=0; i < 3; i++){
+					p = i*4;
+					axis.set(wMat[p],wMat[p+1],wMat[p+2]); //Get Right(0,1,2), Up(4,5,6) and Forward(8,9,10) direction from Matrix
+
+					nomLen = Vec3.dot(axis,bbRayDelta); //Get the length of Axis and distance to ray position
+					denomLen = Vec3.dot(vRayDir,axis);	//Get Length of ray and axis
+					if(Math.abs(denomLen) > 0.00001){	//Can't divide by Zero
+
+						min = (nomLen + box.bounds[0][i]) / denomLen;
+						max = (nomLen + box.bounds[1][i]) / denomLen;
+
+						if(min > max){ tmp = min; min = max; max = tmp; }	//Swap
+						if(min > tMin) tMin = min; 							//Biggest Min
+						if(max < tMax) tMax = max;							//Smallest Max
+
+						if(tMax < tMin) return null;
+
+					}else if(-nomLen + box.bounds[0][i] > 0 || -nomLen + box.bounds[1][i] < 0) return null; //are almost parallel check
+				}
+
+				var ipos = vRayDir.clone().scale(tMin).add(ray.start);
+				return ipos;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
