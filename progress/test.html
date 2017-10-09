@@ -41,7 +41,11 @@
 				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
 
 				//-----------------------------
-				box = new BoundingBox(new Vec3(-1,0.5,-1), new Vec3(1,2.5,1), "MatVecWColor");
+				box = new BoundingBox(new Vec3(-1,-1,-1), new Vec3(1,1,1), "MatVecWColor").setPosition(0,1.5,0);
+				box.rotation.rx(-20*Math.PI/180);
+				box.rotation.rz(-20*Math.PI/180);
+				box.rotation.ry(-20*Math.PI/180);
+
 
 				Fungi.scene.push(box);
 
@@ -56,108 +60,139 @@
 				if(!e.ctrlKey) return false;
 
 				var ray = Ray.pointsFromMouse(ix,iy);
-
 				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
 
-				inAABB_test(ray);
-				//inAABB(box,ray);
+				inOBB_test(ray);
+				
+				/*
+				box.updateMatrix();
+				var pos = inOBB(box,ray);
+				if(pos != null) Fungi.debugPoint.addVecPoint(pos,6);
+				else console.log("no intersections");
+				*/
 
 				return true;
 			}
 
-			function inAABB_test(ray){
-				var rayDir = ray.end.clone().sub(ray.start);
-				var tmp;
+			function inOBB_test(ray){
+				var vRayDir = ray.end.clone().sub(ray.start);
 
-				/*X */
-				var txMin = (box.vMin.x - ray.start.x) / rayDir.x;
-				var txMax = (box.vMax.x - ray.start.x) / rayDir.x;
-				if(txMax < txMin){ tmp = txMax; txMax = txMin; txMin = tmp; }
+				//.....................................................
+				//Determine where are Axis Directions are
+				box.updateMatrix();
+				var wMat		= box.worldMatrix,
+					vRight		= new Vec3(wMat[0],wMat[1],wMat[2]),
+					vUp			= new Vec3(wMat[4],wMat[5],wMat[6]),
+					vForward	= new Vec3(wMat[8],wMat[9],wMat[10]);
 
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(txMin).add(ray.start),0);
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(txMax).add(ray.start),0);
-				
+				Fungi.debugLine.addVecLine(box.position,0, vRight.clone().add(box.position),0);
+				Fungi.debugLine.addVecLine(box.position,1, vForward.clone().add(box.position),1);
+				Fungi.debugLine.addVecLine(box.position,2, vUp.clone().add(box.position),2);
 
-				/* Y */
-				var tyMin = (box.vMin.y - ray.start.y) / rayDir.y;
-				var tyMax = (box.vMax.y - ray.start.y) / rayDir.y;
-				if(tyMax < tyMin){ tmp = tyMax; tyMax = tyMin; tyMin = tmp; }
+				var bbRayDelta = box.position.clone().sub(ray.start);
+				Fungi.debugLine.addVecLine(ray.start,4, box.position,4);
 
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tyMin).add(ray.start),1);
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tyMax).add(ray.start),1);
-				
+				//.....................................................
+				/* Figure out X Axis */
+				var nomLen = Vec3.dot(vRight,bbRayDelta),
+					denomLen = Vec3.dot(vRayDir,vRight);
+				var tMin,tMax,min,max;
 
-				/* Z */
-				var tzMin = (box.vMin.z - ray.start.z) / rayDir.z;
-				var tzMax = (box.vMax.z - ray.start.z) / rayDir.z;
-				if(tzMax < tzMin){ tmp = tzMax; tzMax = tzMin; tzMin = tmp; }
+				if(Math.abs(denomLen) > 0.00001){
+					min = (nomLen + box.bounds[0].x) / denomLen,
+					max = (nomLen + box.bounds[1].x) / denomLen;
+					console.log(box.bounds[0].x,box.bounds[1].x,min,max,nomLen,denomLen);
 
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tzMin).add(ray.start),2);
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tzMax).add(ray.start),2);
-				
+					if(min < max){	tMin = min; tMax = max; }
+					else{			tMin = max; tMax = min; }
 
-				/*
-				var tMin = (txMin > tyMin)? txMin : tyMin; //Get Greatest Min
-				var tMax = (txMax < tyMax)? txMax : tyMax; //Get Smallest Max
-				
-				if(txMin > tyMax || tyMin > txMax) return false
-				if(tMin > tzMax || tzMin > tMax) return false
-				if(tzMin > tMin) tMin = tzMin;
-				if(tzMax < tMax) tMax = tzMax;
+					if(tMax < tMin){ console.log("no intersect"); return null; } 
 
-				console.log("success"); 
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tMin).add(ray.start),4);
-				Fungi.debugPoint.addVecPoint(rayDir.clone().scale(tMax).add(ray.start),4);
-				*/
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMin).add(ray.start),0);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMax).add(ray.start),0);
+				}else{
+					if(-nomLen + box.bounds[0].x > 0 || -nomLen + box.bounds[1].x < 0){ console.log("x no intersect"); return null; } 
+				}
+
+				//.....................................................
+				/* Figure out Y Axis */
+				nomLen = Vec3.dot(vUp,bbRayDelta);
+				denomLen = Vec3.dot(vRayDir,vUp);
+				if(Math.abs(denomLen) > 0.00001){
+
+					min = (nomLen + box.bounds[0].y) / denomLen,
+					max = (nomLen + box.bounds[1].y) / denomLen;
+
+					if(min < max){	tMin = Math.max(tMin,min); tMax = Math.min(tMax,max); }
+					else{			tMin = Math.max(tMin,max); tMax = Math.min(tMax,min); }
+
+					if(tMax < tMin){ console.log("no intersect"); return null; } 
+
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMin).add(ray.start),1);
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMax).add(ray.start),1);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(min).add(ray.start),2);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(max).add(ray.start),2);
+				}else{
+					if(-nomLen + box.bounds[0].y > 0 || -nomLen + box.bounds[1].y < 0){ console.log("y no intersect"); return null; } 
+				}
+
+				//.....................................................
+				/*Figure out Z Axis */
+				nomLen = Vec3.dot(vForward,bbRayDelta);
+				denomLen = Vec3.dot(vRayDir,vForward);
+				if(Math.abs(denomLen) > 0.00001){
+
+					min = (nomLen + box.bounds[0].z) / denomLen,
+					max = (nomLen + box.bounds[1].z) / denomLen;
+
+					if(min < max){	tMin = Math.max(tMin,min); tMax = Math.min(tMax,max); }
+					else{			tMin = Math.max(tMin,max); tMax = Math.min(tMax,min); }
+
+					if(tMax < tMin){ console.log("no intersect"); return null; } 
+
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMin).add(ray.start),2);
+					//Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(tMax).add(ray.start),2);
+
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(min).add(ray.start),1);
+					Fungi.debugPoint.addVecPoint(vRayDir.clone().scale(max).add(ray.start),1);
+
+					console.log("t",tMin,tMax);
+				}else{
+					if(-nomLen + box.bounds[0].z > 0 || -nomLen + box.bounds[1].z < 0){ console.log("z no intersect"); return null; } 
+				}
 			}
 
 
-			//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
-			//https://www.youtube.com/watch?v=USjbg5QXk3g&t=1s
-			function inAABB(box,ray){
-				var dir = ray.end.clone().sub(ray.start), 
-					dirInv = dir.clone().divInvScale(1),//Do inverse of distance, to use mul instead of div for speed.
-					tMin, min,
-					tMax, max,
-					b = [ (dirInv.x < 0)? 1 : 0, (dirInv.y < 0)? 1 : 0, (dirInv.z < 0)? 1 : 0 ]; //This should be done outside and cached at the ray level for reuse on an array of aabb boxes. This sort of thing is only optimization for AABB checking.
+			function inOBB(box,ray){
+				var vRayDir		= ray.end.clone().sub(ray.start),		//NOTE: This should be done when ray is created and cached.
+					bbRayDelta	= box.position.clone().sub(ray.start),	//Distance between Ray start and Box Position
+					wMat		= box.worldMatrix,						//Alias to the world matrix object
+					axis 		= new Vec3(),							//Current Axis being tested.
+					tMin 		= 0,
+					tMax 		= 1000000,
+					p,nomLen,denomLen,tmp,min,max;
+					
+				for(var i=0; i < 3; i++){
+					p = i*4;
+					axis.set(wMat[p],wMat[p+1],wMat[p+2]); //Get Right(0,1,2), Up(4,5,6) and Forward(8,9,10) direction from Matrix
 
-				//X Axis ---------------------------
-				//var txMin = (box.vMin.x - ray.start.x) / rayDir.x;
-				//var txMax = (box.vMax.x - ray.start.x) / rayDir.x;
-				//if(txMax < txMin){ tmp = txMax; txMax = txMin; txMin = tmp; }
+					nomLen = Vec3.dot(axis,bbRayDelta); //Get the length of Axis and distance to ray position
+					denomLen = Vec3.dot(vRayDir,axis);	//Get Length of ray and axis
+					if(Math.abs(denomLen) > 0.00001){	//Can't divide by Zero
 
-				//if(dirInv.x >= 0){
-				//	tMin = (box.bounds[0].x - ray.start.x) * dirInv.x;
-				//	tMax = (box.bounds[1].x - ray.start.x) * dirInv.x;
-				//}else{
-				//	tMin = (box.bounds[1].x - ray.start.x) * dirInv.x;
+						min = (nomLen + box.bounds[0][i]) / denomLen;
+						max = (nomLen + box.bounds[1][i]) / denomLen;
 
-				//	tMax = (box.bounds[0].x - ray.start.x) * dirInv.x;
-				//}
+						if(min > max){ tmp = min; min = max; max = tmp; }	//Swap
+						if(min > tMin) tMin = min; 							//Biggest Min
+						if(max < tMax) tMax = max;							//Smallest Max
 
-				tMin = (box.bounds[		b[0]].x - ray.start.x) * dirInv.x;
-				tMax = (box.bounds[1 - 	b[0]].x - ray.start.x) * dirInv.x;
+						if(tMax < tMin) return null;
 
-				//Y Axis ---------------------------
-				min = (box.bounds[		b[1]].y - ray.start.y) * dirInv.y;
-				max = (box.bounds[1 - 	b[1]].y - ray.start.y) * dirInv.y;
+					}else if(-nomLen + box.bounds[0].z > 0 || -nomLen + box.bounds[1].z < 0) return null; //are almost parallel check
+				}
 
-				if(max < tMin || min > tMax) return null; //if it criss crosses, its a miss
-				if(min > tMin) tMin = min; //Get the greatest min
-				if(max < tMax) tMax = max; //Get the smallest max
-
-				//Z Axis ---------------------------
-				min = (box.bounds[		b[2]].z - ray.start.z) * dirInv.z;
-				max = (box.bounds[1 - 	b[2]].z - ray.start.z) * dirInv.z;
-
-				if(max < tMin || min > tMax) return null; //if criss crosses, its a miss
-				if(min > tMin) tMin = min; //Get the greatest min
-				if(max < tMax) tMax = max; //Get the smallest max
-
-				//Finish ------------------------------
-				var ipos = dir.clone().scale(tMin).add(ray.start); //with the shortist distance from start of ray, calc intersection
-				Fungi.debugPoint.addVecPoint(ipos,1);
-
+				var ipos = vRayDir.clone().scale(tMin).add(ray.start);
 				return ipos;
 			}
 		</script>
