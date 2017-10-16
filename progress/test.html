@@ -14,9 +14,10 @@
 			import Fungi 		from "./fungi/Fungi.js";
 			import Downloader	from "./fungi/util/Downloader.js";
 			import Ray 			from "./fungi/util/Ray.js";
-			import { Vec3 }		from "./fungi/Maths.js";
+			import { Vec3,Quat }		from "./fungi/Maths.js";
 			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
-			import BoundingSphere	from "./fungi/entities/BoundingSphere.js";
+			import BoundingCapsule	from "./fungi/entities/BoundingCapsule.js";
+			//import FacedCube	from "./fungi/primitives/FacedCube.js";
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -32,7 +33,7 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
-			var sphere;
+			var cap;
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
@@ -41,7 +42,11 @@
 				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
 
 				//-----------------------------
-				Fungi.scene.push(sphere = new BoundingSphere("MatVecWColor").setPosition(0,1,0));
+				cap = new BoundingCapsule("MatVecWColor");//.setPosition(0,2,2);
+				//cap.rotation.rx(Math.PI/180 * 45);
+				Fungi.scene.push(cap);
+				
+				//Fungi.scene.push(FacedCube("MatVecWColor").setPosition(1,0.5,0));
 
 				//........................................
 				//Begin rendering the scene
@@ -58,9 +63,9 @@
 				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
 				Fungi.debugPoint.reset();
 
-				inSphere_test(ray);
+				inCylinder_test(ray);
 
-				//var pos = inSphere(sphere,ray);
+				//var pos = inCapsule(cap,ray);
 				//if(pos != null) Fungi.debugPoint.addVecPoint(pos,6);
 				//else console.log("no intersections");
 
@@ -68,66 +73,145 @@
 			}
 
 
-			function inSphere_test(ray){
+			//https://stackoverflow.com/questions/4078401/trying-to-optimize-line-vs-cylinder-intersection
+			//https://www.gamedev.net/forums/topic/467789-raycylinder-intersection/
+			function inCylinder_test(ray){
 				//...........................................
-				var vRayNorm = ray.end.clone().sub(ray.start).normalize();
+				var vRayNorm = ray.end.clone().sub(ray.start).normalize();				
+				//...........................................
+				//Get Capsule's line segment and move it to world splace
+				var A = cap.vecStart.clone();	//Start of Capsule Line
+				var B = cap.vecEnd.clone();		//End of Capsule Line
 
-				var vRayToCenter = sphere.position.clone().sub(ray.start);
-				Fungi.debugLine.addVecLine(sphere.position,4, ray.start,4);
+				//if doing Axis Aligned, no need to apply rotations
+				Quat.rotateVec3(cap.rotation,A); //Apply Rotation first
+				Quat.rotateVec3(cap.rotation,B);
+
+				A.add(cap.position);	//Then Translation
+				B.add(cap.position);
+
+				Fungi.debugLine.addVecLine(A,6, B,6); //Visualize the capsule line
+				Fungi.debugLine.addVecLine(A.clone().add(new Vec3(cap.radius,0,0)),4, A,6);	//Show top cap limit
+				Fungi.debugLine.addVecLine(B.clone().add(new Vec3(cap.radius,0,0)),4, B,6); //Show bttom cap limit
 
 				//...........................................
-				/* Project the length to the center onto the Ray */
-				var tProj = Vec3.dot(vRayToCenter,vRayNorm); //vRayNorm needs to be normalized
-				console.log(tProj);
+				/* Start calculating lengths and cross products */
+				var AB		= B.clone().sub(A),						//Vector Length of Capsule Segment
+					AO		= ray.start.clone().sub(A),				//Vector length between start of ray and capsule line
+					AOxAB	= Vec3.cross(AO, AB, new Vec3()),		//Perpendicular Vector between Cap Line & delta of Ray Origin & Capsule Line Start
+					VxAB 	= Vec3.cross(vRayNorm, AB, new Vec3());	//Perpendicular Vector between Ray Dir & caplsule line
 
-				var iPos = vRayNorm.clone().scale(tProj).add(ray.start);
-				Fungi.debugPoint.addVecPoint(iPos,0);
-				Fungi.debugLine.addVecLine(sphere.position,0, iPos,0);
+				Fungi.debugLine.addVecLine(ray.start,4, A,4);				//Show AO Vector Length
+				Fungi.debugLine.addVecLine(A.clone().add(AOxAB),0, A,0);	//
+				Fungi.debugLine.addVecLine(A.clone().add(VxAB),2, A,2);		//
 
-				//...........................................
-				/*Get length of projection point to center and check if its within the sphere
-				pythagorean theorem: adjacent^2 + opposite^2 =  hyptenuse^2 */
-				var oppLenSqr =  Vec3.dot(vRayToCenter,vRayToCenter) - (tProj*tProj); //Opposite^2 = hyptenuse^2 - adjacent^2
-				console.log("oppLenSqr",oppLenSqr,"radiusSqr", sphere.radiusSqr,
-					"iPosLenSqr",iPos.clone().sub(sphere.position).sqrMag());
-				if(oppLenSqr > sphere.radiusSqr){ console.log(oppLenSqr, "Projection point outside radius"); return null; }
-				if(oppLenSqr == sphere.radiusSqr){ console.log("Single Pointer Intersection"); return iPos; }
+				var ab2		= Vec3.dot(AB,AB),						//Length Squared of Capsule Line
+  					a		= Vec3.dot(VxAB,VxAB),					//Length Squared of Perp Vec Length of Perp Vec of Ray&Cap
+  					b		= 2 * Vec3.dot(VxAB,AOxAB),
+					c		= Vec3.dot(AOxAB,AOxAB) - (cap.radius*cap.radius * ab2),
+  					d		= b * b - 4 * a * c;					
+  				
 
-				var oLen = Math.sqrt(sphere.radiusSqr - oppLenSqr); //Opposite = sqrt(hyptenuse^2 - adjacent^2)
+  				//...........................................
+  				/* Checking D seems to be related to distance from capsule. If not within radius, D will be under 0 */
+  				if (d < 0){ console.log("D Is Low",d); return; }
+
+  				//T is less then 0 then ray goes through both end caps cylinder cap.
+				var t = (-b - Math.sqrt(d)) / (2 * a);
+  				if (t < 0){
+  					var aLen2 = A.sqrMag(ray.start), //Which  end cap is closer to ray origin.
+  						bLen2 = B.sqrMag(ray.start);
+
+  					console.log("Cap Length Test",aLen2,bLen2);
+  					if(aLen2 < bLen2)	console.log("t is parallel, test top cap");
+  					else 				console.log("t is parallel, test bottom cap");
+
+  					return;
+  				}
+
+				console.log("t",t);
 				
+
 				//...........................................
- 				/*Using the Proj Length, add/subtract to get the intersection points since tProj is inside the sphere. */
-				var t0 = tProj - oLen;
-				var t1 = tProj + oLen;
-				if(t1 < t0){ var tmp = t0; t0 = t1; t1 = tmp; } //Swop
+				/* Limit intersection between the bounds of the cylinder's end caps. */
+				var iPos 	= vRayNorm.clone().scale(t).add(ray.start),	//Intersection Point
+					iPosLen	= iPos.clone().sub(A),						//Vector Length Between Intersection and Cap line Start
+					tLimit	= Vec3.dot(iPosLen,AB) / ab2;				//Projection of iPos onto Cap Line
 
-				Fungi.debugPoint.addVecPoint(vRayNorm.clone().scale(t0).add(ray.start),1);
-				Fungi.debugLine.addVecLine(sphere.position,1, vRayNorm.clone().scale(t0).add(ray.start),1);
+				Fungi.debugPoint.addVecPoint(iPos,0);
+				Fungi.debugPoint.addVecPoint(AB.clone().scale(tLimit).add(A),2);
+				console.log("tLimit",tLimit);
 
-				Fungi.debugPoint.addVecPoint(vRayNorm.clone().scale(t1).add(ray.start),2);
-				Fungi.debugLine.addVecLine(sphere.position,2, vRayNorm.clone().scale(t1).add(ray.start),2);
+				if(tLimit >= 0 && tLimit <= 1)	console.log("intersection is on cylinder");
+				else if(tLimit < 0)				console.log("Check for intersection in top cap");
+				else if(tLimit > 1)				console.log("Check for intersection in bottom cap");
+
 			}
 
+			function inCapsule(cap,ray){
+				//...........................................
+				var vRayNorm = ray.end.clone().sub(ray.start).normalize();
+			
+				//Get Capsule's line segment and move it to world splace
+				var A = cap.vecStart.clone(),	//Start of Capsule Line
+					B = cap.vecEnd.clone();		//End of Capsule Line
 
-			//http://www.lighthouse3d.com/tutorials/maths/ray-sphere-intersection/
-			//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
-			function inSphere(sphere,ray){
+				//if doing Axis Aligned, no need to apply rotations
+				//TODO : Should also include scale.
+				Quat.rotateVec3(cap.rotation,A).add(cap.position); //Apply Rotation first Then Translation
+				Quat.rotateVec3(cap.rotation,B).add(cap.position); 
+
+				//...........................................
+				//Start calculating lengths and cross products
+				var AB		= B.clone().sub(A),						//Vector Length of Capsule Segment
+					AO		= ray.start.clone().sub(A),				//Vector length between start of ray and capsule line
+					AOxAB	= Vec3.cross(AO, AB, new Vec3()),		//Perpendicular Vector between Cap Line & delta of Ray Origin & Capsule Line Start
+					VxAB 	= Vec3.cross(vRayNorm, AB, new Vec3()),	//Perpendicular Vector between Ray Dir & caplsule line
+					ab2		= Vec3.dot(AB,AB),						//Length Squared of Capsule Line
+  					a		= Vec3.dot(VxAB,VxAB),					//Length Squared of Perp Vec Length of Perp Vec of Ray&Cap
+  					b		= 2 * Vec3.dot(VxAB,AOxAB),
+					c		= Vec3.dot(AOxAB,AOxAB) - (cap.radiusSqr * ab2),
+  					d		= b * b - 4 * a * c;					
+
+  				//...........................................
+  				//Checking D seems to be related to distance from capsule. If not within radius, D will be under 0
+  				if (d < 0) return null;
+
+  				//T is less then 0 then ray goes through both end caps cylinder cap.
+				var t = (-b - Math.sqrt(d)) / (2 * a);
+  				if(t < 0) return inSphereCap(ray,vRayNorm, (A.sqrMag(ray.start) < B.sqrMag(ray.start))?A:B ,cap.radiusSqr);
+
+				//...........................................
+				//Limit intersection between the bounds of the cylinder's end caps.
+				var iPos 	= vRayNorm.clone().scale(t).add(ray.start),	//Intersection Point
+					iPosLen	= iPos.clone().sub(A),						//Vector Length Between Intersection and Cap line Start
+					tLimit	= Vec3.dot(iPosLen,AB) / ab2;				//Projection of iPos onto Cap Line
+
+				if(tLimit >= 0 && tLimit <= 1)	return iPos;
+				else if(tLimit < 0)				return inSphereCap(ray,vRayNorm,A,cap.radiusSqr); 
+				else if(tLimit > 1)				return inSphereCap(ray,vRayNorm,B,cap.radiusSqr); 
+
+				return null;
+			}
+
+			
+
+			function inSphereCap(ray,vRayNorm,spherePos,radiusSqr){
 				//...........................................
 				var vRayNorm = ray.end.clone().sub(ray.start).normalize(),
-					vRayToCenter = sphere.position.clone().sub(ray.start),
+					vRayToCenter = spherePos.clone().sub(ray.start),
 					tProj = Vec3.dot(vRayToCenter,vRayNorm); //Project the length to the center onto the Ray
 
 				//...........................................
 				//Get length of projection point to center and check if its within the sphere
 				var oppLenSqr = Vec3.dot(vRayToCenter,vRayToCenter) - (tProj*tProj); //Opposite^2 = hyptenuse^2 - adjacent^2
 
-				if(oppLenSqr > sphere.radiusSqr) return null;
-				if(oppLenSqr == sphere.radiusSqr) return vRayNorm.clone().scale(tProj).add(ray.start);
-
+				if(oppLenSqr > radiusSqr) return null;
+				if(oppLenSqr == radiusSqr) return vRayNorm.clone().scale(tProj).add(ray.start);
 
 				//...........................................
  				//Using the Proj Length, add/subtract to get the intersection points since tProj is inside the sphere.
-				var oLen = Math.sqrt(sphere.radiusSqr - oppLenSqr), //Opposite = sqrt(hyptenuse^2 - adjacent^2)
+				var oLen = Math.sqrt(radiusSqr - oppLenSqr), //Opposite = sqrt(hyptenuse^2 - adjacent^2)
 					t0 = tProj - oLen,
 					t1 = tProj + oLen;
 				if(t1 < t0){ var tmp = t0; t0 = t1; t1 = tmp; } //Swap
@@ -135,6 +219,33 @@
 				var iPos = vRayNorm.clone().scale(t0).add(ray.start);
 				return iPos;
 			}
+
+			/*TODO : If wanting to do a cylinder shape, Create a inCircleCap using Circle Intersection from prev video.
+			For plane normaldirection, use  Normalize(AB) for bottom cap, use Inverse(Normalize(AB)) for top cap.
+			function inCircle(ray,quad,radius){
+				var planePos	= quad.position.clone(),
+					planeNorm	= new Vec3(0,0,1);
+
+				var iPos = Ray.inPlane(ray.start,ray.end,planeNorm,planePos);
+
+				console.log(iPos);
+				if(iPos == null){
+					console.log("Not in Quad");
+					return false;
+				}
+				Fungi.debugPoint.addVecPoint(iPos,1); //See intersection point
+
+				var vLen = iPos.clone().sub(planePos),
+					lenSqr = Vec3.dot(vLen,vLen);
+	
+				console.log(lenSqr);
+				Fungi.debugLine.addVecLine(iPos,2,planePos,2);
+				Fungi.debugPoint.addVecPoint(planePos,2);
+
+				if(lenSqr <= radius*radius) console.log("In Circle");
+				else console.log("Not In Circle");
+			}
+			*/
 		</script>
 	</head>
 <body>

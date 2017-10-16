@@ -1,3 +1,5 @@
+import Vec3 from "./Vec3.js";
+
 class Quaternion extends Float32Array{
 	constructor(){
 		super(4);
@@ -93,13 +95,13 @@ class Quaternion extends Float32Array{
 			var q = [qa[0],qa[1],qa[2]],		//Save the vector part of the Quaternion
 				v = [va[0],va[1],va[2]],		//Make a copy of the vector, going to chg its value
 				s = qa[3],						//Save Quaternion Scalar (W)
-				d = Fungi.Maths.Vec3.dot(q,v),	// U DOT V
-				dq = Fungi.Maths.Vec3.dot(q,q),	// U DOT U
-				cqv = Fungi.Maths.Vec3.cross(q,v,[0,0,0]);	// Cross Product for Q,V
+				d = Vec3.dot(q,v),	// U DOT V
+				dq = Vec3.dot(q,q),	// U DOT U
+				cqv = Vec3.cross(q,v,[0,0,0]);	// Cross Product for Q,V
 
-			Fungi.Maths.Vec3.scalarRev(q,2.0 * d,q);
-			Fungi.Maths.Vec3.scalarRev(v,s*s - dq,v);
-			Fungi.Maths.Vec3.scalarRev(cqv,2.0 * s,cqv);
+			Vec3.scalarRev(q,2.0 * d,q);
+			Vec3.scalarRev(v,s*s - dq,v);
+			Vec3.scalarRev(cqv,2.0 * s,cqv);
 
 			out[0] = q[0] + v[0] + cqv[0];
 			out[1] = q[1] + v[1] + cqv[1];
