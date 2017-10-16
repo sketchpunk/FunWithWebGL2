@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Ray 			from "./fungi/util/Ray.js";
+			import { Vec3 }		from "./fungi/Maths.js";
+			import {GeometryData,GeometryRender} from "./fungi/entities/Geometry.js";
+			import BoundingSphere	from "./fungi/entities/BoundingSphere.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var sphere;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,3);
+				Fungi.mainCamera.setPosition(0,1,6);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+
+				//-----------------------------
+				Fungi.scene.push(sphere = new BoundingSphere("MatVecWColor").setPosition(0,1,0));
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				var ray = Ray.pointsFromMouse(ix,iy);
+
+				Fungi.debugLine.reset().addVecLine(ray.start,6,ray.end,0);
+				Fungi.debugPoint.reset();
+
+				inSphere_test(ray);
+
+				//var pos = inSphere(sphere,ray);
+				//if(pos != null) Fungi.debugPoint.addVecPoint(pos,6);
+				//else console.log("no intersections");
+
+				return true;
+			}
+
+
+			function inSphere_test(ray){
+				//...........................................
+				var vRayNorm = ray.end.clone().sub(ray.start).normalize();
+
+				var vRayToCenter = sphere.position.clone().sub(ray.start);
+				Fungi.debugLine.addVecLine(sphere.position,4, ray.start,4);
+
+				//...........................................
+				/* Project the length to the center onto the Ray */
+				var tProj = Vec3.dot(vRayToCenter,vRayNorm); //vRayNorm needs to be normalized
+				console.log(tProj);
+
+				var iPos = vRayNorm.clone().scale(tProj).add(ray.start);
+				Fungi.debugPoint.addVecPoint(iPos,0);
+				Fungi.debugLine.addVecLine(sphere.position,0, iPos,0);
+
+				//...........................................
+				/*Get length of projection point to center and check if its within the sphere
+				pythagorean theorem: adjacent^2 + opposite^2 =  hyptenuse^2 */
+				var oppLenSqr =  Vec3.dot(vRayToCenter,vRayToCenter) - (tProj*tProj); //Opposite^2 = hyptenuse^2 - adjacent^2
+				console.log("oppLenSqr",oppLenSqr,"radiusSqr", sphere.radiusSqr,
+					"iPosLenSqr",iPos.clone().sub(sphere.position).sqrMag());
+				if(oppLenSqr > sphere.radiusSqr){ console.log(oppLenSqr, "Projection point outside radius"); return null; }
+				if(oppLenSqr == sphere.radiusSqr){ console.log("Single Pointer Intersection"); return iPos; }
+
+				var oLen = Math.sqrt(sphere.radiusSqr - oppLenSqr); //Opposite = sqrt(hyptenuse^2 - adjacent^2)
+				
+				//...........................................
+ 				/*Using the Proj Length, add/subtract to get the intersection points since tProj is inside the sphere. */
+				var t0 = tProj - oLen;
+				var t1 = tProj + oLen;
+				if(t1 < t0){ var tmp = t0; t0 = t1; t1 = tmp; } //Swop
+
+				Fungi.debugPoint.addVecPoint(vRayNorm.clone().scale(t0).add(ray.start),1);
+				Fungi.debugLine.addVecLine(sphere.position,1, vRayNorm.clone().scale(t0).add(ray.start),1);
+
+				Fungi.debugPoint.addVecPoint(vRayNorm.clone().scale(t1).add(ray.start),2);
+				Fungi.debugLine.addVecLine(sphere.position,2, vRayNorm.clone().scale(t1).add(ray.start),2);
+			}
+
+
+			//http://www.lighthouse3d.com/tutorials/maths/ray-sphere-intersection/
+			//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
+			function inSphere(sphere,ray){
+				//...........................................
+				var vRayNorm = ray.end.clone().sub(ray.start).normalize(),
+					vRayToCenter = sphere.position.clone().sub(ray.start),
+					tProj = Vec3.dot(vRayToCenter,vRayNorm); //Project the length to the center onto the Ray
+
+				//...........................................
+				//Get length of projection point to center and check if its within the sphere
+				var oppLenSqr = Vec3.dot(vRayToCenter,vRayToCenter) - (tProj*tProj); //Opposite^2 = hyptenuse^2 - adjacent^2
+
+				if(oppLenSqr > sphere.radiusSqr) return null;
+				if(oppLenSqr == sphere.radiusSqr) return vRayNorm.clone().scale(tProj).add(ray.start);
+
+
+				//...........................................
+ 				//Using the Proj Length, add/subtract to get the intersection points since tProj is inside the sphere.
+				var oLen = Math.sqrt(sphere.radiusSqr - oppLenSqr), //Opposite = sqrt(hyptenuse^2 - adjacent^2)
+					t0 = tProj - oLen,
+					t1 = tProj + oLen;
+				if(t1 < t0){ var tmp = t0; t0 = t1; t1 = tmp; } //Swap
+
+				var iPos = vRayNorm.clone().scale(t0).add(ray.start);
+				return iPos;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
