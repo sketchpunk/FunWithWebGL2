@@ -26,7 +26,7 @@ export default{
 	//Build all the main objects needed to get a scene up and running
 	ready:function(renderHandler,opt){
 		this.mainCamera		= new CameraOrbit().setPosition(0,0.5,4).setEulerDegrees(-15,10,0);
-		this.ctrlCamera		= new KBMCtrl().addHandler("camera",new KBMCtrl_Viewport(this.mainCamera),true);
+		this.ctrlCamera		= new KBMCtrl().addHandler("camera",new KBMCtrl_Viewport(this.mainCamera),true,true);
 
 		this.renderLoop		= new RenderLoop(renderHandler);
 		this.lblFPS			= document.getElementById("lblFPS");

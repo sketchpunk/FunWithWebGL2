@@ -320,7 +320,7 @@ class Matrix4 extends Float32Array{
 		//Static Operation
 
 		//https://github.com/gregtatum/mdn-model-view-projection/blob/master/shared/matrices.js
-		static multiplyVector(mat4, v) {
+		static multiplyVector(mat4, v) { //TODO: Dont need this, transformVec3 does a better job.
 			var x = v[0], y = v[1], z = v[2], w = v[3];
 			var c1r1 = mat4[ 0], c2r1 = mat4[ 1], c3r1 = mat4[ 2], c4r1 = mat4[ 3],
 				c1r2 = mat4[ 4], c2r2 = mat4[ 5], c3r2 = mat4[ 6], c4r2 = mat4[ 7],
@@ -341,6 +341,14 @@ class Matrix4 extends Float32Array{
 			out[1] = m[1] * v[0] + m[5] * v[1] + m[9]	* v[2] + m[13] * v[3];
 			out[2] = m[2] * v[0] + m[6] * v[1] + m[10]	* v[2] + m[14] * v[3];
 			out[3] = m[3] * v[0] + m[7] * v[1] + m[11]	* v[2] + m[15] * v[3];
+			return out;
+		}
+
+		static transformVec3(out, v, m){
+			out[0] = m[0] * v[0] + m[4] * v[1] + m[8]	* v[2] + m[12];
+			out[1] = m[1] * v[0] + m[5] * v[1] + m[9]	* v[2] + m[13];
+			out[2] = m[2] * v[0] + m[6] * v[1] + m[10]	* v[2] + m[14];
+			out[3] = m[3] * v[0] + m[7] * v[1] + m[11]	* v[2] + m[15];
 			return out;
 		}
 

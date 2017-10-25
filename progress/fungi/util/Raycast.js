@@ -97,9 +97,37 @@ class Ray{
 
 		//Finish ------------------------------
 		//var ipos = dir.clone().scale(tMin).add(ray.start); //with the shortist distance from start of ray, calc intersection
-		out.min = tMin;
-		out.max = tMax;
+		if(out !== undefined){
+			out.min = tMin;
+			out.max = tMax;
+		}
 		return true;
+	}
+
+	static nearSegmentPoints(ray,A0,A1,tAry){ //http://geomalgorithms.com/a07-_distance.html
+		var u = A1.clone().sub(A0),
+			v = ray.vecLen.clone(),
+			w = A0.clone().sub(ray.origin),
+			a = Vec3.dot(u,u),         // always >= 0
+			b = Vec3.dot(u,v),
+			c = Vec3.dot(v,v),         // always >= 0
+			d = Vec3.dot(u,w),
+			e = Vec3.dot(v,w),
+			D = a*c - b*b,        // always >= 0
+			tU, tV;
+		//compute the line parameters of the two closest points
+		if(D < 0.000001){	// the lines are almost parallel
+			tU = 0.0;
+			tV = (b>c ? d/b : e/c);    // use the largest denominator
+		}else{
+			tU = (b*e - c*d) / D;
+			tV = (a*e - b*d) / D;
+		}
+
+		if( tU < 0 || tU > 1 || tV < 0 || tV > 1) return null;
+		if(tAry !== undefined){ tAry[0] = tU; tAry[1] = tV; }
+
+		return [ u.scale(tU).add(A0), v.scale(tV).add(ray.origin) ];
 	}
 }
 
@@ -141,8 +169,6 @@ class AABB{
 		return this;
 	}
 }
-
-
 
 
 /*

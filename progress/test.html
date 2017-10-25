@@ -13,10 +13,13 @@
 		<script type="module">
 			import Fungi 			from "./fungi/Fungi.js";
 			import Downloader		from "./fungi/util/Downloader.js";
-			import { Ray,AABB }		from "./fungi/util/Raycast.js";
-			import { Vec3, Quat }	from "./fungi/Maths.js";
-			import { BoundingBox }	from "./fungi/entities/BoundingVol.js";
-			import Terrain			from "./fungi/entities/Terrain.js";
+			import FacedCube		from "./fungi/primitives/FacedCube.js";
+			import { Ray }			from "./fungi/util/Raycast.js";
+			import TransformGadget, { KBMCtrl_Gadget }	from "./fungi/entities/ui/TransformGadget.js";
+
+			/* NOTES:
+			https://github.com/josdejong/mathjs/blob/master/lib/function/geometry/intersect.js
+			*/
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -24,8 +27,7 @@
 				//........................................
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
-					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
-					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"}
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -33,31 +35,24 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
-			var aabb, terrain;
+			var gadget = null;
+			var box = null;
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
+				var kbmGadget = null;
 				Fungi.ready(onRender,3);
-				Fungi.mainCamera.setPosition(0,1,6);
 				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+				Fungi.ctrlCamera.addHandler("gadget",kbmGadget = new KBMCtrl_Gadget());
 
-				//-----------------------------
-				var spec = { size:2, cells:5, maxHeight:-3, freq:13, seed:1 };
+				//........................................
+				//Add extra items to the scenen
+				//Fungi.scene.push( box = FacedCube("MatVecWColor").setPosition(0,0.5,0) );
+				//Fungi.scene.push( gadget = new TransformGadget("MatVecWColor").setTarget(box) );
 
-				/* */
-				terrain = new Terrain("MatLowPolyPhong",spec,0,0);//.setPosition(1,1,1); //MatVecWColor
-				aabb = new AABB(terrain).update();
-				Fungi.scene.push(terrain);
-				Fungi.scene.push(new BoundingBox(aabb,"MatVecWColor"));
-
-				/*
-				var n = 1;
-				for(var z = 0; z < n; z++){
-					for(var x = 0; x < n; x++){
-						Fungi.scene.push(new Terrain("MatLowPolyPhong",spec,x,z).setPosition(x*spec.size,1,z*spec.size));
-					}
-				}
-				*/
+				Fungi.scene.push( gadget = new TransformGadget("MatVecWColor").setPosition(0,0.2,0) );
+				
+				kbmGadget.gadget = gadget;
 
 				//........................................
 				//Begin rendering the scene
@@ -73,113 +68,18 @@
 				Fungi.debugPoint.reset();
 
 				var ray = Ray.MouseSegment(ix,iy).prepareAABB();
+
+				
 				Ray.DebugLine(ray);
-
+				gadget.isHit_Test(ray,ix,iy);
 				
-				inTerrain_Test(ray);
-				
-				/*  
-				var pos = inTerrain(ray);
-				if(pos != null) Fungi.debugPoint.addVecPoint(pos,6);
-				else console.log("no intersections");
-				*/
-
-				return true;
-			}
-
-			function inTerrain_Test(ray){
-				var tDeltaMin = 0.0001;
-				var maxTries = 20;
-				var hPoint = 0;
-				var hDelta = 0;
-				var hThreshold = 0.003;
-
-				var t = {};
-				if(Ray.inAABB(aabb,ray,t)){
-					//Show Starting Bound on the ray for binary search
-					
-					var iPos = new Vec3();
-					for(var i=1; i <= 1; i++){ //maxTries
-						t.delta	= (t.max - t.min);			//Get length between the two intersection points
-						t.mid	= t.min + (t.delta * 0.5);	//Find the mid point.
-						ray.getPos(t.mid,iPos);
-
-						Fungi.debugPoint.reset();
-						Fungi.debugPoint.addVecPoint(ray.getPos(t.min),4);
-						Fungi.debugPoint.addVecPoint(ray.getPos(t.max),4);
-
-						Fungi.debugPoint.addVecPoint(iPos,0);
-
-						console.log("TRY =========================================================================================");
-						hPoint = terrain.getPosHeight_Test(iPos.x,iPos.z,Fungi.debugPoint);//
-						hDelta = Math.abs(iPos.y - hPoint);
-						console.log("TEST ",i,iPos.y,hPoint,Math.abs(iPos.y - hPoint));
-
-
-						//The height between grid point and ipos is blow min, then we got a hit.
-						if(hDelta < hThreshold){
-							console.log("HIT On",i);
-							return iPos;
-
-						//If we ran out of delta testing length OR ran out of attempts.
-						}else if(t.delta < tDeltaMin || i >= maxTries){
-							console.log("MISS",i,t.delta);
-							return null;
-
-						//Still serching, do be check the top or bottom have of the segment for the next try.
-						}else if(hPoint > iPos.y){
-							t.max = t.mid;
-							console.log("check up");
-						}else{
-							t.min = t.mid;
-							console.log("check down");
-						}
-
-						console.log("pHeight",hPoint, "iPos.y", iPos.y);
-						console.log("delta",i,t.delta,iPos);
-					}
-
-				}else console.log("no Intersection");
-			}
-
-			function inTerrain(ray){ //Add this to Terrain object, static, call it checkRay or something like that.
-				//TODO : Store as a constant in some object, maybe terrain.
-				var TDELTA_MIN		= 0.0001,	//Smallest distances between Min and Max T before quit testing
-					H_THRESHOLD		= 0.003,	//Smallest difference between iPos.y and Terrain Point Height for positive hit
-					MAX_ATTEMPT		= 20;		//How many tests before quitting.
-				
-				var hPoint = 0,	// Y or Height of the point on the terrain.
-					hDelta = 0, // Y Difference between intersection and terrain point.
-					t = {min:0,max:0,mid:0,delta:0}; //Time data
-
-				if(Ray.inAABB(aabb,ray,t)){
-					var iPos = new Vec3();
-
-					//perform binary search by dividing the segment in half and testing if the halfway point
-					//is the correct spot on the terrain, if not then choose which half of the segment to continue
-					//doing the search on. Continue till point is found or some testing limit is reached.
-					for(var i=1; i <= MAX_ATTEMPT; i++){
-						t.delta	= (t.max - t.min);			//Get length between the two intersection points
-						t.mid	= t.min + (t.delta * 0.5);	//Find the mid point.
-						
-						//Get point on line, then check where on the terrain grid the point is over.		
-						ray.getPos(t.mid,iPos);
-						hPoint = terrain.getPosHeight(iPos.x,iPos.z);
-						hDelta = Math.abs(iPos.y - hPoint);
-
-						//The height between grid point and ipos is blow min, then we got a hit.
-						if(hDelta < H_THRESHOLD) return iPos;
-
-						//If we ran out of delta testing length OR ran out of attempts.
-						else if(t.delta < TDELTA_MIN || i >= MAX_ATTEMPT) return null;
-
-						//Still serching, do next check on the top or bottom half of the segment for the next attempt.
-						else if(hPoint > iPos.y) 	t.max = t.mid; //Check Up
-						else						t.min = t.mid; //Check Down
-					}
+/*
+				if(gadget.isHit(ray,ix,iy)){
+					ctrl.stackSwitch("gadget");
+					return false;
 				}
-
-				return null;
+*/
+				return true;
 			}
 		</script>
 	</head>

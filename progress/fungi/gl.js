@@ -373,6 +373,7 @@ class UBO{
 	}
 }
 
+
 class VAO{
 	static create(){
 		var vao = { ptr:ctx.createVertexArray(), count:0,isIndexed:false };
@@ -420,13 +421,14 @@ class VAO{
 		return VAO;
 	}
 
+
 	static partitionFloatBuffer(attrLoc,compLen,stride,offset,isInstance){
 		ctx.enableVertexAttribArray(attrLoc);
 		ctx.vertexAttribPointer(attrLoc,compLen,ctx.FLOAT,false,stride,offset);
 
 		if(isInstance == true) ctx.vertexAttribDivisor(attrLoc, 1);
 		
-		return VAO;
+		return VAO;		
 	}
 
 	static emptyFloatArrayBuffer(out,name,aryCount,attrLoc,compLen,stride,offset,isStatic){

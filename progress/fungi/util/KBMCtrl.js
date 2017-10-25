@@ -24,6 +24,23 @@ class KBMCtrl{
 		this.onDownOverride = null;		//Optional, Allow the ability to swop event handlers or do whatever else before the evtHandlers do their job
 		this._activeHandler = null;		//Handlers are like state machines, swop functionality when needed
 		this._handlers = {};
+		this._handlerStack = [];
+		this._defaultHandler = null;
+	}
+
+	stackSwitch(name,data){
+		if(this._activeHandler != null){
+			this._handlerStack.push(this._activeHandler.name);
+		}
+		this.switchHandler(name,data);
+	}
+
+	unStack(){
+		if(this._handlerStack.length > 0){
+			this.switchHandler(this._handlerStack.pop()); //if we have a stacked item, switch to it.
+		}else if(this._activeHandler != null && this._activeHandler.name != this._defaultHandler){
+			this.switchHandler(this._defaultHandler,null);
+		}
 	}
 
 	switchHandler(name,data){
@@ -33,9 +50,13 @@ class KBMCtrl{
 		return this;
 	}
 
-	addHandler(name,h,active){
+	addHandler(name, h, active, isDefault){
+		h.name = name;
 		this._handlers[name] = h;
-		if(active == true) this._activeHandler = h;
+
+		if(active == true)		this._activeHandler = h;
+		if(isDefault == true)	this._defaultHandler = name;
+
 		return this;
 	}
 	
