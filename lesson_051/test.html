@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 			from "./fungi/Fungi.js";
+			import Downloader		from "./fungi/util/Downloader.js";
+			import FacedCube		from "./fungi/primitives/FacedCube.js";
+			import { Ray }			from "./fungi/util/Raycast.js";
+			import TransformGadget, { KBMCtrl_Gadget }	from "./fungi/entities/ui/TransformGadget.js";
+
+			/* NOTES:
+			https://github.com/josdejong/mathjs/blob/master/lib/function/geometry/intersect.js
+			*/
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var gadget = null;
+			var box = null;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				var kbmGadget = null;
+				Fungi.ready(onRender,3);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+				Fungi.ctrlCamera.addHandler("gadget",kbmGadget = new KBMCtrl_Gadget());
+
+				//........................................
+				//Add extra items to the scenen
+				Fungi.scene.push( box = FacedCube("MatVecWColor").setPosition(0,0.5,0) );
+				Fungi.scene.push( gadget = new TransformGadget("MatVecWColor").setTarget(box) );
+
+				//Fungi.scene.push( gadget = new TransformGadget("MatVecWColor").setPosition(0,0.2,0) );
+				
+				kbmGadget.gadget = gadget;
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				Fungi.debugLine.reset();
+				Fungi.debugPoint.reset();
+
+				var ray = Ray.MouseSegment(ix,iy).prepareAABB();
+
+				
+				Ray.DebugLine(ray);
+/*				gadget.isHit_Test(ray,ix,iy);*/
+				
+
+				if(gadget.isHit(ray,ix,iy)){
+					ctrl.stackSwitch("gadget");
+					return false;
+				}
+
+				return true;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
