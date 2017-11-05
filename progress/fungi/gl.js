@@ -116,10 +116,10 @@ function rgbArray(){
 //------------------------------------------------------
 //Shaders
 //------------------------------------------------------
-function createProgramFromText(vShaderTxt,fShaderTxt,doValidate){
+function createProgramFromText(vShaderTxt,fShaderTxt,doValidate,transFeedbackVars){
 	var vShader		= createShader(vShaderTxt,ctx.VERTEX_SHADER);	if(!vShader)	return null;
 	var fShader		= createShader(fShaderTxt,ctx.FRAGMENT_SHADER);	if(!fShader){	ctx.deleteShader(vShader); return null; }			
-	return createProgram(vShader,fShader,true);
+	return createProgram(vShader,fShader,true,transFeedbackVars);
 }
 
 //Create a shader by passing in its code and what type
@@ -139,7 +139,7 @@ function createShader(src,type){
 }
 
 //Link two compiled shaders to create a program for rendering.
-function createProgram(vShader,fShader,doValidate){
+function createProgram(vShader,fShader,doValidate,transFeedbackVars){
 	//Link shaders together
 	var prog = ctx.createProgram();
 	ctx.attachShader(prog,vShader);
@@ -149,6 +149,9 @@ function createProgram(vShader,fShader,doValidate){
 	//ctx.bindAttribLocation(prog,ATTR_POSITION_LOC,ATTR_POSITION_NAME);
 	//ctx.bindAttribLocation(prog,ATTR_NORMAL_LOC,ATTR_NORMAL_NAME);
 	//ctx.bindAttribLocation(prog,ATTR_UV_LOC,ATTR_UV_NAME);
+
+	//Need to setup Transform Feedback Varying Vars before linking the program.
+	if(transFeedbackVars !== undefined && transFeedbackVars != null) ctx.transformFeedbackVaryings(prog, transFeedbackVars, ctx.SEPARATE_ATTRIBS); //INTERLEAVED_ATTRIBS
 
 	ctx.linkProgram(prog);
 

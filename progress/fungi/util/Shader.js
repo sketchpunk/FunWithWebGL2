@@ -13,7 +13,9 @@ function loadShader(js){
 	//.............................
 	//create shader
 	var uniforms = [];
-	var shader = new ShaderBuilder(js.vertex,js.fragment);
+	var tfeedback = (js.shader.transFeedback != undefined)? js.shader.transFeedback : null;
+
+	var shader = new ShaderBuilder(js.vertex,js.fragment,tfeedback);
 	gl.res.shaders[js.shader.name] = shader;
 
 	//.............................
@@ -88,8 +90,8 @@ class Material{
 
 
 class ShaderBuilder{
-	constructor(vertShader,fragShader){
-		this.program = gl.createProgramFromText(vertShader,fragShader,true);
+	constructor(vertShader,fragShader,tfeedback){
+		this.program = gl.createProgramFromText(vertShader,fragShader,true,tfeedback);
 		
 		if(this.program != null){
 			gl.ctx.useProgram(this.program);
@@ -160,6 +162,7 @@ class ShaderBuilder{
 			if(this._UniformList[name] === undefined){ console.log("uniform not found " + name); return this; }
 
 			switch(this._UniformList[name].type){
+				case "float":	gl.ctx.uniform1f(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec2":	gl.ctx.uniform2fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec3":	gl.ctx.uniform3fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec4":	gl.ctx.uniform4fv(this._UniformList[name].loc, arguments[i+1]); break;

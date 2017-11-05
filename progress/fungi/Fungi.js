@@ -20,6 +20,9 @@ export default{
 	gridFloor		:null,		//Just a reference to the renderable for the grid floor.
 	scene			:[],		//Array that holds the heirarchy of transforms / renderables.
 
+	deltaTime		:0,
+	sinceStart		:0,
+
 	//Begin the GL Context
 	init:function(){ gl.set("FungiCanvas"); return this; },
 

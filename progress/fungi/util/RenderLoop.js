@@ -1,3 +1,5 @@
+import Fungi from "../Fungi.js";
+
 class RenderLoop{
 	constructor(callback,fps){
 		this.isActive		= false;	//Control the On/Off state of the render loop
@@ -46,9 +48,14 @@ class RenderLoop{
 			deltaTime	= msDelta / 1000.0,		//What fraction of a single second is the delta time
 			sinceStart	= msCurrent - this._startTime;
 		
+
 		if(msDelta >= this._fpsLimit){ //Now execute frame since the time has elapsed.
 			this.fps		= Math.floor(1/deltaTime);
 			this._lastFrame	= msCurrent;
+
+			Fungi.deltaTime = deltaTime;
+			Fungi.sinceStart = sinceStart;
+
 			this._callBack(deltaTime,sinceStart);
 		}
 
@@ -61,7 +68,8 @@ class RenderLoop{
 			deltaTime	= (msCurrent - this._lastFrame) / 1000.0,	//ms between frames, Then / by 1 second to get the fraction of a second.
 			sinceStart	= msCurrent - this._startTime;
 
-		this.timeSinceStart = msCurrent - this._startTime;
+		Fungi.deltaTime = deltaTime;
+		Fungi.sinceStart = sinceStart;
 
 		//Track how my frames have passed in one second of time.
 		this._fpsCnt++;
