@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+
+			import gl, { VAO, ATTR_POSITION_LOC } from "./fungi/gl.js";
+			import Renderable	from "./fungi/entities/Renderable.js";
+			import {Vec3} from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/TransformFeedback.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+
+				
+				//........................................
+				//Add extra items to the scenen
+				//Fungi.scene.push(new Emitter("MatVecWColor"));
+				Fungi.scene.push(new Emitter("MatTransFeedback"));
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(dt,ss){ Fungi.update(); Fungi.render(Fungi.scene); }
+
+
+			class Emitter extends Renderable{
+				constructor(mat){
+					super(null,mat);
+					this.drawMode = gl.ctx.POINTS;
+					//this.useCulling		= false;
+					//this.vao = VAO.create();
+
+					var ctx = gl.ctx;
+					
+					//layout(location=0) in vec3 a_vertices;
+					//layout(location=1) in vec3 a_position;
+					//layout(location=2) in vec3 a_velocity; //which direction to move an how fast
+					//layout(location=3) in float a_age;	//current age of particle in seconds
+					//layout(location=4) in float a_life;	//Length of age a particle is allowed to live
+					var aVert 	= new Float32Array( [0,-0.5,0] );
+					this.vertCount = aVert.length / 3;
+
+					/*
+					var aPos	= new Float32Array( [0,0,0, 0,0,0, 0,0,0, 0,0,0] );
+					var aVel	= new Float32Array( [0,1,0, 0,1,0, 0,1,0, 0,1,0] );
+					var aAge	= new Float32Array( [-9000, -9000, -9000, -9000] ); //sinceStart, starts at 0, utime - age needs to be negative so the two cancel out and makes it a possitive, so time0 + age > life can happen.
+					var aLife	= new Float32Array( [8000, 5000, 3000, 7000] );
+					*/
+
+					var ti = 10, ii;
+					var //aPos	= new Float32Array(ti * 3),	//not really needed if shader can set data initially
+						//aVel 	= new Float32Array(ti * 3),
+						aAge 	= new Float32Array(ti),
+						aLife 	= new Float32Array(ti);
+
+					for(var i=0; i < ti; i++){
+						ii = i * 3;
+						//aPos[i] 	= 0; 		aPos[i+1] = 0;		aPos[i+2] = 0; 
+						//aVel[i] 	= 0; 		aVel[i+1] = 4;		aVel[i+2] = 0;
+						aAge[i] 	= -9000;
+						aLife[i] 	= (Math.random() * 4000) + 2000; //Random Life between 2 to 8 Seconds
+					}
+
+
+					var aVao = [ ctx.createVertexArray(), ctx.createVertexArray() ];
+					var aTFB = [ ctx.createTransformFeedback(), ctx.createTransformFeedback() ];
+
+					this.vao = aVao;
+					this.tFeedback = aTFB;
+					this.totalParticles = aLife.length;
+
+					var v = [null,null];
+					this.bufs = v;
+
+					for(var i=0; i < aVao.length; i++){
+						//Create Buffer Pointers
+						v[i] = {
+							bVertices	: ctx.createBuffer(),
+							bPosition	: ctx.createBuffer(),
+							bVelocity	: ctx.createBuffer(),
+							bAge		: ctx.createBuffer(),
+							bLife		: ctx.createBuffer()
+						};
+
+						//.......................
+						ctx.bindVertexArray( aVao[i] ); //Activate VAO to bind buffers to it.
+
+						//.......................
+						ctx.bindBuffer(ctx.ARRAY_BUFFER, v[i].bVertices);
+						ctx.bufferData(ctx.ARRAY_BUFFER, aVert, ctx.STATIC_DRAW);
+						ctx.vertexAttribPointer(0, 3, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(0);
+
+						//.......................
+						ctx.bindBuffer(ctx.ARRAY_BUFFER, v[i].bPosition);
+						//ctx.bufferData(ctx.ARRAY_BUFFER, aPos, ctx.DYNAMIC_COPY);		
+						ctx.bufferData(ctx.ARRAY_BUFFER,ti * 3 * 4,ctx.DYNAMIC_COPY);	//Shader sets inital data, empty buffer
+						ctx.vertexAttribPointer(1, 3, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(1);
+						ctx.vertexAttribDivisor(1, 1); //Instance the Buffer
+
+						//.......................
+						ctx.bindBuffer(ctx.ARRAY_BUFFER, v[i].bVelocity);+
+						//ctx.bufferData(ctx.ARRAY_BUFFER, aVel, ctx.DYNAMIC_COPY);		
+						ctx.bufferData(ctx.ARRAY_BUFFER,ti * 3 * 4,ctx.DYNAMIC_COPY);	//Shader sets inital data, empty buffer
+						ctx.vertexAttribPointer(2, 3, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(2);
+						ctx.vertexAttribDivisor(2, 1); //Instance the Buffer
+
+						//.......................
+						ctx.bindBuffer(ctx.ARRAY_BUFFER, v[i].bAge);
+						ctx.bufferData(ctx.ARRAY_BUFFER, aAge, ctx.DYNAMIC_COPY);
+						ctx.vertexAttribPointer(3, 1, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(3);
+						ctx.vertexAttribDivisor(3, 1); //Instance the Buffer
+
+						//.......................
+						ctx.bindBuffer(ctx.ARRAY_BUFFER, v[i].bLife);
+						ctx.bufferData(ctx.ARRAY_BUFFER, aLife, ctx.STATIC_DRAW); //DYNAMIC_COPY, not changing the data
+						ctx.vertexAttribPointer(4, 1, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(4);
+						ctx.vertexAttribDivisor(4, 1);	//Instance the Buffer
+
+						//.......................
+						ctx.bindBuffer(ctx.ARRAY_BUFFER, null);
+
+						ctx.bindTransformFeedback(ctx.TRANSFORM_FEEDBACK, aTFB[i]);
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, 0, v[i].bPosition);
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, 1, v[i].bVelocity);
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, 2, v[i].bAge);
+						//ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, 3, v[i].bLife); //Not updating value, not needed in feedback
+
+						ctx.bindVertexArray(null);
+					}
+
+					this.vaoCurrent = 0;
+				}
+
+				draw(){
+					var ctx = gl.ctx;
+
+					var idx = (this.vaoCurrent + 1) % 2; //Alternate between the VAOs
+					var vaoSource = this.vao[ this.vaoCurrent ];
+					var tfeedback = this.tFeedback[ idx ];
+
+					gl.ctx.bindVertexArray(vaoSource);
+					gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK,tfeedback);
+
+					this.material.shader.setUniforms("u_time",Fungi.sinceStart);
+
+					gl.ctx.beginTransformFeedback(this.drawMode);
+					//gl.ctx.drawArrays(this.drawMode, 0, this.totalParticles);
+					gl.ctx.drawArraysInstanced(this.drawMode, 0, this.vertCount, this.totalParticles); //Drawing Instance
+					gl.ctx.endTransformFeedback();
+
+					gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK,null);
+					gl.ctx.bindVertexArray(null);
+
+					this.vaoCurrent = idx; //Alternate between the VAOs
+				}
+
+			}	
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
