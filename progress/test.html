@@ -25,7 +25,8 @@
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
 					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
-					{type:"shader",file:"fungi/shaders/TransformFeedback.txt"}
+					{type:"shader",file:"fungi/shaders/TransformFB_P1.txt"},
+					{type:"shader",file:"fungi/shaders/TransformFB_P2.txt"}
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -38,12 +39,10 @@
 				//Prepare the bare needed to get the scene running
 				Fungi.ready(onRender);
 
-				
 				//........................................
 				//Add extra items to the scenen
-				//Fungi.scene.push(new Emitter("MatVecWColor"));
-				Fungi.scene.push(new Emitter("MatTransFeedback"));
-
+				//Fungi.scene.push(new Emitter("MatVecWColor"));MatTransFeedback
+				Fungi.scene.push(new EmitterMesh("MatTransFeedback_P1","MatTransFeedback_P2"));
 
 				//........................................
 				//Begin rendering the scene
@@ -52,6 +51,231 @@
 
 			function onRender(dt,ss){ Fungi.update(); Fungi.render(Fungi.scene); }
 
+
+			class EmitterMesh extends Renderable{
+				constructor(matFB,mat){
+					super(null,mat);
+					this.materialFB		= gl.res.getMaterial(matFB);
+					this.drawMode 		= gl.ctx.TRIANGLES;
+					this.useCulling		= false;
+
+					this.vaoCount		= 0;
+					this.instanceCount	= 0;
+					this.currentIdx		= 0;
+
+					this.build();
+				}
+
+				build(){
+					var ctx		= gl.ctx;
+					var ABUF	= ctx.ARRAY_BUFFER;
+					var EBUF	= ctx.ELEMENT_ARRAY_BUFFER;
+					var TFBUF	= ctx.TRANSFORM_FEEDBACK_BUFFER;
+					var SDRAW	= ctx.STATIC_DRAW;
+					var DCOPY	= ctx.DYNAMIC_COPY;
+					var FL		= ctx.FLOAT;
+					
+					var rFeedback = [ ctx.createVertexArray(), ctx.createVertexArray() ];	//Read is just VAO
+					var wFeedback = [ ctx.createTransformFeedback(), ctx.createTransformFeedback() ];
+
+					this.readFeedback = rFeedback;
+					this.writeFeedback = wFeedback;
+
+					//Reusable Buffers
+					var cnt = 100;
+					var bOffset = [ ctx.createBuffer(), ctx.createBuffer() ];
+					var locOffset = 0;
+					var bVelocity = [ ctx.createBuffer(), ctx.createBuffer() ];
+					var locVelocity = 1;
+
+					var bAge = [ ctx.createBuffer(), ctx.createBuffer() ];
+					var aAge = new Float32Array( cnt );
+					var locAge = 2;
+
+					var bAgeNorm = [ ctx.createBuffer(), ctx.createBuffer() ];
+					var aAgeNorm = new Float32Array( cnt );
+					var locAgeNorm = 3;
+
+					var bLife = [ ctx.createBuffer(), ctx.createBuffer() ];
+					var aLife = new Float32Array( cnt );
+					var locLife = 4;
+
+					for(var i=0; i < cnt; i++){
+						aLife[i] = (6000 * Math.random()) + 1000;
+						aAge[i] = Fungi.sinceStart - aLife[i] - 100;
+					}
+
+					this.instanceCount = cnt;
+
+					//........................................................
+					//CREATE FEEDBACK
+					for(var i=0; i < 2; i++){
+						ctx.bindVertexArray(rFeedback[i]);
+
+						//OFFSET - EMPTY
+						ctx.bindBuffer(ABUF, bOffset[i]);
+						ctx.bufferData(ABUF, this.instanceCount * 3 * 4, DCOPY); //(i == 0)? aOffset : aOffset.length * 3 * 4
+						ctx.vertexAttribPointer(locOffset, 3, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locOffset);
+
+						//VELOCITY - EMPTY
+						ctx.bindBuffer(ABUF, bVelocity[i]);
+						ctx.bufferData(ABUF, this.instanceCount * 3 * 4, DCOPY); //(i == 0)? aOffset : aOffset.length * 3 * 4
+						ctx.vertexAttribPointer(locVelocity, 3, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locVelocity);
+
+						//AGE
+						ctx.bindBuffer(ABUF, bAge[i]);
+						ctx.bufferData(ABUF, aAge, DCOPY);
+						ctx.vertexAttribPointer(locAge, 1, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locAge);
+
+						//AGE NORM - Empy
+						ctx.bindBuffer(ABUF, bAgeNorm[i]);
+						ctx.bufferData(ABUF, this.instanceCount * 4, DCOPY);
+						ctx.vertexAttribPointer(locAgeNorm, 1, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locAgeNorm);
+
+						//LIFE
+						ctx.bindBuffer(ABUF, bLife[i]);
+						ctx.bufferData(ABUF, aLife, SDRAW);
+						ctx.vertexAttribPointer(locLife, 1, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locLife);
+
+						//CLEANUP
+						ctx.bindVertexArray(null);
+						ctx.bindBuffer(ABUF, null);
+
+						//Setup Transform Feedback
+						ctx.bindTransformFeedback(ctx.TRANSFORM_FEEDBACK, wFeedback[i]);
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, locOffset, bOffset[i]); //Feedback
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, locVelocity, bVelocity[i]); //Feedback
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, locAge, bAge[i]); //Feedback
+						ctx.bindBufferBase(ctx.TRANSFORM_FEEDBACK_BUFFER, locAgeNorm, bAgeNorm[i]); //Feedback
+						ctx.bindTransformFeedback(ctx.TRANSFORM_FEEDBACK, null);
+						//ctx.bindBufferBase(TFBUF, 0, null);
+					}
+
+
+					//........................................................
+					//CREATE RENDER VAO
+					var vaoRender = [ ctx.createVertexArray(),ctx.createVertexArray() ];
+					this.vaoRender = vaoRender;
+					
+					//-----------------------	
+					//Index					
+					var bIndex = ctx.createBuffer();
+					var aIndex  = new Uint16Array([ 0,1,2, 2,3,0 ]);
+
+					ctx.bindBuffer(EBUF, bIndex );
+					ctx.bufferData(EBUF, aIndex, SDRAW );
+
+					this.vaoCount = aIndex.length;
+
+					//-----------------------
+					//Vertices
+					var bVertices = ctx.createBuffer();
+					var aVert 	= new Float32Array([
+						-0.5,	-0.5,	0.0,
+						 0.5,	-0.5,	0.0,
+						 0.5,	 0.5,	0.0,
+						-0.5,	 0.5,	0.0,
+					]);
+					
+					var locVert = 0;
+					ctx.bindBuffer(ABUF, bVertices);
+					ctx.bufferData(ABUF, aVert, SDRAW);
+
+					//-----------------------
+					//Vertices
+					var bUV = ctx.createBuffer();
+					var aUV = new Float32Array([
+						0.0,	0.0,
+						1.0,	0.0,
+						1.0,	1.0,
+						0.0,	1.0
+					]);
+					
+					var locUV = 1;
+					ctx.bindBuffer(ABUF, bUV);
+					ctx.bufferData(ABUF, aUV, SDRAW);
+
+
+					//-----------------------
+					//Setup VAOs for Rendering
+					locOffset = 2;
+					locAgeNorm = 3;
+					for(var i=0; i < 2; i++){
+						ctx.bindVertexArray(vaoRender[i]);
+
+						//INDEX
+						ctx.bindBuffer(EBUF, bIndex );
+
+						//VERTICES
+						ctx.bindBuffer(ABUF, bVertices);
+						ctx.vertexAttribPointer(locVert, 3, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(locVert);
+
+						//UVs
+						ctx.bindBuffer(ABUF, bUV);
+						ctx.vertexAttribPointer(locUV, 2, ctx.FLOAT, false, 0, 0);
+						ctx.enableVertexAttribArray(locUV);
+
+						//OFFSET
+						ctx.bindBuffer(ABUF, bOffset[i]);
+						ctx.vertexAttribPointer(locOffset, 3, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locOffset);
+						ctx.vertexAttribDivisor(locOffset, 1); //instanced
+
+						//AGE NORM
+						ctx.bindBuffer(ABUF, bAgeNorm[i]);
+						ctx.vertexAttribPointer(locAgeNorm, 1, FL, false, 0, 0);
+						ctx.enableVertexAttribArray(locAgeNorm);
+						ctx.vertexAttribDivisor(locAgeNorm, 1); //instanced
+
+						//CLEANUP
+						ctx.bindVertexArray(null);
+						ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, null );
+						ctx.bindBuffer(ABUF, null);
+					}
+				}
+
+				draw(){ 
+					this.materialFB.shader.activate();
+					this.materialFB.shader.setUniforms("u_time",Fungi.sinceStart);
+					
+					//...............................
+					//Calculate this frame's Data
+					var nextIdx = (this.currentIdx + 1) % 2;
+					var vaoTFRead = this.readFeedback[this.currentIdx];
+					var vaoTFWrite = this.writeFeedback[nextIdx];
+
+					gl.ctx.bindVertexArray(vaoTFRead);										//READ FROM
+					gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK,vaoTFWrite);		//WRITE TO
+						gl.ctx.enable(gl.ctx.RASTERIZER_DISCARD);							//Disable Fragment Shader
+
+							gl.ctx.beginTransformFeedback(gl.ctx.POINTS);					//Begin Feedback Process
+	        					gl.ctx.drawArrays(gl.ctx.POINTS, 0, this.instanceCount);	//Execute Feedback Shader.
+	        				gl.ctx.endTransformFeedback();									//End Feedback Process
+
+	        			gl.ctx.disable(gl.ctx.RASTERIZER_DISCARD);							//Enable Fragment Shader
+	        		gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK, null);			//Clear out which feedback is bound
+
+
+					//...............................
+					//Render the Mesh with the new data.
+					this.material.shader.activate();
+					gl.ctx.bindVertexArray(this.vaoRender[nextIdx]); //Alternate between two render VAOs
+					gl.ctx.drawElementsInstanced(this.drawMode, this.vaoCount, gl.ctx.UNSIGNED_SHORT, 0, this.instanceCount);
+					//gl.ctx.drawElements(this.drawMode, 6, gl.ctx.UNSIGNED_SHORT, 0);
+					//gl.ctx.drawArrays(this.drawMode, 0, 4);
+					
+					//...............................
+					//cleanup
+					gl.ctx.bindVertexArray(null);
+					this.currentIdx = nextIdx; //Next frame use the other feedback and render vao
+				}
+			}
 
 			class Emitter extends Renderable{
 				constructor(mat){
