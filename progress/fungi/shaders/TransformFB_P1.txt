@@ -56,7 +56,7 @@
 			o_age		= u_time;
 			o_ageNorm	= 0.0;
 		}else{
-			o_velocity	= a_velocity - vec3(0.0,0.05,0.0); //Apply Gravity to Velocity
+			o_velocity	= a_velocity;// - vec3(0.0,0.05,0.0); //Apply Gravity to Velocity
 			o_offset	= a_offset + 0.01 * o_velocity;
 			o_age		= a_age;
 			o_ageNorm 	= age / a_life;
