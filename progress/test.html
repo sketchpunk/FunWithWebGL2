@@ -26,7 +26,8 @@
 				var dl = Downloader.start([
 					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
 					{type:"shader",file:"fungi/shaders/TransformFB_P1.txt"},
-					{type:"shader",file:"fungi/shaders/TransformFB_P2.txt"}
+					{type:"shader",file:"fungi/shaders/TransformFB_P2.txt"},
+					{type:"image",name:"tex01",file:"./grass.png", yFlip:true, mips:false }
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -48,29 +49,33 @@
 					aIndex			= new Uint16Array([ 0,1,2, 2,3,0 ]),
 					aVert			= new Float32Array([-0.5, -0.5, 0.0,   0.5, -0.5, 0.0,   0.5,  0.5, 0.0,   -0.5,  0.5, 0.0]),
 					aUV				= new Float32Array([ 0.0, 0.0,   1.0, 0.0,   1.0, 1.0,   0.0, 1.0 ]),
-					aLife			= [...Array(particleCount)],	//init empty array
-					aAge			= [...Array(particleCount)];	//init empty array
-					
-				aLife.forEach(	(v,i,a) => { a[i] = (6000 * Math.random()) + 1000; } );
-				aAge.forEach(	(v,i,a) => { a[i] = Fungi.sinceStart - aLife[i] - 100; } );
+					aOffset			= [...Array(particleCount*3)];
+					//aLife			= [...Array(particleCount)],	//init empty array
+					//aAge			= [...Array(particleCount)];	//init empty array
+				
+				aOffset.forEach( (v,i,a) => { a[i] = (i % 3 != 1)? Math.random() * 20 - 10 : 0.5; } );
+				//aLife.forEach(	(v,i,a) => { a[i] = (6000 * Math.random()) + 1000; } );
+				//aAge.forEach(	(v,i,a) => { a[i] = Fungi.sinceStart - aLife[i] - 100; } );
 
-				/*
-				usage : usage mode for the buffer, same names used in gl.ctx[USAGE]
-				data : if null, make empty buffer the size needed for all instances
-				usedIn : 1 = Read, 2 = Write, 4 = Draw
-				*/
+				
+				// usage : usage mode for the buffer, same names used in gl.ctx[USAGE]
+				// data : if null, make empty buffer the size needed for all instances
+				// usedIn : 1 = Read, 2 = Write, 4 = Draw
+				
 				var fBuffers = [
 					{ name:"vertices",	compLen:3, data:aVert, drawLoc:0, rLoc:0, wLoc:0, ins:false, usedIn:4, usage:"STATIC_DRAW" },
 					{ name:"uv",		compLen:2, data:aUV, drawLoc:1, rLoc:0, wLoc:0, ins:false, usedIn:4, usage:"STATIC_DRAW" },
-					{ name:"offset",	compLen:3, data:null, drawLoc:2, rLoc:0, wLoc:0, ins:true, usedIn:7, usage:"DYNAMIC_COPY" },
-					{ name:"ageNorm",	compLen:1, data:null, drawLoc:3, rLoc:3, wLoc:3, ins:true, usedIn:7, usage:"DYNAMIC_COPY" },
-					{ name:"velocity",	compLen:3, data:null, drawLoc:0, rLoc:1, wLoc:1, ins:true, usedIn:3, usage:"DYNAMIC_COPY" },
-					{ name:"age",		compLen:1, data:new Float32Array(aAge), drawLoc:0, rLoc:2, wLoc:2, ins:false, usedIn:3, usage:"DYNAMIC_COPY" },
-					{ name:"life",		compLen:1, data:new Float32Array(aLife), drawLoc:4, rLoc:4, wLoc:0, ins:false, usedIn:1, usage:"STATIC_DRAW" }
+					{ name:"offset",	compLen:3, data:aOffset, drawLoc:2, rLoc:0, wLoc:0, ins:true, usedIn:4, usage:"STATIC_DRAW" }
+					//{ name:"offset",	compLen:3, data:null, drawLoc:2, rLoc:0, wLoc:0, ins:true, usedIn:7, usage:"DYNAMIC_COPY" },
+					//{ name:"ageNorm",	compLen:1, data:null, drawLoc:3, rLoc:3, wLoc:3, ins:true, usedIn:7, usage:"DYNAMIC_COPY" },
+					//{ name:"velocity",	compLen:3, data:null, drawLoc:0, rLoc:1, wLoc:1, ins:true, usedIn:3, usage:"DYNAMIC_COPY" },
+					//{ name:"age",		compLen:1, data:new Float32Array(aAge), drawLoc:0, rLoc:2, wLoc:2, ins:false, usedIn:3, usage:"DYNAMIC_COPY" },
+					//{ name:"life",		compLen:1, data:new Float32Array(aLife), drawLoc:4, rLoc:4, wLoc:0, ins:false, usedIn:1, usage:"STATIC_DRAW" }
 				];
 
 				var emit = new MeshEmitter("MatTransFeedback_P1","MatTransFeedback_P2").setup(particleCount,aIndex,fBuffers);
 				Fungi.scene.push(emit);
+
 
 				//........................................
 				//Begin rendering the scene
@@ -87,29 +92,36 @@
 					this.materialFB		= gl.res.getMaterial(matFB);
 					this.drawMode 		= gl.ctx.TRIANGLES;
 					this.useCulling		= false;
+					this.useFeedback	= false;
 
 					this.elementCount	= 0;	//How many chunks of data to render
 					this.particleCount	= 0;	//How many instances to make
 					this.currentIdx		= 0;	//Which Draw, Read, Write Buffers currently using.
 
-					this.vaoDraw 		= [ gl.ctx.createVertexArray(),			gl.ctx.createVertexArray() ];
-					this.readFeedback	= [ gl.ctx.createVertexArray(),			gl.ctx.createVertexArray() ];
-					this.writeFeedback	= [ gl.ctx.createTransformFeedback(),	gl.ctx.createTransformFeedback() ];
+					this.vaoDraw 		= null;
+					this.readFeedback	= null;
+					this.writeFeedback	= null;
 
 					this.buffers		= {};
 				}
 
 				setup(pCnt,iBufData,fBuf){
 					this.particleCount = pCnt;
-					this.setupBuffers(iBufData,fBuf);
-					this.setupFeedback(fBuf);
+					
+					if(this.setupBuffers(iBufData,fBuf) > 0){
+						this.setupFeedback(fBuf);
+						this.useFeedback = true;
+					}
+
 					this.setupDrawVao(iBufData,fBuf);
+					console.log(this.buffers);
 					return this;
 				}
 
 				//Build up all the buffers needed to render and compute particles
 				setupBuffers(iBufData,fBuf){
-					var b;
+					var b,			//Buffer info ref
+						fbCnt = 0;	//Feedback Buffer Count
 
 					//Index is special buffer for our vaos, built differently
 					if(iBufData != null){
@@ -120,24 +132,36 @@
 						this.elementCount = iBufData.length;											//Save Draw Cnt
 					}
 
+					var bData = null;
 					for(var i = 0; i < fBuf.length; i++){
 						b = fBuf[i];													//Pointer to Buffer Information
 						this.buffers[b.name] = gl.ctx.createBuffer();					//Create Buffer
 						gl.ctx.bindBuffer(gl.ctx.ARRAY_BUFFER, this.buffers[b.name]);	//Set As Active buffer
 
+						//Determine what the data param for buffer data is
 						//If data is null, create an empty buffer big enough to hold all data.
-						gl.ctx.bufferData(gl.ctx.ARRAY_BUFFER
-							,(b.data != null)? b.data : this.particleCount * b.compLen * 4
-							,gl.ctx[b.usage]);
+						if(b.data == null)							bData = this.particleCount * b.compLen * 4;
+						else if(!(b.data instanceof Float32Array))	bData = new Float32Array(b.data);
+						else										bData = b.data;
+
+						gl.ctx.bufferData(gl.ctx.ARRAY_BUFFER, bData, gl.ctx[b.usage]);
 
 						//Incase we're not using index, get count of vertices for element Count
 						if(this.elementCount == 0 && b.name == "vertices") this.elementCount = b.data.length / b.compLen;
+
+						if( (b.usedIn & 3) != 0) fbCnt++; //Count FB Read/Write Buffers
 					}
+					
+					return fbCnt; //Return how many Feedback buffers created, helps determine if we need feedback setup
 				}
 
 				//Create VAO and TransFeedback objects for the buffers needed to compute particle state
 				setupFeedback(fBuf){
 					var b, j;
+
+					this.readFeedback	= [ gl.ctx.createVertexArray(),			gl.ctx.createVertexArray() ];
+					this.writeFeedback	= [ gl.ctx.createTransformFeedback(),	gl.ctx.createTransformFeedback() ];
+
 					for(var i = 0; i < 2; i++){
 						//.......................
 						//Setup Read VAO
@@ -169,7 +193,11 @@
 				//Create VAOs and link up all the buffers needed to render a particle.
 				setupDrawVao(iBufData,fBuf){
 					var j,b;
-					for(var i=0; i < 2; i++){
+
+					this.vaoDraw = [ gl.ctx.createVertexArray() ];
+					if(this.useFeedback) this.vaoDraw.push( gl.ctx.createVertexArray());
+
+					for(var i=0; i < this.vaoDraw.length; i++){
 						gl.ctx.bindVertexArray(this.vaoDraw[i]);
 
 						//.......................
@@ -186,7 +214,7 @@
 							gl.ctx.vertexAttribPointer(b.drawLoc, b.compLen, gl.ctx.FLOAT, false, 0, 0);
 							gl.ctx.enableVertexAttribArray(b.drawLoc);
 
-							if(b.ins) gl.ctx.vertexAttribDivisor(b.drawLoc, 1); //If Instanced
+							if(b.ins){ gl.ctx.vertexAttribDivisor(b.drawLoc, 1); console.log("inst",b); }//If Instanced 
 						}
 
 						//.......................
@@ -195,42 +223,48 @@
 						gl.ctx.bindBuffer(gl.ctx.ELEMENT_ARRAY_BUFFER, null);
 						gl.ctx.bindBuffer(gl.ctx.ARRAY_BUFFER, null);
 					}
+					console.log("x",this.vaoDraw);
 				}
 
 				draw(){ 
-					this.materialFB.shader.activate();
-					this.materialFB.shader.setUniforms("u_time",Fungi.sinceStart);
-					
-					//---------------------------------
-					// Compute Particle State
-					//---------------------------------
-					var nextIdx		= (this.currentIdx + 1) % 2,		//Next Index will be write while current is read.
-						vaoTFRead	= this.readFeedback[this.currentIdx],
-						vaoTFWrite	= this.writeFeedback[nextIdx];
+					if(this.useFeedback){
+						//---------------------------------
+						// Compute Particle State
+						//---------------------------------
+						this.materialFB.shader.activate();
+						this.materialFB.shader.setUniforms("u_time",Fungi.sinceStart);
+						
+						var nextIdx		= (this.currentIdx + 1) % 2,		//Next Index will be write while current is read.
+							vaoTFRead	= this.readFeedback[this.currentIdx],
+							vaoTFWrite	= this.writeFeedback[nextIdx];
 
-					gl.ctx.bindVertexArray(vaoTFRead);										//READ FROM
-					gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK,vaoTFWrite);		//WRITE TO
-						gl.ctx.enable(gl.ctx.RASTERIZER_DISCARD);							//Disable Fragment Shader
+						gl.ctx.bindVertexArray(vaoTFRead);										//READ FROM
+						gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK,vaoTFWrite);		//WRITE TO
+							gl.ctx.enable(gl.ctx.RASTERIZER_DISCARD);							//Disable Fragment Shader
 
-							gl.ctx.beginTransformFeedback(gl.ctx.POINTS);					//Begin Feedback Process
-	        					gl.ctx.drawArrays(gl.ctx.POINTS, 0, this.particleCount);	//Execute Feedback Shader.
-	        				gl.ctx.endTransformFeedback();									//End Feedback Process
+								gl.ctx.beginTransformFeedback(gl.ctx.POINTS);					//Begin Feedback Process
+		        					gl.ctx.drawArrays(gl.ctx.POINTS, 0, this.particleCount);	//Execute Feedback Shader.
+		        				gl.ctx.endTransformFeedback();									//End Feedback Process
 
-	        			gl.ctx.disable(gl.ctx.RASTERIZER_DISCARD);							//Enable Fragment Shader
-	        		gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK, null);			//Clear out which feedback is bound
+		        			gl.ctx.disable(gl.ctx.RASTERIZER_DISCARD);							//Enable Fragment Shader
+		        		gl.ctx.bindTransformFeedback(gl.ctx.TRANSFORM_FEEDBACK, null);			//Clear out which feedback is bound
 
-					//---------------------------------
-					// Render the Particle with the new data.
-					//---------------------------------
-					this.material.shader.activate();
-					gl.ctx.bindVertexArray(this.vaoDraw[nextIdx]); //Alternate between two render VAOs
+						//---------------------------------
+						// Render the Particle with the new data.
+						//---------------------------------
+						this.material.shader.activate();
+						this.material.applyUniforms();
+						gl.ctx.bindVertexArray(this.vaoDraw[nextIdx]); //Alternate between two render VAOs	
+
+						this.currentIdx = nextIdx; //Next frame use the other feedback and render vao
+					}else gl.ctx.bindVertexArray(this.vaoDraw[0]); //No feedback, so only single vao available
+
 					gl.ctx.drawElementsInstanced(this.drawMode, this.elementCount, gl.ctx.UNSIGNED_SHORT, 0, this.particleCount);
 					
 					//---------------------------------
 					// Cleanup
 					//---------------------------------
 					gl.ctx.bindVertexArray(null);
-					this.currentIdx = nextIdx; //Next frame use the other feedback and render vao
 				}
 			}//cls
 		</script>

@@ -1,8 +1,10 @@
 import Shader		from "./Shader.js";
+import gl			from "../gl.js";
 
 /* SAMPLE ------------------------------------------------------
 var p = Downloader.start([
-	{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+	{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+	{type:"image",file:"pic.png", yFlip:false, mips:false }
 ]).then(function(){			setTimeout(onInit,50);
 }).catch(function(error){	console.log(error); });
 
@@ -90,6 +92,14 @@ function get(itm,type){
 	}
 }
 
+function getImage(itm){
+	var img		= new Image();
+	img.ActiveItem	= itm;
+	img.onload		= onDownloadSuccess;
+	img.onabort		= img.onerror = onDownloadError;
+	img.src			= itm.file;
+}
+
 //------------------------------------------------------
 //Private
 //------------------------------------------------------
@@ -108,10 +118,21 @@ function onXhrComplete(e){
 	this.ActiveItem = null;
 	loadNext();
 }				
-function onXhrError(e){ console.log("onXhrError"); }
-function onXhrAbort(e){ console.log("onXhrAbort"); }
-function onXhrTimeout(e){ console.log("onXhrTimeout"); }
+function onXhrError(e){		console.log("onXhrError"); }
+function onXhrAbort(e){		console.log("onXhrAbort"); }
+function onXhrTimeout(e){	console.log("onXhrTimeout"); }
 
+function onDownloadSuccess(){
+	var doSave = Handlers[this.ActiveItem.type](this.ActiveItem,this);
+	if(!IsActive) return; //Incase of loading error downloader will be stopped.
+
+	if(doSave) Complete.push(this.ActiveItem);
+
+	this.ActiveItem = null;
+	loadNext();
+}
+
+function onDownloadError(){ console.log("Error getting ",this); }
 
 //------------------------------------------------------
 //Handlers
@@ -177,6 +198,14 @@ var Handlers = {
 		}
 
 		Shader.load(rtn); //Call fungi to load shader to GPU
+		return false;
+	},
+
+	//................................................
+	"image":function(itm,dl){
+		if(dl == undefined){ getImage(itm); return false; }
+
+		gl.loadTexture(itm.name,dl,itm.yFlip,itm.mips);
 		return false;
 	}
 };

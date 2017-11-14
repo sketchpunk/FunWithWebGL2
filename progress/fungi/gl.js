@@ -25,6 +25,7 @@ function init(canvas,bgColor,wp,hp){
 	ctx.enable(ctx.CULL_FACE);							//Cull back face, so only show triangles that are created clockwise
 	ctx.depthFunc(ctx.LEQUAL);							//Near things obscure far things
 	ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA);	//Setup default alpha blending
+	//ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA, ctx.ONE, ctx.ONE_MINUS_SRC_ALPHA);
 
 	fitScreen(wp || 1,hp || 1);							//Set the size of the canvas to a percent of the screen
 	setClearColor(bgColor || "#ffffff");				//Set clear color
@@ -32,7 +33,12 @@ function init(canvas,bgColor,wp,hp){
 
 	//........................................
 	//Globally Used Objects
-	this.UBOTransform = createUBO(UBO_TRANSFORM,0,[ {name:"matProjection",type:"mat4"}, {name:"matCameraView",type:"mat4"}, {name:"posCamera",type:"vec3"} ]);
+	this.UBOTransform = createUBO(UBO_TRANSFORM,0,[ 
+		{name:"matProjection",type:"mat4"}, 
+		{name:"matCameraView",type:"mat4"}, 
+		{name:"posCamera",type:"vec3"},
+		{name:"fTime",type:"f"}
+	]);
 
 	return this;
 }
@@ -183,33 +189,37 @@ function createProgram(vShader,fShader,doValidate,transFeedbackVars){
 //------------------------------------------------------
 //Textures
 //------------------------------------------------------
-/*
-//Textures
-ctx.fLoadTexture = function(name,img,doYFlip,noMips){ var tex = Fungi.Res.Textures[name] = this.createTexture();  return this.fUpdateTexture(name,img,doYFlip,noMips); };
-ctx.fUpdateTexture = function(name,img,doYFlip,noMips){
-	var tex = this.mTextureCache[name];	
-	if(doYFlip == true) this.pixelStorei(this.UNPACK_FLIP_Y_WEBGL, true);	//Flip the texture by the Y Position, So 0,0 is bottom left corner.
 
-	this.bindTexture(this.TEXTURE_2D, tex);														//Set text buffer for work
-	this.texImage2D(this.TEXTURE_2D, 0, this.RGBA, this.RGBA, this.UNSIGNED_BYTE, img);			//Push image to GPU.
+//Textures
+function loadTexture(name,img,doYFlip,useMips){ 
+	var tex = mod.res.textures[name] = ctx.createTexture();  
+	return updateTexture(name,img,doYFlip,useMips);
+}
+function updateTexture(name,img,doYFlip,useMips){ //can be used to pass video frames to gpu texture.
+	var tex = mod.res.textures[name];	
+
+	if(doYFlip == true) ctx.pixelStorei(ctx.UNPACK_FLIP_Y_WEBGL, true);	//Flip the texture by the Y Position, So 0,0 is bottom left corner.
+
+	ctx.bindTexture(ctx.TEXTURE_2D, tex); //bind texture so we can start configuring it.
+	ctx.texImage2D(ctx.TEXTURE_2D, 0, ctx.RGBA, ctx.RGBA, ctx.UNSIGNED_BYTE, img);	//Push image to GPU.
 	
-	if(noMips === undefined || noMips == false){
-		this.texParameteri(this.TEXTURE_2D, this.TEXTURE_MAG_FILTER, this.LINEAR);					//Setup up scaling
-		this.texParameteri(this.TEXTURE_2D, this.TEXTURE_MIN_FILTER, this.LINEAR_MIPMAP_NEAREST);	//Setup down scaling
-		this.generateMipmap(this.TEXTURE_2D);	//Precalc different sizes of texture for better quality rendering.
+	if(useMips == true){
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.LINEAR);					//Setup up scaling
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.LINEAR_MIPMAP_NEAREST);	//Setup down scaling
+		ctx.generateMipmap(ctx.TEXTURE_2D);	//Precalc different sizes of texture for better quality rendering.
 	}else{
-		this.texParameteri(this.TEXTURE_2D, this.TEXTURE_MAG_FILTER, this.NEAREST);
-		this.texParameteri(this.TEXTURE_2D, this.TEXTURE_MIN_FILTER, this.NEAREST);
-		this.texParameteri(this.TEXTURE_2D, this.TEXTURE_WRAP_S, this.CLAMP_TO_EDGE);
-		this.texParameteri(this.TEXTURE_2D, this.TEXTURE_WRAP_T, this.CLAMP_TO_EDGE);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER,	ctx.NEAREST);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER,	ctx.NEAREST);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S,		ctx.CLAMP_TO_EDGE);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T,		ctx.CLAMP_TO_EDGE);
 	}
 
-	this.bindTexture(this.TEXTURE_2D,null);									//Unbind
+	ctx.bindTexture(ctx.TEXTURE_2D,null); //Unbind
 	
-	if(doYFlip == true) this.pixelStorei(this.UNPACK_FLIP_Y_WEBGL, false);	//Stop flipping textures
+	if(doYFlip == true) ctx.pixelStorei(ctx.UNPACK_FLIP_Y_WEBGL, false);	//Stop flipping textures
 	return tex;	
 }
-
+/*
 //imgAry must be 6 elements long and images placed in the right order
 //RIGHT,LEFT,TOP,BOTTOM,BACK,FRONT
 ctx.fLoadCubeMap = function(name,imgAry){
@@ -675,6 +685,10 @@ var mod = {
 	createProgram:createProgram,
 	createProgramFromText:createProgramFromText,
 	
+	//.........................................
+	loadTexture:loadTexture,
+	updateTexture:updateTexture,
+
 	//.........................................	
 	res:{ textures:[], videos:[], images:[], shaders:[], ubo:[], vao:[], fbo:[], materials:[],
 		getMaterial:function(matName){

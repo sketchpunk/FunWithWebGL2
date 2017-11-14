@@ -48,6 +48,13 @@ export default{
 	//Get a frame ready to be rendered.
 	update:function(){
 		this.mainCamera.update();
+
+		gl.UBOTransform.update(
+			"matCameraView",this.mainCamera.invertedLocalMatrix,
+			"posCamera",this.mainCamera.position,
+			"fTime",new Float32Array( [this.sinceStart] )
+		);
+
 		gl.clear();
 		return this;
 	}

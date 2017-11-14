@@ -1,4 +1,5 @@
 import gl							from "../gl.js";
+import fungi						from "../fungi.js";
 import Transform					from "../entities/Transform.js";
 import {Vec3, Mat4, Quat, DEG2RAD}	from "../Maths.js";
 
@@ -6,7 +7,6 @@ class Orbit extends Transform{
 	constructor(fov,near,far){
 		super();
 		//Setup the projection and invert matrices
-		this.ubo = gl.UBOTransform;
 		this.projectionMatrix = new Float32Array(16);
 		this.invertedProjectionMatrix = new Float32Array(16);
 		this.invertedLocalMatrix = new Float32Array(16);
@@ -15,7 +15,7 @@ class Orbit extends Transform{
 		Mat4.perspective(this.projectionMatrix, fov || 45, ratio, near || 0.1, far || 100.0);
 		Mat4.invert(this.invertedProjectionMatrix, this.projectionMatrix); //Save Inverted version for Ray Casting.
 
-		this.ubo.update("matProjection",this.projectionMatrix); //Initialize The Transform UBO.
+		gl.UBOTransform.update("matProjection",this.projectionMatrix); //Initialize The Transform UBO.
 
 		//Orbit Camera will control things based on euler, its cheating but not ready for quaternions
 		this.euler = new Vec3();
@@ -43,7 +43,6 @@ class Orbit extends Transform{
 			this.updateMatrix();
 			Mat4.invert(this.invertedLocalMatrix,this.localMatrix);
 		}
-		this.ubo.update("matCameraView",this.invertedLocalMatrix,"posCamera",this.position);
 	}
 
 	setEulerDegrees(x,y,z){ this.euler.set(x * DEG2RAD,y * DEG2RAD,z * DEG2RAD); return this; }

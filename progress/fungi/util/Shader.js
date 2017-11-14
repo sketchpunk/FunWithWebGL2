@@ -1,4 +1,5 @@
-import gl,{ UNI_MODEL_MAT_NAME } from "../gl.js"
+import gl,{ UNI_MODEL_MAT_NAME } from "../gl.js";
+import fungi from "../fungi.js";
 
 //Shortcut to create a shader based on the vert/frag progress text
 function createShader(name,vert,frag){
@@ -22,7 +23,7 @@ function loadShader(js){
 	//Handle Uniforms
 	var uniforms = (js.shader.uniforms && js.shader.uniforms.length > 0)? js.shader.uniforms.slice() : [];
 	
-	if(js.shader.useModalMat4) uniforms.push(UNI_MODEL_MAT_NAME,"mat4"); //Special Uniform added to list
+	if(js.shader.useModalMat4)	uniforms.push(UNI_MODEL_MAT_NAME,"mat4"); //Special Uniform added to list
 	
 	if(uniforms.length > 0) shader.prepareUniforms(uniforms); //shader.prepareUniforms(UNI_MODEL_MAT_NAME,"mat4");
 
@@ -48,6 +49,8 @@ function loadShader(js){
 				switch(uni[u+1]){
 					case "color":
 						uList.push(uni[u], gl.rgbArray(uni[u+2]) ); break;
+					case "tex":
+						uList.push(uni[u], gl.res.textures[ uni[u+2] ]); break;
 					default:
 						uList.push(uni[u], uni[u+2]); break;
 				}
@@ -83,8 +86,9 @@ class Material{
 		var ary = (arguments.length == 1)? arguments[0] : arguments;
 		for(var i=0; i < ary.length; i+=2) this.uniforms[ary[i]] = ary[i+1];  return this;
 	}
+
 	applyUniforms(){
-		for(var n in this.uniforms) this.shader.setUniforms(n,this.uniforms[n]);
+		for(var n in this.uniforms) this.shader.setUniforms(n,this.uniforms[n]); //TODO, this is an issue with multiple textures in one shader
 		return this;
 	}
 }
@@ -134,6 +138,7 @@ class ShaderBuilder{
 	}
 
 	//Takes in unlimited arguments. Its grouped by two so for example (UniformName,CacheTextureName): "uMask01","tex001";
+	/*
 	prepareTextures(uName,TextureCacheName){
 		if(arguments.length % 2 != 0){ console.log("prepareTextures needs arguments to be in pairs."); return this; }
 		
@@ -147,6 +152,7 @@ class ShaderBuilder{
 		}
 		return this;
 	}
+	*/
 
 	//---------------------------------------------------
 	// Setters Getters
@@ -155,7 +161,7 @@ class ShaderBuilder{
 	setUniforms(uName,uValue){
 		if(arguments.length % 2 != 0){ console.log("setUniforms needs arguments to be in pairs."); return this; }
 
-		var texCnt = 0,
+		var texCnt = 0, //TODO Loading textures only works if doing all uniforms in one go, material loads one at a time.
 			name;
 
 		for(var i=0; i < arguments.length; i+=2){
@@ -169,7 +175,7 @@ class ShaderBuilder{
 				case "vec4":	gl.ctx.uniform4fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "mat4":	gl.ctx.uniformMatrix4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "mat2x4": 	gl.ctx.uniformMatrix2x4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
-				case "tex":
+				case "sample2D":
 					gl.ctx.activeTexture(gl.ctx["TEXTURE" + texCnt]);
 					gl.ctx.bindTexture(gl.ctx.TEXTURE_2D,uValue);
 					gl.ctx.uniform1i(this._UniformList[name].loc,texCnt);
