@@ -20,14 +20,15 @@
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
+				//gl.ctx.blendFunc(gl.ctx.SRC_ALPHA,gl.ctx.ONE_MINUS_SRC_ALPHA);
+				//gl.ctx.blendFunc(gl.ctx.ONE,gl.ctx.ONE);
 
 				//........................................
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
 					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
-					{type:"shader",file:"fungi/shaders/TransformFB_P1.txt"},
-					{type:"shader",file:"fungi/shaders/TransformFB_P2.txt"},
-					{type:"image",name:"tex01",file:"./grass.png", yFlip:true, mips:false }
+					{type:"shader",file:"fungi/shaders/Particle_BFire.txt"},
+					{type:"image",name:"tex01",file:"./fire-gs-atlas.png", yFlip:true, mips:false }
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -35,6 +36,7 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
+			//https://www.raywenderlich.com/70208/opengl-es-pixel-shaders-tutorial
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
@@ -45,37 +47,63 @@
 				//Fungi.scene.push(new Emitter("MatVecWColor"));MatTransFeedback
 				//Fungi.scene.push(new EmitterMesh("MatTransFeedback_P1","MatTransFeedback_P2"));
 
-				var particleCount	= 10,
+				var particleCount	= 500,
 					aIndex			= new Uint16Array([ 0,1,2, 2,3,0 ]),
 					aVert			= new Float32Array([-0.5, -0.5, 0.0,   0.5, -0.5, 0.0,   0.5,  0.5, 0.0,   -0.5,  0.5, 0.0]),
 					aUV				= new Float32Array([ 0.0, 0.0,   1.0, 0.0,   1.0, 1.0,   0.0, 1.0 ]),
-					aOffset			= [...Array(particleCount*3)];
-					//aLife			= [...Array(particleCount)],	//init empty array
-					//aAge			= [...Array(particleCount)];	//init empty array
+					aOffset			= [...Array(particleCount*3)],
+					aVelocity		= [...Array(particleCount*3)],
+					aLifeSpan		= [...Array(particleCount)];
 				
-				aOffset.forEach( (v,i,a) => { a[i] = (i % 3 != 1)? Math.random() * 20 - 10 : 0.5; } );
-				//aLife.forEach(	(v,i,a) => { a[i] = (6000 * Math.random()) + 1000; } );
-				//aAge.forEach(	(v,i,a) => { a[i] = Fungi.sinceStart - aLife[i] - 100; } );
+				var offsetSeed	= [ 3.0, 10.0, 3.0 ],
+					range		= 0.5,			//Create a Range between -0.25 and 0.25
+					rangeMid	= range / 2;
+				
+				aLifeSpan.forEach( (v,i,a) => { a[i] = 3000.0 * Math.random() + 1500; } );
+				aOffset.forEach( (v,i,a) => {
+					var ii = i%3;
 
+					 aOffset[i] = (range * Math.random() - rangeMid) / offsetSeed[ii];
+					//if(ii <= 1)else aOffset[i] = rangeMid / offsetSeed[ii];
+					
+					
+					//Particles that start farther from the fire's center start slightly higher. This gives the bottom of the fire a slight curve
+					if(ii == 1) a[i] += Math.abs(aOffset[i-1] / 2.0);  
+
+					aVelocity[i] = ((ii == 1)? 0.02 : 0.005) * Math.random();
+
+					if(ii != 1 && aOffset[i] > 0) aVelocity[i] *= -1; //Move in opposite direction of ini pos: if left, move right. Only X & Z
+				} );
+/*				
+				var ii;
+				for(var i=0; i < particleCount; i++){
+					ii = i * 3;
+					aLifeSpan[i] = 3000;
+
+					aOffset[ii] = 0.0;
+					aOffset[ii+1] = 0.0;
+					aOffset[ii+2] = (i%3 == 0)? 0.1 : -0.1;
+
+					aVelocity[ii] = 0.0;
+					aVelocity[ii+1] = 0.0;
+					aVelocity[ii+2] = 0.0;
+				}
+				console.log(aOffset);
+*/
 				
 				// usage : usage mode for the buffer, same names used in gl.ctx[USAGE]
 				// data : if null, make empty buffer the size needed for all instances
 				// usedIn : 1 = Read, 2 = Write, 4 = Draw
-				
 				var fBuffers = [
 					{ name:"vertices",	compLen:3, data:aVert, drawLoc:0, rLoc:0, wLoc:0, ins:false, usedIn:4, usage:"STATIC_DRAW" },
 					{ name:"uv",		compLen:2, data:aUV, drawLoc:1, rLoc:0, wLoc:0, ins:false, usedIn:4, usage:"STATIC_DRAW" },
-					{ name:"offset",	compLen:3, data:aOffset, drawLoc:2, rLoc:0, wLoc:0, ins:true, usedIn:4, usage:"STATIC_DRAW" }
-					//{ name:"offset",	compLen:3, data:null, drawLoc:2, rLoc:0, wLoc:0, ins:true, usedIn:7, usage:"DYNAMIC_COPY" },
-					//{ name:"ageNorm",	compLen:1, data:null, drawLoc:3, rLoc:3, wLoc:3, ins:true, usedIn:7, usage:"DYNAMIC_COPY" },
-					//{ name:"velocity",	compLen:3, data:null, drawLoc:0, rLoc:1, wLoc:1, ins:true, usedIn:3, usage:"DYNAMIC_COPY" },
-					//{ name:"age",		compLen:1, data:new Float32Array(aAge), drawLoc:0, rLoc:2, wLoc:2, ins:false, usedIn:3, usage:"DYNAMIC_COPY" },
-					//{ name:"life",		compLen:1, data:new Float32Array(aLife), drawLoc:4, rLoc:4, wLoc:0, ins:false, usedIn:1, usage:"STATIC_DRAW" }
+					{ name:"offset",	compLen:3, data:aOffset, drawLoc:2, rLoc:0, wLoc:0, ins:true, usedIn:4, usage:"STATIC_DRAW" },
+					{ name:"velocity",	compLen:3, data:aVelocity, drawLoc:3, rLoc:0, wLoc:0, ins:true, usedIn:4, usage:"STATIC_DRAW" },
+					{ name:"lifeSpan",	compLen:1, data:aLifeSpan, drawLoc:4, rLoc:0, wLoc:0, ins:true, usedIn:4, usage:"STATIC_DRAW" }
 				];
 
-				var emit = new MeshEmitter("MatTransFeedback_P1","MatTransFeedback_P2").setup(particleCount,aIndex,fBuffers);
+				var emit = new MeshEmitter(null,"MatTransFeedback_P2").setup(particleCount,aIndex,fBuffers);
 				Fungi.scene.push(emit);
-
 
 				//........................................
 				//Begin rendering the scene
@@ -92,6 +120,7 @@
 					this.materialFB		= gl.res.getMaterial(matFB);
 					this.drawMode 		= gl.ctx.TRIANGLES;
 					this.useCulling		= false;
+					this.useDepthTest	= false; //Must Be disabled for Effect
 					this.useFeedback	= false;
 
 					this.elementCount	= 0;	//How many chunks of data to render
