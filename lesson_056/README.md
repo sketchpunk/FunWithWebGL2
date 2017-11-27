@@ -6,6 +6,6 @@ Continuing the previous video on billboarding, we create random particle quads t
 
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/cbue2vBcgq4)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 * [Fungi Git Change 1](https://github.com/sketchpunk/FunWithWebGL2/commit/1115c9b89fa77eb733232499074a35f59b3e2bce)
