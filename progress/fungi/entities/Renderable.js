@@ -13,9 +13,9 @@ class Renderable extends Transform{
 
 	setMaterial(matName){ this.material = gl.res.getMaterial(matName); }
 
-	setOptions(culling,depthTest){
-		this.useCulling = culling;
-		this.useDepthTest = depthTest;
+	setOptions(culling,depthTest=true){
+		this.useCulling		= culling;
+		this.useDepthTest	= depthTest;
 		return this;
 	}
 

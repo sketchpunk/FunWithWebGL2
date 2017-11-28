@@ -22,7 +22,7 @@ class Vec3 extends Float32Array{
 
 	//----------------------------------------------
 	//region Methods
-		magnitude(v){
+		magnitude(v){ //TODO Rename to Length in the future
 			//Only get the magnitude of this vector
 			if(v === undefined) return Math.sqrt( this[0]*this[0] + this[1]*this[1] + this[2]*this[2] );
 
@@ -34,7 +34,7 @@ class Vec3 extends Float32Array{
 			return Math.sqrt( x*x + y*y + z*z );
 		}
 		
-		sqrMag(v){
+		sqrMag(v){ //TODO Rename to LengthSqr
 			//Only get the squared magnitude of this vector
 			if(v === undefined) return this[0]*this[0] + this[1]*this[1] + this[2]*this[2];
 

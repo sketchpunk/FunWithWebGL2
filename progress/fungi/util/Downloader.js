@@ -100,6 +100,8 @@ function getImage(itm){
 	img.src			= itm.file;
 }
 
+function queueAdd(v){ Queue.push(v); }
+
 //------------------------------------------------------
 //Private
 //------------------------------------------------------
@@ -140,39 +142,6 @@ function onDownloadError(){ console.log("Error getting ",this); }
 //Downloader is suppose to be expandable by adding new ways to handle
 //different types of files for downloading.
 var Handlers = {
-	//................................................
-	//How to download a GLTF File
-	"gltf":function(itm,dl){
-		//Init Call
-		if(dl == undefined){ Downloader.get(itm,"json"); return false; }
-
-		//Final Call - Look through the buffer for bin files to download.
-		for(var i=0; i < dl.buffers.length; i++){
-			if(dl.buffers[i].uri.startsWith("data:")) continue;
-
-			//Push bin file to download queue.
-			Queue.push({
-				file:dl.buffers[i].uri,
-				type:"gltf_bin",
-				ref:dl.buffers[i]}
-			);
-		}
-
-		itm.dl = dl; //Save the data download to the item
-		return true; //Save item to complete list.
-	},
-
-	//................................................
-	//How to download a bin file from gltf file
-	"gltf_bin":function(itm,dl){
-		//Init Call
-		if(dl == undefined){ Downloader.get(itm,"arraybuffer"); return false; }
-
-		//Final Call
-		itm.ref.dView = new DataView(dl); //Create a dataview for arraybuffer.
-		return false; //No need to save this item to complete list.
-	},
-
 	//................................................
 	"shader":function(itm,dl){
 		if(dl == undefined){ get(itm,"text"); return false; }
@@ -217,5 +186,6 @@ var Handlers = {
 export default {
 	start:start,
 	complete:Complete,
-	handlers:Handlers
+	handlers:Handlers,
+	api:{ get:get, queueAdd:queueAdd }
 }

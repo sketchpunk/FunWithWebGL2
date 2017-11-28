@@ -2,28 +2,30 @@ import Renderable	from "./Renderable.js";
 import gl, {VAO, ATTR_POSITION_LOC} from "../gl.js";
 
 class GeometryData{
-	constructor(vertSize,jointSize){
-		this.vertSize = (vertSize === undefined)?3:vertSize;	//How many floats creates a single vertice
-		this.jointSize = (jointSize === undefined)?0:jointSize;	//Max bones per vertice
+	constructor(vertSize=3, jointSize=0){
+		this.vertSize	= vertSize;	//How many floats creates a single vertice
+		this.jointSize	= jointSize;	//Max bones per vertice
 
-		this.points = [];	//Point Data - Verts,UV,Norm,Bones,BoneWeight
-		this.indices = [];	//Element Array, used for draw modes like triangle, lines, etc.
+		this.points		= [];	//Point Data - Verts,UV,Norm,Joints,JointWeight
+		this.indices	= [];	//Element Array, used for draw modes like triangle, lines, etc.
 	}
 
+	////////////////////////////////////////////////////////////////////
+	//
+	////////////////////////////////////////////////////////////////////
 	newPoint(){
 		var itm,
-			rtn = [],
-			pLen = this.points.length;
+			rtn		= [],
+			a		= arguments,
+			pLen	= this.points.length;
 
 		for(var i=0; i < arguments.length; i+= this.vertSize){
 			itm = {
-				verts:(this.vertSize==3)?
-					[arguments[i],arguments[i+1],arguments[i+2]]:
-					[arguments[i],arguments[i+1],arguments[i+2],arguments[i+3]],
-				uv:[],
-				norm:[],
-				joints:[],
-				jointWeights:[]
+				verts 			: (this.vertSize == 3)? [ a[i], a[i+1], a[i+2] ] : [ a[i], a[i+1], a[i+2], a[i+3] ],
+				uv				: [],
+				norm			: [],
+				joints			: [],			
+				jointWeights	: []		
 			}
 			this.points.push(itm);
 			rtn.push(pLen++);
@@ -32,7 +34,7 @@ class GeometryData{
 		return rtn;
 	}
 
-	setBones(idxAry,jointIdx,jointWeight){
+	setJoints(idxAry,jointIdx,jointWeight){
 		var p,j;
 		for(var i=0; i < idxAry.length; i++){
 			p = this.points[ idxAry[i] ];
@@ -46,13 +48,17 @@ class GeometryData{
 
 	clonePoint(i){
 		return {
-			verts			:this.points[i].verts.slice(0),
-			uv				:this.points[i].uv.slice(0),
-			norm			:this.points[i].norm.slice(0),
-			joints			:this.points[i].joints.slice(0),
-			jointWeights	:this.points[i].jointWeights.slice(0)
+			verts			: this.points[i].verts.slice(0),
+			uv				: this.points[i].uv.slice(0),
+			norm			: this.points[i].norm.slice(0),
+			joints			: this.points[i].joints.slice(0),
+			jointWeights	: this.points[i].jointWeights.slice(0)
 		}
 	}
+
+	////////////////////////////////////////////////////////////////////
+	//
+	////////////////////////////////////////////////////////////////////
 
 	//Compile a single array of floats that make up all the vertices
 	compileVertices(){
@@ -73,6 +79,9 @@ class GeometryData{
 		}
 	}
 
+	////////////////////////////////////////////////////////////////////
+	// Vertices Controlling Functions
+	////////////////////////////////////////////////////////////////////
 	//extrude a list of points toward a direction
 	extrude(idxAry,dir){
 		var v, itm, rtn = [],
@@ -108,11 +117,20 @@ class GeometryData{
 
 
 class GeometryRender extends Renderable{
-	constructor(geo,matName){
+	constructor(matName, geo=null, arm=null){
 		super(null,matName);
+
+		if(geo != null) this.loadGeometryData(geo);
+
+		this.armature 	= arm;
+	}
+
+	setArmature(arm){ this.armature = arm; return this; }
+
+	loadGeometryData(geo){
+		//Build VAO and Buffers for rendering.
 		var verts = geo.compileVertices();
 
-		//Build VAO and Buffers for rendering.
 		this.vao = VAO.create();
 		VAO.floatArrayBuffer(this.vao,"bVertices",verts,ATTR_POSITION_LOC,geo.vertSize,0,0,true,false);
 
@@ -126,11 +144,27 @@ class GeometryRender extends Renderable{
 		}
 
 		VAO.finalize(this.vao,"GeometryRender");
+		this.drawMode	= (this.vao.isIndexed)? gl.ctx.TRIANGLES : gl.ctx.POINTS; //Final Setup
 
-		//Final Setup		
-		this.drawMode	= (this.vao.isIndexed)? gl.ctx.TRIANGLES : gl.ctx.POINTS;
-		this.visible	= true;
-		this.skeleton 	= null;
+		return this;
+	}
+
+	loadGLTFMesh(m, arm=null){
+		//TODO Bounding Box data : mesh.vertices.max / min 
+		this.vao = VAO.create();
+		VAO.floatArrayBuffer(this.vao,"bVertices",m.vertices.data,ATTR_POSITION_LOC,m.vertices.compLen,0,0,true);
+		if(m.indices.count > 0) VAO.indexBuffer(this.vao,"bIndex",m.indices.data,true);
+
+		if(m.weights != null && m.joints != null){
+			VAO.floatArrayBuffer(this.vao,"bJointIdx",		m.joints.data,3,m.joints.compLen,0,0,true)
+			   .floatArrayBuffer(this.vao,"bJointWeight",	m.weights.data,4,m.weights.compLen,0,0,true);
+		}
+
+		VAO.finalize(this.vao,"GeometryRender");
+		this.drawMode	= (this.vao.isIndexed)? gl.ctx.TRIANGLES : gl.ctx.POINTS; //Final Setup
+
+		if(arm != null) this.armature = arm;
+		return this;
 	}
 
 	drawPoints(){		this.drawMode = gl.ctx.POINTS;		return this; }
@@ -140,9 +174,9 @@ class GeometryRender extends Renderable{
 	draw(){
 		if(this.vao.count == 0) return;
 
-		if(this.skeleton != null){
+		if(this.armature != null){
 			var mat = [];
-			this.skeleton.getFlatOffset(mat);
+			this.armature.getFlatOffset(mat); //TODO : Cache, update when dirty
 			this.material.shader.setUniforms("uJoints",mat);
 		}
 

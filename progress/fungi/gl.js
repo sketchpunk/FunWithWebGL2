@@ -7,6 +7,7 @@ const UBO_TRANSFORM = "UBOTransform";
 const UNI_MODEL_MAT_NAME = "uModalMatrix";
 
 
+
 function init(canvas,bgColor,wp,hp){
 	//........................................
 	//Get Context
@@ -26,7 +27,8 @@ function init(canvas,bgColor,wp,hp){
 	ctx.depthFunc(ctx.LEQUAL);							//Near things obscure far things
 	ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA);	//Setup default alpha blending
 	//ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA, ctx.ONE, ctx.ONE_MINUS_SRC_ALPHA);
-
+	//ctx.blendFunc(ctx.ONE,ctx.ONE);
+	
 	fitScreen(wp || 1,hp || 1);							//Set the size of the canvas to a percent of the screen
 	setClearColor(bgColor || "#ffffff");				//Set clear color
 	clear();											//Clear the canvas
@@ -42,6 +44,17 @@ function init(canvas,bgColor,wp,hp){
 
 	return this;
 }
+
+/*
+const BLEND_ALPHA = 0;
+const BLEND_COLOR = 1;
+function blendMode(m){
+	switch(m){
+		case BLEND_ALPHA: ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA); break;
+		case BLEND_COLOR: ctx.blendFunc(ctx.ONE,ctx.ONE); break;
+	}
+}
+*/
 
 //------------------------------------------------------
 //State
@@ -509,7 +522,7 @@ class VAO{
 	//Indexes
 	static indexBuffer(out,name,aryData,isStatic){
 		var rtn = { ptr:ctx.createBuffer(), count:aryData.length },
-			ary = (aryData instanceof Uint16Array)? aryUInt : new Uint16Array(aryData);
+			ary = (aryData instanceof Uint16Array)? aryData : new Uint16Array(aryData);
 
 		ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, rtn.ptr );  
 		ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, ary, (isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW );
