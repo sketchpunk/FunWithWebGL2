@@ -11,9 +11,13 @@ class Armature{
 	}
 
 	loadGLTFSkin(skin){
+		var jName;
 		for(var i=0; i < skin.length; i++){
+			jName = (skin[i].name == null)? "joint" + i :
+					(skin[i].name.startsWith("Armature_"))? skin[i].name.substring(9) : skin[i].name ;
+
 			this.addJoint(
-				(skin[i].name.startsWith("Armature_"))? skin[i].name.substring(9) : skin[i].name,
+				jName,
 				skin[i].rotation,
 				skin[i].position,
 				skin[i].parent,

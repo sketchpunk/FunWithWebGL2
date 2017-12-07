@@ -303,6 +303,8 @@ class Quaternion extends Float32Array{
 			out[1] = ay + t * (b[1] - ay);
 			out[2] = az + t * (b[2] - az);
 			out[3] = aw + t * (b[3] - aw);
+
+			if(out.isModified !== undefined) out.isModified = true;
 			return out;
 		}
 

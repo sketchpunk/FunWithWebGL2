@@ -18,12 +18,15 @@
 //https://github.com/aframevr/aframe/blob/master/docs/components/vive-controls.md
 //https://raw.githubusercontent.com/javagl/JglTF/master/images/gltfOverview-0.2.0.png
 //https://github.com/KhronosGroup/glTF-Blender-Exporter/issues/39
+//https://github.com/godotengine/collada-exporter
+//https://github.com/KhronosGroup/glTF-Blender-Exporter/issues
 
 import Downloader	from "./Downloader.js";
 
-/*#########################################################
-Downloader Handlers
-#########################################################*/
+
+//------------------------------------------------------------
+// Downloader Handlers
+//------------------------------------------------------------
 Downloader.handlers["gltf"] = function(itm,dl = null){
 	//Init Call
 	if(dl == null){ Downloader.api.get(itm,"json"); return false; }
@@ -53,9 +56,10 @@ Downloader.handlers["gltf_bin"] = function(itm,dl = null){
 	return false; //No need to save this item to complete list.
 };
 
-/*#########################################################
-GLTF Parser
-#########################################################*/
+
+//------------------------------------------------------------
+// GLTF Parser
+//------------------------------------------------------------
 class GLTFLoader{
 	constructor(jsObj){
 		this.json = jsObj;
@@ -83,7 +87,7 @@ class GLTFLoader{
 		//p.attributes.COLOR_0 = vec3 or vec4
 		//p.material
 		//p.targets = Morph Targets
-		console.log("Parse Mesh",meshName);
+		//console.log("Parse Mesh",meshName);
 		//.....................................
 		var p,			//Alias for primative element
 			a,			//Alias for primative's attributes
@@ -179,6 +183,88 @@ class GLTFLoader{
 	}
 
 
+	//https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#animations
+	parseAnimation(idx){
+		/*
+		NOTES: When Node isn't defined, ignore
+		interpolation values include LINEAR, STEP, CATMULLROMSPLINE, and CUBICSPLINE.
+
+		- Spec supports multiple Animations, each one with a possible name.
+		- Channel links samples to nodes. Each channel links what property is getting changed.
+		- Samples, Input & Output points to accessors which holds key frame data.
+		--- Input is the Key Frame Times
+		--- Output is the key frame value change, if sample is rotation, the output is a quat.
+
+		"animations": [
+			{	"name": "Animation1",
+				"channels": [
+                { "sampler": 0, "target": { "node": 2, "path": "translation" } },
+                { "sampler": 1, "target": { "node": 2, "path": "rotation" } },
+                { "sampler": 2, "target": { "node": 2, "path": "scale" } }
+            ],
+
+            "samplers": [
+                { "input": 5, "interpolation": "LINEAR", "output": 6 },
+                { "input": 5, "interpolation": "LINEAR", "output": 7 },
+                { "input": 5, "interpolation": "LINEAR", "output": 8 }
+            ]
+        },
+		*/
+		//............................
+
+		var anim = this.json.animations;
+		if(anim === undefined || anim.length == 0){ console.log("There is no animations in gltf"); return null; }
+
+		var rtn = {},
+			i,ii,
+			joint,
+			nPtr, //node ptr
+			sPtr, //sample ptr
+			chPtr, //channel ptr
+			tData, //Time data for keyframes
+			vData; //Value data for keyframes
+
+		//Save the name
+		rtn.name = (anim[idx].name !== undefined)? anim[idx].name : "anim" + idx;
+
+		//Process Channels and Samples.
+		for(var ich=0; ich < anim[idx].channels.length; ich++){
+			//.......................
+			//Make sure we have a target
+			chPtr = anim[idx].channels[ich];
+			if(chPtr.target.node == undefined) continue;
+
+			//.......................
+			//Make sure node points to a joint with a name.
+			nPtr = this.json.nodes[ chPtr.target.node ];
+			if(nPtr.isJoint != true || nPtr.name === undefined){
+				console.log("node is not a joint or doesn't have a name");
+				continue;
+			}
+
+			//.......................
+			//Get sample data
+			sPtr	= anim[idx].samplers[ chPtr.sampler ];
+			tData	= this.processAccessor(sPtr.input); //Get Time for all keyframes
+			vData	= this.processAccessor(sPtr.output) //Get Value that changes per keyframe
+			//console.log(tData); console.log(vData);
+			//.......................
+			if(!rtn[nPtr.name]) joint = rtn[nPtr.name] = {};
+			else 				joint = rtn[nPtr.name];
+
+			var samples = [];
+			joint[chPtr.target.path] = { interp:sPtr.interpolation, samples:samples };
+
+
+			for(i=0; i < tData.count; i++){
+				ii = i * vData.compLen;
+				samples.push({ t:tData.data[i], v:vData.data.slice(ii,ii+vData.compLen) });
+			}
+		}
+		return rtn;
+	}
+
+
 	//++++++++++++++++++++++++++++++++++++++
 	// Fix up issues with the data / spec to make it easier to parse data as single assets.
 	//++++++++++++++++++++++++++++++++++++++
@@ -189,13 +275,18 @@ class GLTFLoader{
 	fixSkinData(){
 		var complete = [],			//list of skeleton root nodes, prevent prcessing duplicate data that can exist in file
 			s = this.json.skins,	//alias for skins
-			j;						//loop index
+			j,						//loop index
+			n;						//Node Ref
 
 		for(var i=0; i < s.length; i++){
 			if( complete.indexOf(s[i].skeleton) != -1) continue; //If already processed, go to next skin
 
 			//Loop through all specified joints and mark the nodes as joints.
-			for(j in s[i].joints) this.json.nodes[ s[i].joints[j] ].isJoint = true; 
+			for(j in s[i].joints){
+				n = this.json.nodes[ s[i].joints[j] ];
+				n.isJoint = true;
+				if(n.name === undefined || n.name == "") n.name = "joint" + j; //Need name to help tie animates to joints
+			}
 
 			complete.push(s[i].skeleton); //push root node index to complete list.
 		}
@@ -500,9 +591,10 @@ class GLTFLoader{
 	*/
 }
 
-/*#########################################################
-CONSTANTS
-#########################################################*/
+
+//------------------------------------------------------------
+// CONSTANTS
+//------------------------------------------------------------
 GLTFLoader.MODE_POINTS 			= 0;	//Mode Constants for GLTF and WebGL are identical
 GLTFLoader.MODE_LINES			= 1;	//https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Constants
 GLTFLoader.MODE_LINE_LOOP		= 2;
@@ -526,4 +618,7 @@ GLTFLoader.COMP_MAT2			= 4;
 GLTFLoader.COMP_MAT3			= 9;
 GLTFLoader.COMP_MAT4			= 16;
 
+//------------------------------------------------------------
+// Export
+//------------------------------------------------------------
 export default GLTFLoader;

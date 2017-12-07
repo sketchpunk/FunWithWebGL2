@@ -19,11 +19,9 @@
 
 			import { GeometryData, GeometryRender }	from "./fungi/entities/Geometry.js";
 			import { Armature, ArmatureRenderer }	from "./fungi/entities/Armature.js";
-			import { Quat }							from "./fungi/Maths.js";
 
-			import FacedCube	from "./fungi/primitives/FacedCube.js";
-			import { Tween }	from "./fungi/util/Tween.js";
-			import Quad			from "./fungi/primitives/Quad.js";
+			import {Quat}	from "./fungi/Maths.js";
+			import { Easing }	from "./fungi/util/Tween.js";
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -34,9 +32,7 @@
 					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
 					{type:"shader",file:"fungi/shaders/Armature.txt"},
 					{type:"shader",file:"fungi/shaders/ArmatureSkinPoints.txt"},
-					{type:"shader",file:"fungi/shaders/Emote.txt"},
-					{type:"gltf",file:"Bendy.gltf"},
-					{type:"image",name:"emoteAtlas",file:"./bubble_emote_atlas.png", yFlip:true, mips:true }
+					{type:"gltf",file:"RiggedSimple.gltf"},
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -45,196 +41,76 @@
 			});
 
 
-			var armature,box,bendy, jHead, jArmL, jArmR, jLegUpperL,jLegLowerL, jLegUpperR,jLegLowerR;
+			var armature,box,bendy, jHead, jArmL, jArmR, jLegUpperL,jLegLowerL, jLegUpperR, jLegLowerR;
 			var emote, quad;
+
+			var anim;
 
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
 				Fungi.ready(onRender);
-				Fungi.mainCamera.setPosition(0,1.1,3);
+				Fungi.mainCamera.setPosition(0,1.1,6);
+				gl.setClearColor("e0e0e0");
 
 				//........................................
-				//Load GLTF Models
-				
-				prepareBendy();
-				Fungi.scene.push(box = FacedCube("MatVecWColor").setPosition(-2,1.5,0).setScale(0.3,0.3,0.3));
-				Fungi.scene.push(emote = new Emote("MatEmote").setPosition(0.2,1.9,0.2).setOptions(true,false) );
-				
-				/*
-				Fungi.scene.push(quad = new Quad(0,0,2,2,"MatVecWColor").setOptions(true,false) );
-				emote = new Tween(2000,"bounce_In", function(norm,ease){
-					quad.setScale(ease,ease,ease);
-				}).start();
-				*/
+				var gltf = new GLTFLoader(Downloader.complete[0].dl);
+				var m = gltf.parseMesh(0);
 
+				anim = gltf.parseAnimation(1);
+				//console.log(anim);
+				
+				armature = new Armature().loadGLTFSkin(m.armature);
+				//armature.joints[1].rotation.copy( anim.joint1.rotation.samples[1].v );
+				//armature.joints[1].rotation.rz( -45 * Math.PI/180 );
+				//armature.getJoint("joint1").rotation.rz( -45 * Math.PI/180 );
+				//armature.update();
+				quat.copy(armature.joints[1].rotation);
+
+
+				Fungi.scene.push(new GeometryRender("ArmatureSkinPoint").loadGLTFMesh(m,armature));
+				Fungi.scene.push(new ArmatureRenderer(armature,"MatArmature"));
+				
 				//........................................
 				//Begin rendering the scene
 				Fungi.renderLoop.start();
 			}
 
-
-
-			var boxAngle	= 0;
-			var radOffset	= 90 * (Math.PI/180);
-			var minRange	= 30 * (Math.PI/180);
-			var maxRange	= 150 * (Math.PI/180);
-
-			//GOING LEFT TO RIGHT
-			//box goes from 0 to 180
-			//head goes 90 to -90 (0 Degrees is looking forward)
-			//box goes up while head goes down, 90 - box angle should allows us to map the values.
+			var quat = new Quat();
+			var idx = -1;
 
 			function onRender(dt,ss){
-				Fungi.update()
+				Fungi.update();
 
-				/**/
-				//Move cube in a circle and  Up&Down
-				boxAngle += 0.6 * dt; //Rotation Per Second
-				box.position.x = 2.0 * Math.cos(boxAngle);
-				box.position.z = 2.0 * Math.sin(boxAngle);
-				box.position.y = 1.5 + (0.5 * Math.sin(ss* 0.001) );
-
-
-				//Make the cube look at origin.
-				var pos = box.position.clone().scale(-1); pos.y = 0;
-				Quat.lookRotation(pos, [0,1,0], box.rotation);
-
-
-				/*Get Angle the cube is in relation to bendy
-				dirVec = vec2_1 - vec2_0; angleRads = atan2(dirVec.y, dirVec.x);*/
-				var rads = Math.atan2(box.position.z - bendy.position.z
-									,box.position.x - bendy.position.x);
-
-
-				if(rads >= minRange && rads <= maxRange){
-					if(! emote.isOpen) emote.show();
-					 animateBendy(rads,ss);
-				}else{
-					if(emote.isOpen) emote.hide();
-					animateBendyReset();
-				} 
-
-				if(emote.visible) emote.update();
-				
-				/*
-				emote.update(); //This is really just the Tween Object, not emote for testing.
+				/*...................................
+				var ms = 3000;
+				var i = Math.floor( (ss % ms) / ms * 3 );
+				armature.joints[1].rotation.copy( anim.joint1.rotation.samples[i].v );
+				armature.update();
 				*/
 
+				/*................................... */
+				var ms = 3000;
+				var t = (ss % ms) / ms,		//Normalize Time
+					a = t * 3,				//Spread time between 3 keyframes
+					i = Math.floor(a),		//Figure out which keyframe we're on.
+					it = a - i;				//What the time just for the current frame.
+
+				if(idx != i){ //Change the start rotation for every beginning of a frame.
+					quat.copy(armature.joints[1].rotation);
+					idx = i;
+				}
+
+				Quat.lerp(
+					armature.joints[1].rotation,			//Save result of lerp
+					quat,									//Start value for interpolation
+					anim.joint1.rotation.samples[i].v,		//End value for interpolation
+					Easing.elastic_Out(it) );				//Time for lerp //Easing.elastic_Out(it)
+
+				armature.update();
+
+				//..............................
 				Fungi.render(Fungi.scene);
-			}
-
-			class Emote extends Renderable{
-				constructor(matName){
-					super(null,matName);
-
-					var d = Quad.vertData(0,0,1,1);
-					this.vao = VAO.standardRenderable("Quad",3,d.vertices,null,d.uv,d.index),
-					this.setOptions(false,true);
-
-					this.visible = false;
-					this.isOpen = false;
-					this.maxScale = 0.4;
-					this.atlasPos = [0,5];
-
-					this.tween = new Tween(400,"elastic_Out",(norm,ease) => {
-						if(!this.isOpen) ease = 1 - ease; //When hiding, Go backwards (invert)
-
-						var s = this.maxScale * ease;
-						this.setScale(s,s,s);
-					});
-				}
-
-				show(){
-					if(this.isOpen) return this;
-					this.isOpen = true;
-					this.visible = true;
-					this.tween.setEase("elastic_Out").start();
-
-					//Randomly Pick the background and foreground of the icon
-					this.atlasPos[0] = Math.floor(4 * Math.random());
-					this.atlasPos[1] = 4 + Math.floor(8 * Math.random());
-
-					return this;
-				}
-
-				hide(){
-					if(!this.isOpen) return this;
-					this.isOpen = false;
-					this.tween.setEase("quint_In").start();
-					return this;
-				}
-
-				update(){
-					if(this.tween.isActive && this.tween.update() == Tween.COMPLETE && !this.isOpen){
-						this.visible = false; 
-					}
-				}
-
-				draw(){
-					this.material.shader.setUniforms("uGridPos",this.atlasPos);
-					super.draw();
-				}
-			}
-
-
-
-			//HANDLE BENDY ANIMATIONS
-
-			function prepareBendy(){
-				var m = new GLTFLoader(Downloader.complete[0].dl).parseMesh(0);
-
-				armature	= new Armature().loadGLTFSkin(m.armature);
-				jHead		= armature.getJoint("head");
-				jArmL		= armature.getJoint("upperArm.L");
-				jArmR		= armature.getJoint("upperArm.R");
-				jLegUpperL	= armature.getJoint("upperLeg.L");
-				jLegLowerL	= armature.getJoint("lowerLeg.L");
-				jLegUpperR	= armature.getJoint("upperLeg.R");
-				jLegLowerR	= armature.getJoint("lowerLeg.R");
-
-				Fungi.scene.push(bendy = new GeometryRender("ArmatureSkinPoint").loadGLTFMesh(m,armature).setOptions(false));
-				Fungi.scene.push(new ArmatureRenderer(armature,"MatArmature",0.3));
-			}
-
-			function animateBendy(rads,ss){
-				rads = radOffset - rads;
-				jHead.rotation.setAxisAngle([0,1,0], rads);
-
-				bendy.position.y = 0.2 * Math.abs(Math.sin(ss*0.009));
-
-				//Wave Arms
-				var armWave = (45 + 45*Math.sin(ss*0.015)) * (Math.PI/180); //Starting at 45d, toggle between 0-90
-				jArmL.rotation.setAxisAngle([1,0,0], armWave);
-				jArmR.rotation.setAxisAngle([1,0,0], armWave);
-
-				//Bend left Leg
-				//var legUpL = (180 - 90 * Math.abs(Math.sin(ss*0.009)))  * (Math.PI/180);
-				//var legDownL = (90 * Math.abs(Math.sin(ss*0.009)))  * (Math.PI/180);
-				//jLegUpperL.rotation.setAxisAngle([1,0,0], legUpL);
-				//jLegLowerL.rotation.setAxisAngle([1,0,0], legDownL);
-
-				//Bend Right Leg
-				//var legUpR = (180 - 90 * Math.abs(Math.cos(ss*0.009)))  * (Math.PI/180);
-				//var legDownR = (90 * Math.abs(Math.cos(ss*0.009)))  * (Math.PI/180);
-				//jLegUpperR.rotation.setAxisAngle([1,0,0], legUpR);
-				//jLegLowerR.rotation.setAxisAngle([1,0,0], legDownR);
-
-				armature.update();
-			}
-
-			function animateBendyReset(){
-				jHead.rotation.setAxisAngle([0,1,0], 0);
-				bendy.position.y = 0;
-
-				jArmL.rotation.setAxisAngle([1,0,0], -0.83);
-				jArmR.rotation.setAxisAngle([1,0,0], -0.83);
-				//jLegUpperL.rotation.setAxisAngle([1,0,0], Math.PI);
-				//jLegLowerL.rotation.setAxisAngle([1,0,0], 0);
-				//jLegUpperR.rotation.setAxisAngle([1,0,0], Math.PI);
-				//jLegLowerR.rotation.setAxisAngle([1,0,0], 0);
-
-				armature.update();
 			}
 		</script>
 	</head>
