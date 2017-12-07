@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl, { VAO, ATTR_POSITION_LOC} from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Renderable	from "./fungi/entities/Renderable.js";
+			import GLTFLoader	from "./fungi/util/GTLFLoader.js";
+
+			import { GeometryData, GeometryRender }	from "./fungi/entities/Geometry.js";
+			import { Armature, ArmatureRenderer }	from "./fungi/entities/Armature.js";
+
+			import {Quat}	from "./fungi/Maths.js";
+			import { Easing }	from "./fungi/util/Tween.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/Armature.txt"},
+					{type:"shader",file:"fungi/shaders/ArmatureSkinPoints.txt"},
+					{type:"gltf",file:"RiggedSimple.gltf"},
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var armature,box,bendy, jHead, jArmL, jArmR, jLegUpperL,jLegLowerL, jLegUpperR, jLegLowerR;
+			var emote, quad;
+
+			var anim;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				Fungi.mainCamera.setPosition(0,1.1,6);
+				gl.setClearColor("e0e0e0");
+
+				//........................................
+				var gltf = new GLTFLoader(Downloader.complete[0].dl);
+				var m = gltf.parseMesh(0);
+
+				anim = gltf.parseAnimation(1);
+				//console.log(anim);
+				
+				armature = new Armature().loadGLTFSkin(m.armature);
+				//armature.joints[1].rotation.copy( anim.joint1.rotation.samples[1].v );
+				//armature.joints[1].rotation.rz( -45 * Math.PI/180 );
+				//armature.getJoint("joint1").rotation.rz( -45 * Math.PI/180 );
+				//armature.update();
+				quat.copy(armature.joints[1].rotation);
+
+
+				Fungi.scene.push(new GeometryRender("ArmatureSkinPoint").loadGLTFMesh(m,armature));
+				Fungi.scene.push(new ArmatureRenderer(armature,"MatArmature"));
+				
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			var quat = new Quat();
+			var idx = -1;
+
+			function onRender(dt,ss){
+				Fungi.update();
+
+				/*...................................
+				var ms = 3000;
+				var i = Math.floor( (ss % ms) / ms * 3 );
+				armature.joints[1].rotation.copy( anim.joint1.rotation.samples[i].v );
+				armature.update();
+				*/
+
+				/*................................... */
+				var ms = 3000;
+				var t = (ss % ms) / ms,		//Normalize Time
+					a = t * 3,				//Spread time between 3 keyframes
+					i = Math.floor(a),		//Figure out which keyframe we're on.
+					it = a - i;				//What the time just for the current frame.
+
+				if(idx != i){ //Change the start rotation for every beginning of a frame.
+					quat.copy(armature.joints[1].rotation);
+					idx = i;
+				}
+
+				Quat.lerp(
+					armature.joints[1].rotation,			//Save result of lerp
+					quat,									//Start value for interpolation
+					anim.joint1.rotation.samples[i].v,		//End value for interpolation
+					Easing.elastic_Out(it) );				//Time for lerp //Easing.elastic_Out(it)
+
+				armature.update();
+
+				//..............................
+				Fungi.render(Fungi.scene);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
