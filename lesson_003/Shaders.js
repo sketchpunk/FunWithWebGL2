@@ -34,7 +34,7 @@ class Shader{
 	renderModal(modal){
 		this.gl.bindVertexArray(modal.mesh.vao);	//Enable VAO, this will set all the predefined attributes for the shader
 		
-		if(modal.mesh.indexCount) this.gl.drawElements(modal.mesh.drawMode, modal.mesh.indexLength, gl.UNSIGNED_SHORT, 0);
+		if(modal.mesh.indexCount) this.gl.drawElements(modal.mesh.drawMode, modal.mesh.indexCount, gl.UNSIGNED_SHORT, 0);
 		else this.gl.drawArrays(modal.mesh.drawMode, 0, modal.mesh.vertexCount);
 
 		this.gl.bindVertexArray(null);
