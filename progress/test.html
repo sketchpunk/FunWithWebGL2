@@ -11,28 +11,24 @@
 		</style>
 
 		<script type="module">
-			import gl, { VAO, ATTR_POSITION_LOC} from "./fungi/gl.js";
+			import gl, { FBO }	from "./fungi/gl.js";
 			import Fungi 		from "./fungi/Fungi.js";
 			import Downloader	from "./fungi/util/Downloader.js";
-			import Renderable	from "./fungi/entities/Renderable.js";
-			import GLTFLoader	from "./fungi/util/GTLFLoader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import Quad	from "./fungi/primitives/Quad.js";
 
-			import { GeometryData, GeometryRender }	from "./fungi/entities/Geometry.js";
-			import { Armature, ArmatureRenderer }	from "./fungi/entities/Armature.js";
+			var fboRender = null,fboColorTex = null;
 
-			import {Quat}	from "./fungi/Maths.js";
-			import { Easing }	from "./fungi/util/Tween.js";
-
+			var postQuad;
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
 
 				//........................................
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
-					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
-					{type:"shader",file:"fungi/shaders/Armature.txt"},
-					{type:"shader",file:"fungi/shaders/ArmatureSkinPoints.txt"},
-					{type:"gltf",file:"RiggedSimple.gltf"},
+					{type:"shader",file:"fungi/shaders/deferred/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/DeferredRender.txt"},
+					
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -40,77 +36,75 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
-
-			var armature,box,bendy, jHead, jArmL, jArmR, jLegUpperL,jLegLowerL, jLegUpperR, jLegLowerR;
-			var emote, quad;
-
-			var anim;
-
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
 				Fungi.ready(onRender);
-				Fungi.mainCamera.setPosition(0,1.1,6);
-				gl.setClearColor("e0e0e0");
+				
+				var fbo = new FBO(); //FBO Struct Builder
+
+				/* --------------------------------
+				CREATE SIMPLE FBO */
+				fboRender = fbo.create().texColorBuffer("bColor",0).depthBuffer().finalize("test");
+
+				//Apply Color buffer as texture for shader.
+				gl.res.materials["MatDeferredRender"].setUniforms("bufColor",fboRender.bColor.texture);
+				
+
+				/* -------------------------------- 
+				//CREATE MULTI SAMPLE FBO 
+				//For this to work, We need to create 2 frame buffers. The first one allows use to draw regularly and have it sample what we're drawing so that it can automatacly smooth out jagged edges.
+
+				The second FBO contains a frameBuffer that's uses a texture for storage. This texture object can then be used by our shaders to do any post render effects on the frame's image plus we need it for the final rendering onto the screen.
+				
+				fboRender = fbo.create().multiSampleColorBuffer("bColor", 0)
+							.depthBuffer(true).finalize("fboRender");
+
+				fboColorTex = fbo.create().texColorBuffer("bColor",0).finalize("fboColorTex");
+
+				//Apply Color buffer as texture for shader
+				gl.res.materials["MatDeferredRender"].setUniforms("bufColor",fboColorTex.bColor.texture);
+				*/
+
+
+				/* --------------------------------
+				//Create simple FBO BUT Using a Texture for depth 
+				fboRender = fbo.create().texColorBuffer("bColor",0).texDepthBuffer().finalize("test");
+
+				//Apply Color buffer as texture for shader.
+				gl.res.materials["MatDeferredRender"].setUniforms(
+					"bufColor",fboRender.bColor.texture,
+					"bufDepth",fboRender.bDepth.texture
+				);
+				*/
+
+
+				/* --------------------------------*/
+				postQuad = Quad(-1,-1,1,1,"MatDeferredRender","postQuad").setOptions(true,false);
+				Fungi.render.onPreRender = onPreRender;
+				Fungi.render.onPostRender = onPostRender;
+
 
 				//........................................
-				var gltf = new GLTFLoader(Downloader.complete[0].dl);
-				var m = gltf.parseMesh(0);
-
-				anim = gltf.parseAnimation(1);
-				//console.log(anim);
-				
-				armature = new Armature().loadGLTFSkin(m.armature);
-				//armature.joints[1].rotation.copy( anim.joint1.rotation.samples[1].v );
-				//armature.joints[1].rotation.rz( -45 * Math.PI/180 );
-				//armature.getJoint("joint1").rotation.rz( -45 * Math.PI/180 );
-				//armature.update();
-				quat.copy(armature.joints[1].rotation);
+				//Add extra items to the scenen
+				Fungi.scene.push(FacedCube("MatVecWColor").setPosition(0,0.5,0));
 
 
-				Fungi.scene.push(new GeometryRender("ArmatureSkinPoint").loadGLTFMesh(m,armature));
-				Fungi.scene.push(new ArmatureRenderer(armature,"MatArmature"));
-				
 				//........................................
 				//Begin rendering the scene
 				Fungi.renderLoop.start();
 			}
 
-			var quat = new Quat();
-			var idx = -1;
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+			function onPreRender(){
+				FBO.clear(fboRender,false); //Will bind new FBO, clear it, false to not unbind it.
+				//gl.ctx.clearDepth(1.0);
+			}
+			function onPostRender(){
+				FBO.deactivate();
+				if(fboColorTex != null) FBO.blit(fboRender,fboColorTex);
 
-			function onRender(dt,ss){
-				Fungi.update();
-
-				/*...................................
-				var ms = 3000;
-				var i = Math.floor( (ss % ms) / ms * 3 );
-				armature.joints[1].rotation.copy( anim.joint1.rotation.samples[i].v );
-				armature.update();
-				*/
-
-				/*................................... */
-				var ms = 3000;
-				var t = (ss % ms) / ms,		//Normalize Time
-					a = t * 3,				//Spread time between 3 keyframes
-					i = Math.floor(a),		//Figure out which keyframe we're on.
-					it = a - i;				//What the time just for the current frame.
-
-				if(idx != i){ //Change the start rotation for every beginning of a frame.
-					quat.copy(armature.joints[1].rotation);
-					idx = i;
-				}
-
-				Quat.lerp(
-					armature.joints[1].rotation,			//Save result of lerp
-					quat,									//Start value for interpolation
-					anim.joint1.rotation.samples[i].v,		//End value for interpolation
-					Easing.elastic_Out(it) );				//Time for lerp //Easing.elastic_Out(it)
-
-				armature.update();
-
-				//..............................
-				Fungi.render(Fungi.scene);
+				Fungi.render.prepareNext(postQuad).draw();
 			}
 		</script>
 	</head>

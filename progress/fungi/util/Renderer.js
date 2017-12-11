@@ -70,7 +70,7 @@ function prepareNext(itm){
 	}
 
 	//Prepare Buffers and Uniforms.
-	if(material.useModelMatrix) material.shader.setUniforms(UNI_MODEL_MAT_NAME,itm.worldMatrix);
+	if(shader.useModelMatrix) shader.setUniforms(UNI_MODEL_MAT_NAME,itm.worldMatrix);
 
 	if(itm.useCulling != CULLING_STATE)		gl.ctx[ ( (CULLING_STATE	= (!CULLING_STATE))  )?"enable":"disable"	](gl.ctx.CULL_FACE);
 	if(itm.useDepthTest != DEPTHTEST_STATE)	gl.ctx[ ( (DEPTHTEST_STATE	= (!DEPTHTEST_STATE)) )?"enable":"disable"	](gl.ctx.DEPTH_TEST);
@@ -82,4 +82,6 @@ function prepareNext(itm){
 //------------------------------------------------------
 //Export
 //------------------------------------------------------
+render.prepareNext = prepareNext;
+
 export default render;

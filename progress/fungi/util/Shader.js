@@ -23,7 +23,8 @@ function loadShader(js){
 	//Handle Uniforms
 	var uniforms = (js.shader.uniforms && js.shader.uniforms.length > 0)? js.shader.uniforms.slice() : [];
 	
-	if(js.shader.useModalMat4)	uniforms.push(UNI_MODEL_MAT_NAME,"mat4"); //Special Uniform added to list
+	shader.useModelMatrix = js.shader.useModelMatrix;
+	if(shader.useModelMatrix) uniforms.push(UNI_MODEL_MAT_NAME,"mat4"); //Special Uniform added to list
 	
 	if(uniforms.length > 0) shader.prepareUniforms(uniforms); //shader.prepareUniforms(UNI_MODEL_MAT_NAME,"mat4");
 
@@ -62,7 +63,9 @@ function loadShader(js){
 }
 
 
-
+//------------------------------------------------------
+// Material
+//------------------------------------------------------
 class Material{
 	static create(name,shaderName){
 		var m = new Material();
@@ -77,8 +80,8 @@ class Material{
 		this.uniforms = [];
 		
 		this.useBlending = false;		
-		this.useModelMatrix = true;
-		this.useNormalMatrix = false;
+		//this.useModelMatrix = true;
+		//this.useNormalMatrix = false;
 		this.useSampleAlphaCoverage = false;
 	}
 
@@ -88,16 +91,26 @@ class Material{
 	}
 
 	applyUniforms(){
-		for(var n in this.uniforms) this.shader.setUniforms(n,this.uniforms[n]); //TODO, this is an issue with multiple textures in one shader
+		var ary = []; //TODO, this is just a hack, Object should have these as an array, no need to gen array each frame
+		for(var n in this.uniforms) ary.push(n,this.uniforms[n]);
+
+		this.shader.setUniforms.apply(this.shader,ary);
+
+		//for(var n in this.uniforms) this.shader.setUniforms(n,this.uniforms[n]); //TODO, this is an issue with multiple textures in one shader
 		return this;
 	}
 }
 
 
+//------------------------------------------------------
+// Shaders
+//------------------------------------------------------
 class ShaderBuilder{
 	constructor(vertShader,fragShader,tfeedback){
 		this.program = gl.createProgramFromText(vertShader,fragShader,true,tfeedback);
-		
+		this.useModelMatrix = true;
+		this.useNormalMatrix = false;
+
 		if(this.program != null){
 			gl.ctx.useProgram(this.program);
 			this._UniformList = [];		//List of Uniforms that have been loaded in. Key=UNIFORM_NAME {loc,type}
@@ -114,7 +127,7 @@ class ShaderBuilder{
 			loc = 0;
 
 		for(var i=0; i < ary.length; i+=2){
-			loc = gl.ctx.getUniformLocation(this.program,ary[i]);
+			loc = gl.ctx.getUniformLocation(this.program,ary[i]); 
 			if(loc != null) this._UniformList[ary[i]] = {loc:loc,type:ary[i+1]};
 			else console.log("Uniform not found " + ary[i]);
 		}
@@ -176,8 +189,8 @@ class ShaderBuilder{
 				case "mat4":	gl.ctx.uniformMatrix4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "mat2x4": 	gl.ctx.uniformMatrix2x4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "sample2D":
-					gl.ctx.activeTexture(gl.ctx["TEXTURE" + texCnt]);
-					gl.ctx.bindTexture(gl.ctx.TEXTURE_2D,uValue);
+					gl.ctx.activeTexture(gl.ctx.TEXTURE0 + texCnt);
+					gl.ctx.bindTexture(gl.ctx.TEXTURE_2D,arguments[i+1]);
 					gl.ctx.uniform1i(this._UniformList[name].loc,texCnt);
 					texCnt++;
 					break;
@@ -213,9 +226,9 @@ class ShaderBuilder{
 			var texSlot;
 			for(var i=0; i < this._TextureList.length; i++){
 				texSlot = gl.ctx["TEXTURE" + i];
-				gl.ctx.activeTexture(texSlot);
-				gl.ctx.bindTexture(gl.ctx.TEXTURE_2D,this._TextureList[i].tex);
-				gl.ctx.uniform1i(this._TextureList[i].loc,i);
+				//gl.ctx.activeTexture(texSlot);
+				//gl.ctx.bindTexture(gl.ctx.TEXTURE_2D,this._TextureList[i].tex);
+				//gl.ctx.uniform1i(this._TextureList[i].loc,i);
 			}
 		}
 

@@ -2,14 +2,13 @@ import gl,{ VAO }	from "../gl.js";
 import Renderable	from "../entities/Renderable.js";
 
 //Define quad with a Min Bound and Max Bound X,Y
-function Quad(bx0,by0,bx1,by1,matName){ //TODO Add a Is standing or floor type of quad.
+function Quad(bx0,by0,bx1,by1,matName,name="Quad"){ //TODO Add a Is standing or floor type of quad.
 	var d = Quad.vertData(bx0,by0,bx1,by1);
-	console.log(d);
 	
-	var vao 	= VAO.standardRenderable("Quad",3,d.vertices,null,d.uv,d.index),
+	var vao 	= VAO.standardRenderable(name,3,d.vertices,null,d.uv,d.index),
 		entity	= new Renderable(vao,matName).setOptions(false,true);
 	
-	entity.name = "Quad";
+	entity.name = name;
 	return entity;
 }
 
