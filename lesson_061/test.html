@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl, { FBO }	from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import Quad	from "./fungi/primitives/Quad.js";
+
+			var fboRender = null,fboColorTex = null;
+
+			var postQuad;
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/deferred/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/DeferredRender.txt"},
+					
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				
+				var fbo = new FBO(); //FBO Struct Builder
+
+				/* --------------------------------
+				CREATE SIMPLE FBO 
+				fboRender = fbo.create().texColorBuffer("bColor",0).depthBuffer().finalize("test");
+
+				//Apply Color buffer as texture for shader.
+				gl.res.materials["MatDeferredRender"].setUniforms("bufColor",fboRender.bColor.texture);
+				*/
+
+				/* -------------------------------- 
+				//CREATE MULTI SAMPLE FBO 
+				//For this to work, We need to create 2 frame buffers. The first one allows use to draw regularly and have it sample what we're drawing so that it can automatacly smooth out jagged edges.
+
+				The second FBO contains a frameBuffer that's uses a texture for storage. This texture object can then be used by our shaders to do any post render effects on the frame's image plus we need it for the final rendering onto the screen.
+				
+				fboRender = fbo.create().multiSampleColorBuffer("bColor", 0)
+							.depthBuffer(true).finalize("fboRender");
+
+				fboColorTex = fbo.create().texColorBuffer("bColor",0).finalize("fboColorTex");
+
+				//Apply Color buffer as texture for shader
+				gl.res.materials["MatDeferredRender"].setUniforms("bufColor",fboColorTex.bColor.texture);
+				*/
+
+
+				/* --------------------------------
+				//Create simple FBO BUT Using a Texture for depth */
+				fboRender = fbo.create().texColorBuffer("bColor",0).texDepthBuffer().finalize("test");
+
+				//Apply Color buffer as texture for shader.
+				gl.res.materials["MatDeferredRender"].setUniforms(
+					"bufColor",fboRender.bColor.texture,
+					"bufDepth",fboRender.bDepth.texture
+				);
+				
+
+
+				/* --------------------------------*/
+				postQuad = Quad(-1,-1,1,1,"MatDeferredRender","postQuad").setOptions(true,false);
+				Fungi.render.onPreRender = onPreRender;
+				Fungi.render.onPostRender = onPostRender;
+
+
+				//........................................
+				//Add extra items to the scenen
+				Fungi.scene.push(FacedCube("MatVecWColor").setPosition(0,0.5,0));
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+			function onPreRender(){
+				FBO.clear(fboRender,false); //Will bind new FBO, clear it, false to not unbind it.
+				//gl.ctx.clearDepth(1.0);
+			}
+			function onPostRender(){
+				FBO.deactivate();
+				if(fboColorTex != null) FBO.blit(fboRender,fboColorTex);
+
+				Fungi.render.prepareNext(postQuad).draw();
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

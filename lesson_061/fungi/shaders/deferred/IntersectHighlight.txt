@@ -1,0 +1,144 @@
+<shader>
+{
+	"name":"IntersectHighlight",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["bufDepth","sample2D" ]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatIntersectHighlight", "useBlending":true, "uniforms":[ ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec3 oColor;
+
+	void main(void){
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	uniform sampler2D bufDepth;
+
+	out vec4 outColor;
+
+
+	float LinearizeDepth(float z){ 
+	  float n = 1.0; // camera z near
+	  float f = 100.0; // camera z far
+	  return (2.0 * n) / (f + n - z * (f - n));	
+	}
+
+	const float _NearClip = 1.0;
+	const float _FarClip = 100.0;
+	float LinearEyeDepth(float rawdepth){
+	    float x, y, z, w;
+
+    	x = -1.0 + _NearClip / _FarClip;
+    	y = 1.0;
+    	z = x / _NearClip;
+    	w = 1.0 / _NearClip;
+
+    	
+		//x = 1.0 - _NearClip / _FarClip;
+    	//y = _NearClip / _FarClip;
+    	//z = x / _NearClip;
+    	//w = y / _NearClip;
+    	
+
+  		return 1.0 / (z * rawdepth + w);
+	}
+
+	void main(void){ //gl_FragCoord.z
+		ivec2 fCoord = ivec2(gl_FragCoord.xy);
+		float depth = texelFetch(bufDepth, fCoord , 0).x;
+		//depth = LinearEyeDepth(depth);
+		
+		float zPixel = LinearizeDepth(depth);
+		float zFrag = LinearizeDepth(gl_FragCoord.z);
+
+		float delta = abs(zPixel - zFrag);
+
+		if(delta >= 0.0 && delta < 0.005) outColor = vec4(1.0,0.0,0.0,1.0);
+		else if(zPixel < zFrag) discard;
+		else outColor = vec4(0.0,0.9,0.0,0.2);
+
+		//float delta = abs(zPixel - zFrag);
+
+		//if(delta >= 0.0 && delta < 0.005) outColor = vec4(1.0,0.0,0.0,1.0);
+		//else if(delta < 0.0) discard;
+		//else outColor = vec4(0.0,0.9,0.0,0.2);
+	}
+</fragment>
+
+
+
+		/*
+		//intersection
+		//fixed intersect = saturate((abs(LinearEyeDepth(tex2Dproj(_CameraDepthTexture,i.screenPos).r) - i.screenPos.z)) / _IntersectionThreshold);
+
+
+float4 finalColor = _RegularColor;
+ 
+                //Get the distance to the camera from the depth buffer for this point
+                float sceneZ = LinearEyeDepth (tex2Dproj(_CameraDepthTexture,
+                                                         UNITY_PROJ_COORD(i.projPos)).r);
+ 
+                //Actual distance to the camera
+                float partZ = i.projPos.z;
+ 
+                //If the two are similar, then there is an object intersecting with our object
+                float diff = (abs(sceneZ - partZ)) /
+                    _HighlightThresholdMax;
+ 
+                if(diff <= 1)
+                {
+                    finalColor = lerp(_HighlightColor,
+                                      _RegularColor,
+                                      float4(diff, diff, diff, diff));
+                }
+ 
+                half4 c;
+                c.r = finalColor.r;
+                c.g = finalColor.g;
+                c.b = finalColor.b;
+                c.a = finalColor.a;
+
+float LinearEyeDepth( float rawdepth )
+{
+    float x, y, z, w;
+if SHADER_API_GLES3 // insted of UNITY_REVERSED_Z
+    x = -1.0 + _NearClip/ FarClip;
+    y = 1;
+    z = x / _NearClip;
+    w = 1 / _NearClip;
+#else
+    x = 1.0 - _NearClip/ FarClip;
+    y = _NearClip / _FarClip;
+    z = x / _NearClip;
+    w = y / _NearClip;
+#endif
+ 
+  return 1.0 / (z * rawdepth + w);
+}
+
+
+		*/
