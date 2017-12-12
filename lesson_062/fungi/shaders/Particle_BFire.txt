@@ -1,0 +1,169 @@
+<shader>
+{
+	"name" : "TransFeedback_P2",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : ["uTex01","sample2D"]
+}
+</shader>
+	
+
+<materials>[ 
+	{ "name":"MatTransFeedback_P2","useBlending":false,"useSampleAlphaCoverage":true, 
+		"uniforms":[ "uTex01","tex","tex01" ]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec2 a_uv;
+	layout(location=2) in vec3 a_offset;
+	layout(location=3) in vec3 a_velocity;
+	layout(location=4) in float a_lifeSpan;
+	
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec2 v_uv;
+	flat out float v_age;
+	flat out float zpos;
+
+	const float gridSize  	= 4.0;
+	const float colSize		= 1.0 / gridSize;
+	const float colYOffset  = (gridSize - 1.0) / gridSize;  //Y is inverted, So start near the top, second last increment
+
+
+/*
+	
+*/
+
+	void main(void){
+		float time = mod(fTime,a_lifeSpan);
+		v_age = time / a_lifeSpan;
+
+		vec3 vel = a_velocity * time * 0.01; //How far has the particle moved in its current time of life.
+		//vec3 tVel = a_velocity * a_lifeSpan * 0.01;
+		//float velDistance = dot(vel,vel) / dot(tVel,tVel);
+
+		zpos = a_offset.z + vel.z;
+
+		//......................................
+		//Scale on a parabola curve
+		float s = clamp( 1.3 - v_age, 0.0, 1.0 );
+		float scale = s * s * 0.3; // y = x^2
+
+		vec3 pos = a_position * scale;
+		//vec3 pos = a_position;
+
+		//......................................
+		//Grid Atlas UV Position
+		float 	c	= floor(16.0 * v_age),
+				cx	= floor( mod(c, gridSize) ) * colSize,
+				cy	= colYOffset - floor( c * colSize ) * colSize;
+
+		v_uv = vec2( cx + (a_uv.x * colSize) , cy + (a_uv.y * colSize) );
+
+		//......................................
+		//Spherical billboarding
+		vec3 right 	= vec3( matCameraView[0][0], matCameraView[1][0], matCameraView[2][0] ),
+			 up 	= vec3( matCameraView[0][1], matCameraView[1][1], matCameraView[2][1] );
+		pos = a_offset  + (right * pos.x) + (up * pos.y); //Rotate vertex toward camera
+		//pos += a_offset;
+
+		//......................................
+		//Apply Velocity based on age time.
+		pos += vel; //a_velocity * time * 0.01;
+
+		//......................................
+		//Finish up Position Valcs
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec2 v_uv;
+	flat in float v_age;
+	flat in float zpos;
+
+	uniform sampler2D uTex01;
+	out vec4 outColor;
+
+	const vec4 col = vec4(1.0, 0.0, 0.0, 1.0);
+
+	const vec2 midUV = vec2(0.5,0.5);
+
+	void main(void){
+		vec4 mask = texture(uTex01,v_uv);
+
+		//................... Step1
+		//outColor = mask; //Texture as is.
+		//outColor.a = mask.r; //Give it opacity, closer to black the more transparent it is.
+
+		//................... Step2
+		//outColor = 1.0 - mask; //Invert the Mask
+		//outColor.a = smoothstep(0.1,0.5,mask.r); // mask.r; // //only opacity in the lower half of the mask color
+
+		//................... Step3
+		//outColor = (1.0 - mask) * 1.4; //invert mask THEN make things darker
+		//outColor = (1.0 - mask * 1.4); //make the mask whiter THEN invert it
+		//outColor.a = smoothstep(0.1,0.5,mask.r);
+
+		//................... Step4 : Apply Color, Black with Green Highlights
+		//outColor = (1.0 - mask ) * 1.4 * vec4(0.0,1.0,0.0,1.0);
+		//outColor = (1.0 - mask * 1.5) * vec4(0.3,1.0,0.3,1.0);
+		//outColor.a = smoothstep(0.1,0.5,mask.r);
+
+		//................... Step5 : Go from black flame to Green and fade
+		//if(v_age < 0.5) 	outColor = 1.0 - (mask * mix(2.0,1.4,v_age)); // Darker
+		//else 				outColor = (1.0 - mask) * 1.5; // Lighter
+
+		//outColor *= vec4(0.413,0.711,1.0,1.0); //Apply Different Color
+		//outColor.a = smoothstep(0.1,0.5,mask.r);
+		//outColor.a = smoothstep(0.1,0.5,mask.r) - smoothstep(0.5,1.0,v_age); //Halfway of life, start fading away
+
+		//................... Whole Different Attempt at Black Fire
+		outColor = mask * smoothstep(0.5,0.8,mask.r);
+		outColor *= vec4(0.513,0.811,1.0,1.0); //Apply Color
+		outColor += smoothstep(0.8,1.0,mask.r); //Add Highlights
+		outColor.a = smoothstep(0.1,0.5,mask.r) - smoothstep(0.5,1.0,v_age);
+
+
+		//smoothstep(0.1,0.5,mask.r) - smoothstep(0.5,1.0,v_age); //Halfway of life, start fading away
+
+
+		//vec4 mask = texture(uTex01,v_uv);
+		//outColor = (1.0 - mask*1.4) * vec4(0.0,1.0,0.0,1.0);
+		//outColor = (1.0 - mask) * 1.4 * vec4(0.0,1.0,0.0,1.0);
+		//outColor.a = mask.r;
+		//outColor.a = smoothstep(0.1,0.5,mask.r);
+
+
+
+
+		//vec2 delta 		= v_uv - midUV;
+		//float lenSqr 	= abs(dot(delta,delta));
+		//float cStep = lenSqr / 0.25;
+
+		//vec3 color = mix(vec3(0.0,0.0,0.0), vec3(0.0,1.0,0.0), (zpos > 0.0)? 0.0: abs(zpos) / 0.40); //1.0-mask.r - v_age
+		
+		//vec3 color =  mix(vec3(0.0,0.0,0.0), vec3(0.19,0.80,0.19), cStep);
+		
+		//outColor = vec4(0.0,0.0,0.0, mask.r);
+		//outColor = vec4(color, mask.r * 1.2);
+
+		//outColor = col * texture(uTex01,v_uv);
+		//outColor.a *= v_age;
+
+		//outColor = texture(uTex01,v_uv);
+		//outColor.a = 0.3 + outColor.r - (1.0 - v_age);
+	}
+</fragment>

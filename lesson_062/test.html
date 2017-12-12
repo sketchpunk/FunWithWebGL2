@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl			from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import Quad			from "./fungi/primitives/Quad.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/deferred/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/DeferredRender.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/IntersectHighlight.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var shield,cube;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender)
+					.setupDeferred("MatDeferredRender",onPreRender,onPostRender);
+
+				//Set Textures on Deferred Render
+				gl.res.materials["MatDeferredRender"]
+					.setUniforms( "bufColor",Fungi.deferred.fboRender.bColor.texture );
+
+				gl.res.materials["MatIntersectHighlight"]
+					.setUniforms("bufDepth",Fungi.deferred.fboRender.bDepth.texture);
+
+				//........................................
+				//Add extra items to the scenen
+				Fungi.scene.push(cube = FacedCube("MatVecWColor").setPosition(0,0.5,0));
+
+				shield = new Quad(-4,0,4,3,"MatIntersectHighlight").setOptions(false);
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+
+			function onRender(dt,ss){ 
+				cube.position.z = 0.8 * Math.sin(ss*0.0005);
+
+				Fungi.update().render(Fungi.scene);
+			}
+			function onPreRender(){ Fungi.deferred.onPreRender(); }
+			function onPostRender(){
+				Fungi.deferred.onPostRender();
+				Fungi.render.prepareNext(shield).draw();
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

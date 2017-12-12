@@ -1,0 +1,46 @@
+================================================================
+
+ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+float zTexDepth	= texelFetch(bufDepth, fCoord , 0).x;
+
+const float PROJ_NEAR = 0.1; //This can also be uniforms or part of a UBO.
+const float PROJ_FAR = 100.0;	
+
+float mapDepthToProj(float depth){ //depth is should be between 0:1
+	float ndc = 2.0 * depth - 1.0;  //Normalized Device Space -1:1
+	return -(2.0 * PROJ_FAR * PROJ_NEAR) / (ndc * (PROJ_FAR - PROJ_NEAR) - PROJ_FAR - PROJ_NEAR);
+}
+
+================================================================
+
+float LinearizeDepth(float z){ 
+  float n = 1.0; // camera z near
+  float f = 100.0; // camera z far
+  return (2.0 * n) / (f + n - z * (f - n));	
+}
+
+================================================================
+
+const float _NearClip = 1.0;
+const float _FarClip = 100.0;
+float LinearEyeDepth(float rawdepth){
+    float x, y, z, w;
+
+	x = -1.0 + _NearClip / _FarClip;
+	y = 1.0;
+	z = x / _NearClip;
+	w = 1.0 / _NearClip;
+
+	
+	//x = 1.0 - _NearClip / _FarClip;
+	//y = _NearClip / _FarClip;
+	//z = x / _NearClip;
+	//w = y / _NearClip;
+	
+	return 1.0 / (z * rawdepth + w);
+}
+
+================================================================
+
+
+================================================================
