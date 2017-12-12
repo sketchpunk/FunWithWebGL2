@@ -11,7 +11,6 @@ var p = Downloader.start([
 Promise.all([p]).then(values=>{ console.log(values); },reason =>{ console.log(reason); });
  -------------------------------------------------------------*/
 
-
 var IsActive		= false,	//Is the downloader currently downloading things
 	ActivePromise	= null,		//Refernce to promise created by start
 	PromiseResolve	= null,		//Resolve Reference for promise
@@ -27,9 +26,9 @@ xhr.addEventListener("abort",	onXhrAbort,false);
 xhr.addEventListener("timeout",	onXhrTimeout,false);
 
 
-//------------------------------------------------------
-//Public
-//------------------------------------------------------
+//------------------------------------------------------------
+// Public
+//------------------------------------------------------------
 function start(queueItems){
 	if(IsActive) return;
 
@@ -50,9 +49,9 @@ function start(queueItems){
 	return ActivePromise; 
 }
 
-//------------------------------------------------------
-//Private
-//------------------------------------------------------
+//------------------------------------------------------------
+// Private
+//------------------------------------------------------------
 function finalize(isSuccess,errMsg){
 	IsActive = false;
 
@@ -102,9 +101,9 @@ function getImage(itm){
 
 function queueAdd(v){ Queue.push(v); }
 
-//------------------------------------------------------
-//Private
-//------------------------------------------------------
+//------------------------------------------------------------
+// Private
+//------------------------------------------------------------
 //Functionality for actual downloading
 function onXhrComplete(e){
 	if(e.currentTarget.status != 200){
@@ -136,9 +135,9 @@ function onDownloadSuccess(){
 
 function onDownloadError(){ console.log("Error getting ",this); }
 
-//------------------------------------------------------
-//Handlers
-//------------------------------------------------------
+//------------------------------------------------------------
+// Handlers
+//------------------------------------------------------------
 //Downloader is suppose to be expandable by adding new ways to handle
 //different types of files for downloading.
 var Handlers = {
@@ -179,10 +178,9 @@ var Handlers = {
 	}
 };
 
-//------------------------------------------------------
-//Export
-//------------------------------------------------------
-
+//------------------------------------------------------------
+// Export
+//------------------------------------------------------------
 export default {
 	start:start,
 	complete:Complete,

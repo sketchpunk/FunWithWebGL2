@@ -1,7 +1,7 @@
 <shader>
 {
 	"name":"Circle",
-	"useModalMat4":true,
+	"useModelMatrix":true,
 	"useUBOTransform":true,
 	"uniforms":["uColor","vec3"]
 }
@@ -9,7 +9,7 @@
 
 <materials>
 [
-	{"name":"MatCircle", "useBlending":true, "uniforms":[ "uColor","color","aaaae0" ]},
+	{"name":"MatCircle", "useBlending":false, "uniforms":[ "uColor","color","aaaae0" ]},
 	{"name":"MatCircleRed", "useBlending":true, "uniforms":[ "uColor","color","ff7f7f" ]}
 ]
 </materials>

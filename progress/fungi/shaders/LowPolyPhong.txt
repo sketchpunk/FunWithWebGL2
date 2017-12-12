@@ -1,7 +1,7 @@
 <shader>
 {
 	"name":"LowPolyPhong",
-	"useModalMat4":true,
+	"useModelMatrix":true,
 	"useUBOTransform":true,
 	"uniforms":["uBaseColor","vec3"]
 }

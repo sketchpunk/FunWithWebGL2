@@ -5,7 +5,7 @@ uses less data to. 1 float from 3 foats
 <shader>
 {
 	"name":"VecWColor",
-	"useModalMat4":true,
+	"useModelMatrix":true,
 	"useUBOTransform":true,
 	"uniforms":["uColorAry","vec3"]
 }

@@ -1,7 +1,7 @@
 <shader>
 {
 	"name" : "TransFeedback_P1",
-	"useModalMat4" : false,
+	"useModelMatrix" : false,
 	"useUBOTransform" : true,
 	"uniforms" : ["u_time","float"],
 	"transFeedback" : [ "o_offset", "o_velocity", "o_age", "o_ageNorm" ]

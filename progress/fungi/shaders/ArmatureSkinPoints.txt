@@ -1,7 +1,7 @@
 <shader>
 {
 	"name":"ArmatureSkinPointShader",
-	"useModalMat4":true,
+	"useModelMatrix":true,
 	"useUBOTransform":true,
 	"uniforms":["uJoints","mat2x4"]
 }

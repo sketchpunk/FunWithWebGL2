@@ -1,7 +1,7 @@
 <shader>
 {
 	"name" : "TransFeedback",
-	"useModalMat4" : true,
+	"useModelMatrix" : true,
 	"useUBOTransform" : true,
 	"uniforms" : ["u_time","float"],
 	"transFeedback" : [ "v_position", "v_velocity", "v_age" ]
@@ -50,8 +50,8 @@
 		gl_PointSize = 10.0 * (1.0 - (age / a_life));
 
 		if(age > a_life){
-			float r = random(vec2(gl_VertexID,u_time));
-			//float r = random(vec2(gl_InstanceID,u_time));
+			//float r = random(vec2(gl_VertexID,u_time));
+			float r = random(vec2(gl_InstanceID,u_time));
 
 			float ra = 6.283 * r; //PI*2*Rand
 			float rx = r * 2.0 * cos(ra);

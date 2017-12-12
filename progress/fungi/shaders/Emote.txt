@@ -1,7 +1,7 @@
 <shader>
 {
 	"name" : "Emote",
-	"useModalMat4" : true,
+	"useModelMatrix" : true,
 	"useUBOTransform" : true,
 	"uniforms" : ["uTex01","sample2D","uGridPos","vec2"]
 }

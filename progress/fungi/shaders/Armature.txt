@@ -1,7 +1,7 @@
 <shader>
 {
 	"name":"ArmatureShader",
-	"useModalMat4":true,
+	"useModelMatrix":true,
 	"useUBOTransform":true,
 	"uniforms":[]
 }

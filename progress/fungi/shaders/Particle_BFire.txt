@@ -1,7 +1,7 @@
 <shader>
 {
 	"name" : "TransFeedback_P2",
-	"useModalMat4" : true,
+	"useModelMatrix" : true,
 	"useUBOTransform" : true,
 	"uniforms" : ["uTex01","sample2D"]
 }
