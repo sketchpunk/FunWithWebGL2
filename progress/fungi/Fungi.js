@@ -1,6 +1,7 @@
-import gl			from "./gl.js";
+import gl, { FBO }	from "./gl.js";
 import CameraOrbit	from "./cameras/Orbit.js";
 import GridFloor	from "./primitives/GridFloor.js";
+import Quad			from "./primitives/Quad.js";
 import Renderer		from "./util/Renderer.js";
 import RenderLoop 	from "./util/RenderLoop.js";
 import VDebug 		from "./entities/VisualDebugger.js";
@@ -27,7 +28,7 @@ export default{
 	init:function(){ gl.set("FungiCanvas"); return this; },
 
 	//Build all the main objects needed to get a scene up and running
-	ready:function(renderHandler,opt){
+	ready:function(renderHandler,opt,){
 		this.mainCamera		= new CameraOrbit().setPosition(0,0.5,4).setEulerDegrees(-15,10,0);
 		this.ctrlCamera		= new KBMCtrl().addHandler("camera",new KBMCtrl_Viewport(this.mainCamera),true,true);
 
@@ -40,10 +41,29 @@ export default{
 
 		//Setup Features
 		if(opt){
-			if(opt & 1 == 1) this.scene.push( this.debugLine = new VDebug() ); //DEBUG LINE RENDERER
-			if(opt & 2 == 2) this.scene.push( this.debugPoint = new VDebug().drawPoints() ); //DEBUG POINT RENDERER
+			if((opt & 1) == 1) this.scene.push( this.debugLine = new VDebug() ); //DEBUG LINE RENDERER
+			if((opt & 2) == 2) this.scene.push( this.debugPoint = new VDebug().drawPoints() ); //DEBUG POINT RENDERER
 		}
+
+		return this;
 	},
+
+	setupDeferred:function(matName,onPre=null,onPost=null){
+		var fbo = new FBO(); //FBO Struct Builder
+		this.deferred = {
+			quad : Quad(-1,-1,1,1,matName,"postQuad").setOptions(true,false),
+			fboRender : fbo.create().texColorBuffer("bColor",0).texDepthBuffer().finalize("fboRender"),
+			onPreRender : ()=>{ FBO.clear(this.deferred.fboRender,false); },
+			onPostRender : ()=>{
+				FBO.deactivate();
+				this.render.prepareNext(this.deferred.quad).draw();
+			}
+		};
+
+		if(onPre != null) this.render.onPreRender = onPre;
+		if(onPost != null) this.render.onPostRender = onPost;
+	},
+
 
 	//Get a frame ready to be rendered.
 	update:function(){
