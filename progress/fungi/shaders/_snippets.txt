@@ -42,5 +42,21 @@ float LinearEyeDepth(float rawdepth){
 
 ================================================================
 
+// Pixelate post effect with Grid lines
+
+ivec2 texSize = textureSize(bufColor,0);	//Get Size of Texture
+
+float pixelSize = 7.0;
+float xMod		= mod(float(fCoord.x),pixelSize);
+float yMod		= mod(float(fCoord.y),pixelSize);
+
+if( xMod == 0.0 || yMod == 0.0 ) outColor = vec4(0.0,0.0,0.0,0.3);
+else{
+	ivec2 pix = fCoord;
+	pix.x -= int( xMod );
+	pix.y -= int( yMod );
+	outColor = texelFetch(bufColor, pix , 0);
+}
+
 
 ================================================================
