@@ -37,7 +37,7 @@ class DynamicBuffer{
 
 		//if not, we need to wipe out the data and resize the buffer with the new set of data.
 		}else{ 
-			mBufferSize = pushSize;
+			this.BufByteSize = pushSize;
 
 			if(this.BufSizeUsed > 0) gl.ctx.bufferData(this.GLBufferType, null, gl.ctx.DYNAMIC_DRAW); //Clean up previus data
 

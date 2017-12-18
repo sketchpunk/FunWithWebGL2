@@ -60,3 +60,62 @@ else{
 
 
 ================================================================
+//ROTATE UVs;
+
+    uniform float timer;
+    uniform float rate;
+    uniform sampler2D texture;
+ 
+    void main( void )
+    {
+        vec2 texCoords = vec2(gl_TexCoord[0].x-0.5, gl_TexCoord[0].y-0.5);
+ 
+        float sinX = sin(timer*rate);
+        float cosX = cos(timer*rate);
+ 
+        mat2 rotMat = mat2( cosX, -sinX, sinX, cosX);
+                 
+        vec2 newCoords=(texCoords*rotMat);
+        newCoords += 0.5;
+        gl_FragColor = texture2D(texture, newCoords );
+    }
+
+//Sprite Sheet.
+uniform int frame;
+uniform int cols;
+uniform int rows;
+uniform sampler2D texture;
+ 
+   void main()
+   {   
+        float stepx = 1.0/cols;
+        float stepy = 1.0/rows;
+        vec2 texCoords = vec2(gl_TexCoord[0].x, gl_TexCoord[0].y);
+         
+        texCoords.y += stepy * 1;
+        texCoords.x += stepx * frame;
+         
+        texCoords.y += stepy * ((frame - (frame % cols)) / cols);
+ 
+        gl_FragColor = texture2D(texture, texCoords );        
+   }
+
+
+
+================================================================
+vec4 alphaBlendA(vec4 from, vec4 to){
+    return vec4(to.rgb * (1.0-from.a) + (from.rgb * from.a), to.a+from.a);
+  }
+
+  vec4 alphaBlendB(vec4 from, vec4 to){
+    return vec4(to.rgb * to.a * (1.0-from.a) + (from.rgb * from.a), to.a+from.a);
+  }
+
+  vec4 alphaBlendC(vec4 from, vec4 to){
+    return vec4(to.rgb * (1.0-from.a) + (from.rgb * from.a), from.a);
+  }
+
+  //https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/blendFunc
+  vec4 srcAlpha_oneMinusSrcAlpha(vec4 src, vec4 dst){ 
+    return (src * src.a) + (dst * (1.0-src.a));
+  }

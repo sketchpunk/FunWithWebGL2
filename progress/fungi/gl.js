@@ -5,6 +5,7 @@ const ATTR_NORM_LOC = 1;
 const ATTR_UV_LOC = 2;
 const UBO_TRANSFORM = "UBOTransform";
 const UNI_MODEL_MAT_NAME = "uModalMatrix";
+const UNI_NORM_MAT_NAME = "uNormalMatrix";
 
 
 
@@ -243,8 +244,10 @@ function updateTexture(name,img,doYFlip,useMips){ //can be used to pass video fr
 	}else{
 		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER,	ctx.NEAREST);
 		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER,	ctx.NEAREST);
-		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S,		ctx.CLAMP_TO_EDGE);
-		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T,		ctx.CLAMP_TO_EDGE);
+		//ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S,		ctx.CLAMP_TO_EDGE);
+		//ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T,		ctx.CLAMP_TO_EDGE);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S,		ctx.REPEAT); //TODO make this configurable on load.
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T,		ctx.REPEAT);
 	}
 
 	ctx.bindTexture(ctx.TEXTURE_2D,null); //Unbind
@@ -1075,5 +1078,6 @@ export {
 		ATTR_POSITION_LOC,	
 		ATTR_NORM_LOC,
 		ATTR_UV_LOC,UBO_TRANSFORM,
-		UNI_MODEL_MAT_NAME
+		UNI_MODEL_MAT_NAME,
+		UNI_NORM_MAT_NAME
 }

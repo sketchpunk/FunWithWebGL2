@@ -47,6 +47,14 @@ class Orbit extends Transform{
 
 	setEulerDegrees(x,y,z){ this.euler.set(x * DEG2RAD,y * DEG2RAD,z * DEG2RAD); return this; }
 
+	getWorldPosition(){
+		//Because of how orbit works, position isn't in worldspace.
+		//Need to apply rotation to bring it into world splace
+		var ary = new Float32Array(3);
+		Quat.rotateVec3(this.rotation,this.position,ary); 
+		return ary;
+	}
+
 	worldToScreen(vAry){
 		var mat	= new Float32Array(16), // Matrix4 Holder
 			p	= [0,0,0,0],			// Vec4

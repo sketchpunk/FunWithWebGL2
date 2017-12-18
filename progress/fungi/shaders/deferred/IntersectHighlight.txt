@@ -9,7 +9,7 @@
 
 <materials>
 [
-	{ "name":"MatIntersectHighlight", "useBlending":true,"useSampleAlphaCoverage":false,  "uniforms":[ ] }
+	{ "name":"MatIntersectHighlight", "useBlending":false,"useSampleAlphaCoverage":true,  "uniforms":[ ] }
 ]
 </materials>
 	
@@ -82,27 +82,3 @@
 Other functions that try to map
 
 
-float LinearizeDepth(float z){ 
-  float n = 1.0; // camera z near
-  float f = 100.0; // camera z far
-  return (2.0 * n) / (f + n - z * (f - n));	
-}
-
-const float _NearClip = 1.0;
-const float _FarClip = 100.0;
-float LinearEyeDepth(float rawdepth){
-    float x, y, z, w;
-
-	x = -1.0 + _NearClip / _FarClip;
-	y = 1.0;
-	z = x / _NearClip;
-	w = 1.0 / _NearClip;
-
-	
-	//x = 1.0 - _NearClip / _FarClip;
-	//y = _NearClip / _FarClip;
-	//z = x / _NearClip;
-	//w = y / _NearClip;
-	
-	return 1.0 / (z * rawdepth + w);
-}

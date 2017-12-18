@@ -1,5 +1,5 @@
 import Renderable	from "./Renderable.js";
-import gl, {VAO, ATTR_POSITION_LOC} from "../gl.js";
+import gl, {VAO, ATTR_POSITION_LOC, ATTR_NORM_LOC} from "../gl.js";
 
 class GeometryData{
 	constructor(vertSize=3, jointSize=0){
@@ -152,9 +152,19 @@ class GeometryRender extends Renderable{
 	loadGLTFMesh(m, arm=null){
 		//TODO Bounding Box data : mesh.vertices.max / min 
 		this.vao = VAO.create();
+
+		//Vertices
 		VAO.floatArrayBuffer(this.vao,"bVertices",m.vertices.data,ATTR_POSITION_LOC,m.vertices.compLen,0,0,true);
+		
+		//Index (Elements)
 		if(m.indices.count > 0) VAO.indexBuffer(this.vao,"bIndex",m.indices.data,true);
 
+		//Normals
+		if(m.normals != null && m.normals.count > 0){
+			VAO.floatArrayBuffer(this.vao,"bNormal", m.normals.data,ATTR_NORM_LOC,m.normals.compLen,0,0,true);
+		}
+
+		//Weight and Joints
 		if(m.weights != null && m.joints != null){
 			VAO.floatArrayBuffer(this.vao,"bJointIdx",		m.joints.data,3,m.joints.compLen,0,0,true)
 			   .floatArrayBuffer(this.vao,"bJointWeight",	m.weights.data,4,m.weights.compLen,0,0,true);

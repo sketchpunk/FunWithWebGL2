@@ -1,4 +1,4 @@
-import { Vec3,Mat4,Quat } from "../Maths.js";
+import { Vec3,Mat4,Quat, DEG2RAD } from "../Maths.js";
 
 class Transform{
 	constructor(){
@@ -50,13 +50,14 @@ class Transform{
 		}
 
 		//Chaining functions, useful for initializing
-		setPosition(x,y,z){	this.position.set(x,y,z);	return this; }
-		setScale(x,y,z){	this.scale.set(x,y,z);		return this; }
+		setPosition(x,y,z){			this.position.set(x,y,z);				return this; }
+		setScale(x,y,z){			this.scale.set(x,y,z);					return this; }
+		setDegrees(deg,axis="x"){	this.rotation["r"+axis](deg * DEG2RAD);	return this; }
 	//endregion
 
 	//----------------------------------------------
 	//region Methods
-		updateMatrix(forceWorldUpdate){
+		updateMatrix(forceWorldUpdate=false){ 
 			var isDirty = (this.position.isModified || this.scale.isModified || this.rotation.isModified);
 
 			if(!isDirty && !forceWorldUpdate) return false;

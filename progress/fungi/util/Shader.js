@@ -1,4 +1,4 @@
-import gl,{ UNI_MODEL_MAT_NAME } from "../gl.js";
+import gl,{ UNI_MODEL_MAT_NAME,UNI_NORM_MAT_NAME } from "../gl.js";
 import fungi from "../fungi.js";
 
 //Shortcut to create a shader based on the vert/frag progress text
@@ -25,6 +25,9 @@ function loadShader(js){
 	
 	shader.useModelMatrix = js.shader.useModelMatrix;
 	if(shader.useModelMatrix) uniforms.push(UNI_MODEL_MAT_NAME,"mat4"); //Special Uniform added to list
+
+	shader.useNormalMatrix = js.shader.useNormalMatrix;
+	if(shader.useNormalMatrix) uniforms.push(UNI_NORM_MAT_NAME,"mat3"); //Special Uniform added to list
 	
 	if(uniforms.length > 0) shader.prepareUniforms(uniforms); //shader.prepareUniforms(UNI_MODEL_MAT_NAME,"mat4");
 
@@ -50,6 +53,8 @@ function loadShader(js){
 				switch(uni[u+1]){
 					case "color":
 						uList.push(uni[u], gl.rgbArray(uni[u+2]) ); break;
+					case "acolor":
+						uList.push(uni[u], gl.rgbaArray(uni[u+2]) ); break;
 					case "tex":
 						uList.push(uni[u], gl.res.textures[ uni[u+2] ]); break;
 					default:
@@ -187,6 +192,7 @@ class ShaderBuilder{
 				case "vec3":	gl.ctx.uniform3fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec4":	gl.ctx.uniform4fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "mat4":	gl.ctx.uniformMatrix4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
+				case "mat3":	gl.ctx.uniformMatrix3fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "mat2x4": 	gl.ctx.uniformMatrix2x4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "sample2D":
 					gl.ctx.activeTexture(gl.ctx.TEXTURE0 + texCnt);

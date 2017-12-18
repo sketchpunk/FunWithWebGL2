@@ -1,4 +1,4 @@
-import gl,{ UNI_MODEL_MAT_NAME } from "../gl.js";
+import gl,{ UNI_MODEL_MAT_NAME, UNI_NORM_MAT_NAME } from "../gl.js";
 
 //------------------------------------------------------
 //Render and Call back
@@ -70,10 +70,11 @@ function prepareNext(itm){
 	}
 
 	//Prepare Buffers and Uniforms.
-	if(shader.useModelMatrix) shader.setUniforms(UNI_MODEL_MAT_NAME,itm.worldMatrix);
-
-	if(itm.useCulling != CULLING_STATE)		gl.ctx[ ( (CULLING_STATE	= (!CULLING_STATE))  )?"enable":"disable"	](gl.ctx.CULL_FACE);
-	if(itm.useDepthTest != DEPTHTEST_STATE)	gl.ctx[ ( (DEPTHTEST_STATE	= (!DEPTHTEST_STATE)) )?"enable":"disable"	](gl.ctx.DEPTH_TEST);
+	if(shader.useModelMatrix)	shader.setUniforms(UNI_MODEL_MAT_NAME,itm.worldMatrix);
+	if(shader.useNormalMatrix)	shader.setUniforms(UNI_NORM_MAT_NAME,itm.normalMatrix);
+	
+	if(itm.useCulling != CULLING_STATE)		gl.ctx[ ( (CULLING_STATE	= (!CULLING_STATE))  )	?"enable":"disable"	](gl.ctx.CULL_FACE);
+	if(itm.useDepthTest != DEPTHTEST_STATE)	gl.ctx[ ( (DEPTHTEST_STATE	= (!DEPTHTEST_STATE)) )	?"enable":"disable"	](gl.ctx.DEPTH_TEST);
 
 	return itm;
 }

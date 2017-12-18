@@ -20,7 +20,7 @@ function GridFloor(){
 
 	var vao 	= VAO.standardRenderable("GridFloor",4,v), //VAO.standardMesh("GridFloor",4,v,null,null,null,false),
 		model 	= new Renderable(vao,"MatGridFloor");
-
+	model.name = "GridFloor";
 	model.drawMode = gl.ctx.LINES;
 	return model;
 }
