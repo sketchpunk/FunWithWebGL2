@@ -28,7 +28,6 @@
 					{type:"shader",file:"fungi/shaders/deferred/VecWColor.txt"},
 					{type:"shader",file:"fungi/shaders/deferred/DeferredRender.txt"},
 					{type:"shader",file:"fungi/shaders/deferred/Shield.txt"},
-					{type:"shader",file:"fungi/shaders/deferred/Distort.txt"},
 					{type:"shader",file:"fungi/shaders/SingleColor.txt"},
 					{type:"image",name:"tex01", file:"noise003.png"},
 				]).catch(function(err){	console.log(err); });
@@ -53,11 +52,6 @@
 					.setUniforms( "bufColor",Fungi.deferred.fboRender.bColor.texture );
 
 				gl.res.materials["MatShield"]
-					.setUniforms(
-						"bufColor",Fungi.deferred.fboRender.bColor.texture,
-						"bufDepth",Fungi.deferred.fboRender.bDepth.texture
-					);
-				gl.res.materials["MatDistort"]
 					.setUniforms(
 						"bufColor",Fungi.deferred.fboRender.bColor.texture,
 						"bufDepth",Fungi.deferred.fboRender.bDepth.texture
@@ -92,13 +86,10 @@
 				//shield.updateMatrix();
 
 				gl.ctx.depthMask(false);//Disable Writing to Depth Buffer
-				//shield.setMaterial("MatDistort");
-				//Fungi.render.prepareNext(shield).draw();
-				//shield.setMaterial("MatShield");
 				Fungi.render.prepareNext(shield).draw();
 				gl.ctx.depthMask(true);//Enable it Writing to Depth Buffer
 			}
-			//https://www.artstation.com/artwork/lNg2G
+			
 		</script>
 	</head>
 <body>
