@@ -480,7 +480,7 @@ class VAO{
 		return VAO;		
 	}
 
-	static emptyFloatArrayBuffer(out,name,aryCount,attrLoc,compLen,stride,offset,isStatic){
+	static emptyFloatArrayBuffer(out,name,aryCount,attrLoc,compLen,stride,offset,isStatic,isInstance){
 		var rtn = {
 			ptr:ctx.createBuffer(),
 			compLen:compLen,
@@ -494,6 +494,8 @@ class VAO{
 		ctx.enableVertexAttribArray(attrLoc);
 		ctx.vertexAttribPointer(attrLoc,compLen,ctx.FLOAT,false,stride || 0,offset || 0);
 
+		if(isInstance == true) ctx.vertexAttribDivisor(attrLoc, 1);
+		
 		out[name] = rtn;
 		return VAO;
 	}

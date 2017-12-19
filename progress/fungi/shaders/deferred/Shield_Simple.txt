@@ -5,7 +5,6 @@
 	"useNormalMatrix":true,
 	"useUBOTransform":true,
 	"uniforms":[
-		"bufColor","sample2D",
 		"bufDepth","sample2D",
 		"u_tex01","sample2D"
 	]
@@ -65,13 +64,7 @@
 
 		//..............................
 		v_uv = a_uv;
-		v_uv.x += fTime * 0.0001;
-		v_uv.y += fTime * 0.0006;
-
-		//..............................
-		v_uv2 = a_uv;
-		v_uv2.x = clamp(fract(fTime * 0.0003),0.0,1.0);
-		//v_uv2.x = clamp(fract(0.0002),0.0,1.0);
+		v_uv.y += fTime * 0.0001;
 	}
 </vertex>
 
@@ -83,10 +76,8 @@
 	
 	in vec3 oNorm;
 	in vec2 v_uv;
-	in vec2 v_uv2;
 	in float vDotFromCamera;
 	
-	uniform sampler2D bufColor;
 	uniform sampler2D bufDepth;
 	uniform sampler2D u_tex01;
 
@@ -103,7 +94,7 @@
 
 	//===================================
 	//Should be uniforms down the line.
-	const vec4 baseColor = vec4(0.0,0.9,0.0,0.1);
+	const vec4 baseColor = vec4(0.0,0.1,0.0,0.1);
 	const vec4 rimColor = vec4(0.0,1.0,0.0,1.0);
 
 
@@ -118,29 +109,19 @@
 
 		//-----------------------------
 		/* Our texture should be a mask texture */
-		vec4 maskA = texture(u_tex01,v_uv);
-		maskA.a = maskA.r; //We're doing lots alpha blending, so need to set alpha on things.
-		//outColor = maskA;
-
-		//-----------------------------
-		/* base on mask, distort on the x texture position */
-		float distortStrength = 20.0;
-		fCoord.x += int( (maskA.x * 2.0 - 1.0)  * distortStrength ); 
-		vec4 distort = texelFetch(bufColor, fCoord, 0);
-		//outColor = distort;
-
-		//-----------------------------
-		/* Combined our distortion and colored mask texture */
-		outColor = distort * (maskA.a) + maskA * baseColor;
-		//outColor = maskA * baseColor; //no distortion
+		vec4 mask = texture(u_tex01,v_uv);
+		outColor = vec4(0.0,0.0,0.0,0.0);
 
 		//-----------------------------
 		/* Add fresnel */
+		float isFrontFace = clamp(0.0,1.0,float(gl_FrontFacing));
+
 		float fresnelMin = 0.05;
-		float fresnelMax = 0.6;
-		if(vDotFromCamera >= 0.0 && vDotFromCamera <= fresnelMax){
-			outColor += rimColor * (1.0 - smoothstep(fresnelMin,1.0, (vDotFromCamera/fresnelMax) ));
-		}
+		float fresnelMax = 1.1;
+		float fresnel = (1.0 - smoothstep( fresnelMin, 1.0, (vDotFromCamera/fresnelMax) )) * isFrontFace;
+		
+		outColor = mask * mask.r * fresnel*0.5 * isFrontFace * 0.5;
+		outColor += rimColor * fresnel;
 
 		//-----------------------------
 		/* Add Intersection */
@@ -148,24 +129,9 @@
 		float zPixelFrag	= mapDepthToProj(gl_FragCoord.z);	//Pixel Depth of current rendering fragment
 		float zDelta		= abs(zPixelTex - zPixelFrag);		//Difference between the two
 
-		float intersectMin	= 0.0;
-		float intersectMax	= 0.15;
-		if(zDelta <= intersectMax){
-			outColor += rimColor * max(1.0 - zDelta / intersectMax, intersectMin );
-		}
+		float intersectMax	= 0.15; //This can be a setting
+		float intersect = (zDelta <= intersectMax)? clamp(0.0,1.0, 1.0 - zDelta / intersectMax ) : 0.0;
 
-		//-----------------------------
-		/* Add Highlights from the mask */
-
-		//float hTime = 2.0 * abs(sin(v_time * 0.0007)) - 1.0 ; // -1:1 to 0:1
-		//float highliteMin = (0.9 * hTime * hTime);
-		float highliteMin = 0.9;
-		outColor += smoothstep(highliteMin,1.0,maskA.r) * vec4(1.0,1.0,1.0,1.0);
-
-
-		//-----------------------------
-		/* Add one more mask at the end for fun */
-		vec4 maskB = texture(u_tex01,v_uv2);
-		outColor += maskB * maskB.r * 0.8;
+		outColor += rimColor * intersect;
 	}
 </fragment>

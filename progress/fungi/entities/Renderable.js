@@ -31,6 +31,16 @@ class Renderable extends Transform{
 		return this;
 	}
 
+	clone(){
+		var o = new Renderable(this.vao,null);
+		o.useCulling	= this.useCulling;
+		o.useDepthTest	= this.useDepthTest;
+		o.useNormals	= this.useNormals;
+		o.drawMode		= this.drawMode;
+		o.material		= this.material;
+		return o;
+	}
+
 	draw(){
 		if(this.vao.count == 0) return;
 

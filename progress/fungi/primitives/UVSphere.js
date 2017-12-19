@@ -4,6 +4,21 @@ import Renderable	from "../entities/Renderable.js";
 import Fungi	from "../Fungi.js";
 
 function UVSphere(matName){
+	var d = UVSphereGeometry();
+
+	//...........................................
+	var vao = VAO.standardRenderable("FungiPolarSphere",3,d.vertices,d.normals,d.uv,d.index),
+		entity = new Renderable(vao,matName);
+	entity.name = "Sphere";
+	entity.drawMode = gl.ctx.TRIANGLE_STRIP;
+	entity.useCulling = false;
+	entity.useNormals = true;
+
+	return entity;
+}
+
+
+function UVSphereGeometry(){
 	var yLen	= 18,
 		xLen	= 25,
 		radius	= 0.5;
@@ -32,7 +47,7 @@ function UVSphere(matName){
 			yp = radius * Math.cos(yRad);					
 			zp = radius * Math.sin(yRad) * Math.sin(xRad); // Y & Z are flipped.
 
-			aVert.push( xp, yp, zp, x );
+			aVert.push( xp, yp, zp );
 
 			//Calc the normal direction.
 			mag = 1 / Math.sqrt( xp*xp + yp*yp + zp*zp );
@@ -42,8 +57,8 @@ function UVSphere(matName){
 			//---------------------------
 			//Calc the vertex's UV value
 			aUV.push(
-//				(x < xLen) ? x * xUV : 1,
-//				(y < yLen) ? y * yUV : 1
+				//(x < xLen) ? x * xUV : 1,
+				//(y < yLen) ? y * yUV : 1
 				x * xUV,
 				y * yUV
 			);
@@ -68,15 +83,7 @@ function UVSphere(matName){
 		if(yp == yLen && i < iLen-1) aIndex.push( (xp+1) * (yLen+1) + yp, (xp+1) * (yLen+1));
 	}
 
-	//...........................................
-	var vao = VAO.standardRenderable("FungiPolarSphere",4,aVert,aNorm,aUV,aIndex),
-		entity = new Renderable(vao,matName);
-	entity.name = "Sphere";
-	entity.drawMode = gl.ctx.TRIANGLE_STRIP;
-	entity.useCulling = false;
-	entity.useNormals = true;
-
-	return entity;
+	return { vertices:aVert, normals:aNorm, uv:aUV, index:aIndex }
 }
 
-export default UVSphere;
+export { UVSphere, UVSphereGeometry }
