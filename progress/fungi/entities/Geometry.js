@@ -1,5 +1,6 @@
 import Renderable	from "./Renderable.js";
 import gl, {VAO, ATTR_POSITION_LOC, ATTR_NORM_LOC} from "../gl.js";
+import { Quat } from "../Maths.js";
 
 class GeometryData{
 	constructor(vertSize=3, jointSize=0){
@@ -83,12 +84,14 @@ class GeometryData{
 	// Vertices Controlling Functions
 	////////////////////////////////////////////////////////////////////
 	//extrude a list of points toward a direction
-	extrude(idxAry,dir){
+	extrude(idxAry,dir,rot = null){
 		var v, itm, rtn = [],
 			pLen = this.points.length;
 
 		for(var i=0; i < idxAry.length; i++){
 			itm = this.clonePoint(idxAry[i]);						//Create a copy of the point data
+
+			if(rot != null) Quat.rotateVec3(rot,itm.verts);			//Apply Rotation before translation
 
 			for(v=0; v < dir.length; v++) itm.verts[v] += dir[v];	//Update the vert position
 
