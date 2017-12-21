@@ -1,0 +1,142 @@
+<shader>
+{
+	"name":"ShieldHit",
+	"useModelMatrix":true,
+	"useNormalMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":[
+		"bufDepth","sample2D"
+	]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatShieldHit", "useBlending":true, "useSampleAlphaCoverage":false,
+		"uniforms":[  ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	//precision highp float;
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	layout(location=3) in vec4 a_rotate;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform mat3 uNormalMatrix;
+
+	out vec3 oColor;
+	out vec3 oNorm;
+	out float vDotFromCamera;
+	out vec2 v_uv;
+	flat out float v_time;
+
+	vec3 qRotate(vec4 q, vec3 v){
+		return v + cross(2.0 * q.xyz, cross(q.xyz, v) + q.w * v);
+	}
+
+	void main(void){
+		//..............................
+		//Calc World Space for Vertex & Rotate Normals to be pointing in correct direction.
+		//vec4 worldPos	= uModalMatrix * vec4( a_position.xyz + a_rotate.xyz  ,1.0);
+		vec4 worldPos	= uModalMatrix * vec4(  qRotate(a_rotate,a_position.xyz)  ,1.0);
+		vec3 worldNorm	= normalize(uNormalMatrix * a_normal);
+
+		//..............................
+		//gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+		gl_Position	= matProjection * matCameraView * worldPos;
+
+		//..............................
+		v_time = fTime;
+
+		//..............................
+		v_uv = a_uv;
+		//if(a_rotate.x == 0.0) gl_Position.y -= 2.0;
+		//v_uv.y += fTime * 0.0001;
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	flat in float v_time;
+	
+	in vec3 oNorm;
+	in vec2 v_uv;
+	in float vDotFromCamera;
+	
+	uniform sampler2D bufDepth;
+
+	out vec4 outColor;
+
+	//===================================
+	const float PROJ_NEAR = 0.1; //This can also be uniforms or part of a UBO.
+	const float PROJ_FAR = 100.0;	
+
+	float mapDepthToProj(float depth){ //depth is should be between 0:1
+		float ndc = 2.0 * depth - 1.0;  //Normalized Device Space -1:1
+		return -(2.0 * PROJ_FAR * PROJ_NEAR) / (ndc * (PROJ_FAR - PROJ_NEAR) - PROJ_FAR - PROJ_NEAR);
+	}
+
+	//===================================
+	const float xTime = 2000.0;
+	const float ringSize = 0.08;
+	const float ringFade = 0.07;
+	const float ringGrow = 1.5;
+
+	const vec3 baseColor = vec3(0.0,1.0,0.0);
+
+	//===================================
+	void main(void){
+		//-----------------------------
+		// Get Depth and exit out if current pixel Z is greater then whats in the depth buffer.
+		// exit if current fragment is further away from camera then depth tex fragment
+		ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+		float zTexDepth	= texelFetch(bufDepth, fCoord , 0).x;
+
+		if(gl_FragCoord.z > zTexDepth) discard;
+
+		/*-----------------------------
+		Simple Example 
+		float t = 0.1;
+		float r = t + 0.1;
+		if(v_uv.y >= t && v_uv.y <= r)
+			outColor = vec4(1.0,1.0,1.0,1.0);
+		else
+			outColor = vec4(1.0,1.0,1.0,0.0);
+*/
+
+		/*-----------------------------*/
+		float t = mod(v_time,xTime) / xTime; 	//Calc Time
+		float r = ringSize * t;					//Make ring Bigger Over time
+
+		outColor.rgb = baseColor;
+		
+
+		//-----------------------------
+		/* Fade the start of the ring */
+		if(v_uv.y >= t-ringFade && v_uv.y <= t){
+			outColor.a = smoothstep(t-ringFade,t,v_uv.y) * clamp(0.0,1.0, 1.0-(t*ringGrow)) ;
+
+		//Draw a solid ring
+		}else if(v_uv.y >= t && v_uv.y <= t + r){
+			outColor.a = clamp(0.0,1.0, 1.0-(t*ringGrow));
+
+		//draw nothing.
+		}else discard; //outColor.a = 0.0;
+
+		
+	}
+</fragment>

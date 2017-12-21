@@ -1,0 +1,57 @@
+<shader>
+{
+	"name":"Circle",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uColor","vec3"]
+}
+</shader>
+
+<materials>
+[
+	{"name":"MatCircle", "useBlending":false, "uniforms":[ "uColor","color","aaaae0" ]},
+	{"name":"MatCircleRed", "useBlending":true, "uniforms":[ "uColor","color","ff7f7f" ]}
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_norm;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform vec3 uColor;
+
+	out vec3 oColor;
+	out vec2 oUV;
+
+	void main(void){
+		oUV			= a_uv;
+		oColor		= uColor;
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in lowp vec3 oColor;
+	in vec2 oUV;
+	
+	out vec4 outColor;
+
+	void main(void){
+		vec2 delta 		= oUV - vec2(0.5,0.5);			//Distance from center
+		float lenSqr 	= abs(dot(delta,delta));		//Length Squared (avoiding square roots)
+		float a 		= smoothstep(0.25,0.24,lenSqr);	//Center, so 0.5*0.5 = 0.25, the squared len from center, avoiding roots.
+		outColor		= vec4(oColor,a);				//Whatever the smooth step is, set as alpha blend.
+	}
+</fragment>
