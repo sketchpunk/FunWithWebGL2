@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="cache-control" content="no-cache" /> 
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl, {VAO}	from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import Quad			from "./fungi/primitives/Quad.js";
+			import { UVSphere, UVSphereGeometry }	from "./fungi/primitives/UVSphere.js";
+
+			import Renderable	from "./fungi/entities/Renderable.js";
+			import {Quat,Vec3} from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/deferred/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/DeferredRender.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/Shield_Simple.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/Shield_Hit.txt"},
+					{type:"shader",file:"fungi/shaders/SingleColor.txt"},
+					{type:"image",name:"tex01", file:"noise001.jpg"},
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var shield,shieldHit,cube;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,6)
+					.setupDeferred("MatDeferredRender",onPreRender,onPostRender);
+				gl.setClearColor("505050");
+
+				//Set Textures on Deferred Render
+				gl.res.materials["MatDeferredRender"]
+					.setUniforms( "bufColor",Fungi.deferred.fboRender.bColor.texture );
+
+				gl.res.materials["MatShield"]
+					.setUniforms("bufDepth",Fungi.deferred.fboRender.bDepth.texture);
+
+				gl.res.materials["MatShieldHit"]
+					.setUniforms("bufDepth",Fungi.deferred.fboRender.bDepth.texture);
+
+				//........................................
+				//Add extra items to the scenen
+				Fungi.scene.push(cube = FacedCube("MatVecWColor").setPosition(0,0.26,0).setScale(0.5,0.5,0.5));
+				Fungi.scene.push(Quad(-2,-2,2,2,"ColorGray").setPosition(0,0.01,0).setDegrees(-90));
+
+
+				shield = UVSphere("MatShield").setPosition(0,0.4,0).setScale(2,2,2);
+				shield.updateMatrix();
+
+
+				//shieldHit = shield.clone().setPosition(0,0.4,0).setScale(2.01,2.01,2.01).setDegrees(-90,"x");
+				//shieldHit.setMaterial("MatShieldHit");
+				//shieldHit.updateMatrix();
+
+				shieldHit = new ShieldHit("MatShieldHit").setPosition(0,0.4,0).setScale(2.01,2.01,2.01);
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			var last = 0;
+			function onRender(dt,ss){ 
+				//cube.position.z = 1.0 * Math.sin(ss*0.0005);
+
+				/* ------------------------------ */
+				last += dt;
+				if(last > 2){
+					last = 0;
+
+					shieldHit.applyVecHits(
+						new Vec3(rnd(-2,2),rnd(0.5,2),rnd(-2,2)),
+						new Vec3(rnd(-2,2),rnd(0.5,2),rnd(-2,2)),
+						new Vec3(rnd(-2,2),rnd(0.5,2),rnd(-2,2))
+					);
+				}
+
+
+				//------------------------------
+				Fungi.update().render(Fungi.scene);
+			}
+			function onPreRender(){ Fungi.deferred.onPreRender(); }
+			function onPostRender(){
+				Fungi.deferred.onPostRender();
+
+				//shield.position.y = 0.5 + 0.5 * Math.sin(Fungi.sinceStart * 0.0003);
+				//shield.updateMatrix();
+				
+
+				gl.ctx.depthMask(false);//Disable Writing to Depth Buffer
+				Fungi.render.prepareNext(shield).draw();
+				Fungi.render.prepareNext(shieldHit).draw();
+				gl.ctx.depthMask(true);//Enable it Writing to Depth Buffer
+			}
+
+
+			class ShieldHit extends Renderable{
+				constructor(matName){
+					super(null,matName);
+					this.drawMode = gl.ctx.TRIANGLE_STRIP;
+					this.useDepthTest = false;
+					this.useCulling = false;
+					this.useNormals = true;
+					this.instanceSize = 0;
+					
+					//-----------------------------------
+					var bSize = Float32Array.BYTES_PER_ELEMENT * 4 * 3; //Only Allow up to 3 rings
+
+					var dat = UVSphereGeometry();
+					this.vao = VAO.create();
+					VAO.floatArrayBuffer(this.vao,	"bVertices",	dat.vertices, 	0,	3,0,0,true);
+					VAO.floatArrayBuffer(this.vao,	"bNormal",		dat.normals,	1,	3,0,0,true);
+					VAO.floatArrayBuffer(this.vao,	"bUV",			dat.uv,			2,	2,0,0,true);
+					VAO.indexBuffer(this.vao,		"bIndex",		dat.index, true);
+
+					VAO.emptyFloatArrayBuffer(this.vao,	"bRotation",bSize,3,4,0,0,false,true);
+
+					VAO.finalize(this.vao,"ShieldHit");
+
+					this.applyHits(-90); //apply offset to make the bottom our front.
+				}
+
+				applyHits(ang){
+					var q = new Quat().rx(ang * Math.PI / 180);
+					var qq = [];
+					qq.push(q[0],q[1],q[2],q[3]);
+
+					gl.ctx.bindBuffer(gl.ctx.ARRAY_BUFFER,this.vao.bRotation.ptr);
+					gl.ctx.bufferSubData(gl.ctx.ARRAY_BUFFER, 0, new Float32Array(qq), 0, null);
+					gl.ctx.bindBuffer(gl.ctx.ARRAY_BUFFER,null);
+
+					this.instanceSize = qq.length / 4; //How many bones are we rendering
+				}
+
+
+				applyVecHits(a){
+					//---------------------------------------------
+					//Calc the rotation of the sphere so the top is pointing at the point of inpact.
+					var qq = [];
+					var v;
+
+					Fungi.debugLine.reset();
+					for(var i=0; i < arguments.length; i++){
+						v = arguments[i];
+						var d = v.clone().sub(this.position).normalize();		//Determine direction
+						var o = d.clone().add(this.position);					//Point of inpact
+
+						var q = new Quat();										
+						Quat.lookRotation(d, [0,1,0], q);						//Get quaternion of direction to look
+						q.rx(-90 * Math.PI / 180);								//Want bottom to be forward, so add offset.
+
+						qq.push(q[0],q[1],q[2],q[3]);							//Prep data for buffer
+
+						Fungi.debugLine.addVecLine(o,0, v,6);					//See the line of inpact.
+					}
+					
+					//---------------------------------------------
+					//push data to buffer.
+					gl.ctx.bindBuffer(gl.ctx.ARRAY_BUFFER,this.vao.bRotation.ptr);
+					gl.ctx.bufferSubData(gl.ctx.ARRAY_BUFFER, 0, new Float32Array(qq), 0, null);
+					gl.ctx.bindBuffer(gl.ctx.ARRAY_BUFFER,null);
+
+					this.instanceSize = qq.length / 4; //How many ripples to render.
+				}
+
+				draw(){
+					if(this.instanceSize > 0){
+						this.updateMatrix();
+
+						gl.ctx.bindVertexArray(this.vao.ptr);
+						gl.ctx.drawElementsInstanced(this.drawMode, this.vao.count, gl.ctx.UNSIGNED_SHORT, 0, this.instanceSize); 
+					}
+				}
+			}
+
+			function rnd(x,y){ return (y-x) * Math.random() + x; }
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
