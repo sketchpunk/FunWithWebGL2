@@ -11,12 +11,13 @@
 		</style>
 
 		<script type="module">
-			import gl,{ VAO, ATTR_POSITION_LOC } 		from "./fungi/gl.js";
 			import Fungi 		from "./fungi/Fungi.js";
 			import Downloader	from "./fungi/util/Downloader.js";
-			import {GeometryData, GeometryRender} from "./fungi/entities/Geometry.js";
-			import Renderable from "./fungi/entities/Renderable.js";
-			import {Vec3, Quat} from "./fungi/Maths.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import gl,{VAO} 		from "./fungi/gl.js";
+
+			import Renderable	from "./fungi/entities/Renderable.js";
+			import {Quat,Vec3} from "./fungi/Maths.js";
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -24,8 +25,7 @@
 				//........................................
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
-					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
-					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"},
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -33,152 +33,25 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
-
-			function baseShape(geo){
-				var	pLen 	= 5,
-					radius 	= 0.1,
-					inc 	= (2 * Math.PI) / pLen;
-
-				for(var i=0; i < pLen; i++){
-					geo.newPoint(
-						radius * Math.cos(i*inc),
-						radius * Math.sin(i*inc),
-						0);
-				}
-			}
-
-
-			//http://paulbourke.net/geometry/knots/
-			function knot4(beta,v){
-				var r		= 0.8 + 1.6 * Math.sin(6 * beta),
-					theta	= 2 * beta,
-					phi		= 0.6 * Math.PI * Math.sin(12 * beta),
-					rCosPhi = r * Math.cos(phi);
-
-				v.set(
-					rCosPhi * Math.cos(theta),
-					rCosPhi * Math.sin(theta),
-					r * Math.sin(phi)
-				);
-
-				return v;
-			}
-
-			function knot5(beta,v){
-				var r		= 1.2 * 0.6 * Math.sin(0.5 * Math.PI + 6 * beta),
-					theta	= 4 * beta,
-					phi		= 0.2 * Math.PI * Math.sin(6 * beta),
-					rCosPhi = r * Math.cos(phi);
-
-				return v.set(
-					rCosPhi * Math.cos(theta),
-					rCosPhi * Math.sin(theta),
-					r * Math.sin(phi)
-				);
-			}
-
-			function knot1(i,v){
-      			var mu = i * Math.PI*2 / 1000,
-					x = 10 * (Math.cos(mu) + Math.cos(3*mu)) + Math.cos(2*mu) + Math.cos(4*mu),
-					y = 6 * Math.sin(mu) + 10 * Math.sin(3*mu),
-					z = 4 * Math.sin(3*mu) * Math.sin(5*mu/2) + 4*Math.sin(4*mu) - 2 * Math.sin(6*mu);
-				return v.set(x,y,z);
-			}
-
-			function knot2(i,v){
-				var mu = i * Math.PI*2 / 1000,
-					x = (4 * Math.cos(mu + Math.PI)) / 3 + 2 * Math.cos(3 * mu),
-					y = 4 * Math.sin(mu) / 3 + 2 * Math.sin(3 * mu),
-					z = Math.sin(4 * mu) + Math.sin(2 * mu) / 2;
-				return v.set(x,y,z);
-			}
-
-			function knot3(i,v){
- 				var nlongitude	= 11, //7, //3, 
-					nmeridian	= 6, //4, //4,
-					mu			= i * Math.PI*2 * nmeridian / 1000,
-					x			= Math.cos(mu) * (1 + Math.cos( nlongitude * mu / nmeridian) / 2.0),
-					y			= Math.sin(mu) * (1 + Math.cos( nlongitude * mu / nmeridian) / 2.0),
-					z			= Math.sin(nlongitude * mu / nmeridian) / 2.0;
-
-				return v.set(x,y,z);
-			}
-
-
-			
-			var geoRender,geo;
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
 				Fungi.ready(onRender);
-				Fungi.mainCamera.setPosition(0,0.2,5);
 
 				//........................................
-				//Set up our Geo object to make it easier to create a dynamic mesh.
+				//Add extra items to the scenen
+				//Fungi.scene.push(FacedCube("MatVecWColor").setPosition(0,0.5,0));
 
-				geo = new GeometryData();
-				baseShape(geo);
+				//var vao = VAO.standardRenderable("test",4,VoxelChunk.FACES[5].v,null,null,VoxelChunk.INDEX);//,aryNorm,aryUV,aryInd
+				//var model = new Renderable(vao,"MatVecWColor");
+				//model.drawMode		= gl.ctx.TRIANGLES;
+				//Fungi.scene.push(model);
 
-				//-------------------
-				var oldPos 	= new Vec3(0,0,0),	//Previous position in Knot
-					newPos 	= new Vec3(0,1,1),	//New Position in Knot
-					dirPos 	= new Vec3(0,1,1),	//Direction vector based on newPos - oldPos
+				var chunk = new VoxelChunk();
+				var voxel = new VoxelRender(chunk,"MatVecWColor");
+				Fungi.scene.push(voxel);
+				//console.log( chunk.get(1,1,1, VoxelChunk.DOWN ) );
 
-					baseSet	= [0,1,2,3,4],		//Reused set of Vertices
-					oldSet 	= [0,1,2,3,4],		//Indexes of the previous set of vertices
-					newSet 	= null,				//Indexes of the new set of vertices
-
-					quat 	= new Quat();		//Quaternion that will rotate the vertices
-
-				var beta 	= 0,
-					betaInc = 0.01;
-
-	
-				/*------------------- */
-				//newPos.sub(oldPos,dirPos);
-				//Quat.lookRotation(dirPos, [0,1,0], quat);
-
-				//newSet = geo.extrude(oldSet,newPos);
-				//newSet = geo.extrude(oldSet,newPos, quat);
-				//geo.triLoop(oldSet,newSet);
-
-
-				/*-------------------*/
-				while(beta < 1000){ //forKnot 1,2,3
-				//while(beta < Math.PI){
-					//Calc position in Knot, then determine direction Vector
-					knot3(beta,newPos).sub(oldPos,dirPos); 
-
-					//Rotate forward looking vertices to point to new direction
-					Quat.lookRotation(dirPos, [0,1,0], quat);	
-
-					//geo.newPoint(newPos.x,newPos.y,newPos.z);
-
-					
-					//Copy the vertices, rotate then move them into place
-					newSet = geo.extrude(baseSet,newPos,quat);
-
-					//Using Triangle_Strip, we connect the previous set with the new set
-					//This will create all the triangles needed to render a mesh.
-					geo.triLoop(oldSet,newSet);
-
-					//Cleanup
-					//beta += betaInc; 		//Move to the next point in the knot
-					beta++;
-					oldSet = newSet;		//Save to set to old, so we can triLoop it with the next set
-					oldPos.copy(newPos);	//Save new Pos so next time we can determine the next direction vector
-				}
-				
-
-
-				geoRender = new GeometryRenderHack("MatLowPolyPhong",geo); //    MatLowPolyPhong
-				//geoRender = new GeometryRender("MatLowPolyPhong",geo); // MatVecWColor   MatLowPolyPhong
-				geoRender.useCulling = false;
-				geoRender.drawMode = gl.ctx.TRIANGLES; //gl.ctx.LINE_STRIP; //gl.ctx.POINTS;  //   
-				geoRender.drawCount = 30; //5 Quads per Wall, 6 indices per quad == 30
-
-
-				Fungi.scene.push(geoRender);
 
 
 				//........................................
@@ -186,63 +59,163 @@
 				Fungi.renderLoop.start();
 			}
 
-			var t = 5000;
-			function onRender(dt,ss){ 
-				Fungi.update()
+			function onRender(){ Fungi.update().render(Fungi.scene); }
 
-				/**/
-				t += dt;
-				if(t >= 0.0001 && geoRender.drawCount < geo.indices.length){
-					t = 0;
-					geoRender.drawCount += 30;
+			class VoxelChunk{
+				constructor(x=2,y=1,z=2){
+					this.scale = 0.2;
+
+					//Overall size of the Chunk
+					this.xLen	= x;
+					this.yLen	= y;
+					this.zLen	= z;
+
+					//Cache max coord values to save repeating the math
+					this.xMax	= (x != 0)? x-1 : 0;
+					this.yMax	= (y != 0)? y-1 : 0;
+					this.zMax	= (z != 0)? z-1 : 0;
+
+					this.xzLen 	= x * z;	//Cache value, since this is used to help calc index
+
+					this.cells	= new Array(x*z*y); //Create flat array to hold Voxel Data.
+
+					for(var i=0; i < this.cells.length; i++) this.cells[i] = 1;
+
+					this.cells[0] = 1;
+					this.cells[1] = 1;
+					this.cells[2] = 1;
+					this.cells[3] = 1;
 				}
 
-				Fungi.render(Fungi.scene);
-			}
-
-
-			class GeometryRenderHack extends Renderable{
-				constructor(matName, geo=null, arm=null){
-					super(null,matName);
-					this.loadGeometryData(geo);
-					this.drawCount = 0; //Control how many elements in the buffer to render
-				}
-
-				loadGeometryData(geo){
-					//Build VAO and Buffers for rendering.
-					var verts = geo.compileVertices();
-
-					this.vao = VAO.create();
-					VAO.floatArrayBuffer(this.vao,"bVertices",verts,ATTR_POSITION_LOC,geo.vertSize,0,0,true,false);
-
-					if(geo.indices.length > 0) VAO.indexBuffer(this.vao,"bIndex",geo.indices,true);
-					if(geo.jointSize > 0){
-						var jAry = [], wAry = [];
-						geo.compileJoints(jAry,wAry);
-
-						VAO.floatArrayBuffer(this.vao,"bJointIdx",		jAry,3,geo.jointSize,0,0,true,false)
-						   .floatArrayBuffer(this.vao,"bJointWeight",	wAry,4,geo.jointSize,0,0,true,false);
+				get(x, y, z, dir = -1){
+					//Apply Direction to get a cell next to the requested cell
+					switch(dir){
+						case VoxelChunk.NORTH:	z = Math.max(z-1, 0);			break;
+						case VoxelChunk.EAST:	x = Math.min(x+1, this.xMax);	break;
+						case VoxelChunk.SOUTH:	z = Math.min(z+1, this.zMax);	break;
+						case VoxelChunk.WEST:	x = Math.max(x-1, 0);			break;
+						case VoxelChunk.UP:		y = Math.min(y+1, this.yMax);	break;
+						case VoxelChunk.DOWN:	y = Math.max(y-1, 0);			break;
 					}
 
-					VAO.finalize(this.vao,"GeometryRender");
-					this.drawMode	= (this.vao.isIndexed)? gl.ctx.TRIANGLES : gl.ctx.POINTS; //Final Setup
+					//Validate that coords are within the bounds of the chunk
+					if( x < 0 || x > this.xMax ||
+						y < 0 || y > this.yMax ||
+						z < 0 || z > this.zMax ) return null;
 
-					return this;
+					//Return the cell data
+					return this.cells[ this.coordToIndex(x,y,z) ];
 				}
 
-				draw(){
-					if(this.vao.count == 0) return;
+				coordToIndex(x,y,z){
+					//var xx = x % this.xLen,
+					//	zz = z * this.xLen,
+					//	yy = y * this.xzLen;
+					//console.log(xx,zz,yy);
 
-					gl.ctx.bindVertexArray(this.vao.ptr);
-					if(this.vao.isIndexed)
-						//gl.ctx.drawElements(this.drawMode, this.vao.count, gl.ctx.UNSIGNED_SHORT, 0); 
-						gl.ctx.drawElements(this.drawMode, this.drawCount , gl.ctx.UNSIGNED_SHORT, 0); 
-					else 
-						//gl.ctx.drawArrays(this.drawMode, 0, this.vao.count);
-						gl.ctx.drawArrays(this.drawMode, 0, this.drawCount);
+					return x + z * this.xLen + y * this.xzLen;
 				}
 			}
+			VoxelChunk.NORTH	= 0;
+			VoxelChunk.EAST		= 1;
+			VoxelChunk.SOUTH	= 2;
+			VoxelChunk.WEST		= 3;
+			VoxelChunk.UP		= 4;
+			VoxelChunk.DOWN		= 5;
 
+			VoxelChunk.UV = [0.0,0.0, 1.0,0.0, 1.0,1.0, 0.0,1.0];
+			VoxelChunk.INDEX = [0,1,2,2,3,0];
+			VoxelChunk.FACES = [ //TODO, REMOVE 4th component when no longer in need.
+				{ 	n:[0.0,0.0,-1.0],
+					v:[1.0,0.0,0.0,0.0,
+					   0.0,0.0,0.0,1.0,
+					   0.0,1.0,0.0,2.0,
+					   1.0,1.0,0.0,3.0] }, //Back
+
+				{ 	n:[-1.0,0.0,0.0],
+					v:[0.0,0.0,0.0,0.0,
+					   0.0,0.0,1.0,1.0,
+					   0.0,1.0,1.0,2.0,
+					   0.0,1.0,0.0,3.0] }, //Right
+
+				{ 	n:[0.0,0.0,1.0],
+					v:[0.0,0.0,0.0,0.0,
+					   1.0,0.0,0.0,1.0,
+					   1.0,1.0,0.0,2.0,
+					   0.0,1.0,0.0,3.0] }, //Front
+
+				{ 	n:[1.0,0.0,0.0],
+					v:[0.0,0.0,1.0,0.0,
+					   0.0,0.0,0.0,1.0,
+					   0.0,1.0,0.0,2.0,
+					   0.0,1.0,1.0,3.0] }, //Left
+
+				{ 	n:[0.0,1.0,0.0],
+					v:[0.0,0.0,1.0,0.0,
+					   1.0,0.0,1.0,1.0,
+					   1.0,0.0,0.0,2.0,
+					   0.0,0.0,0.0,3.0] }, //Top
+
+				{ 	n:[0.0,-1.0,0.0],
+					v:[0.0,0.0,0.0,0.0,
+					   1.0,0.0,0.0,1.0,
+					   1.0,0.0,1.0,2.0,
+					   0.0,0.0,1.0,3.0] } //Bottom
+			];
+
+
+			class VoxelRender extends Renderable{
+				constructor(vc,matName){
+					super(null,matName);
+					this.drawMode = gl.ctx.TRIANGLES; //gl.ctx.POINTS; //
+					this.useCulling = true;
+
+					this.chunk = vc;
+					this.buildMesh();
+				}
+
+				buildMesh(){
+					var x,y,z,
+						idx,i,ii;
+
+					var vert = [];
+					var index = [];
+
+					var face = VoxelChunk.FACES[4].v;
+
+					for(z=0; z <= this.chunk.zMax; z++){		//Loop Rows
+						for(x=0; x <= this.chunk.xMax; x++){	//Loop Columns
+							
+							if( this.chunk.get(x,0,z) == 1){
+								idx = vert.length / 4;
+								
+								//Generate Vertices
+								for(i=0; i < 4; i++){
+									ii = i * 4;
+									vert.push(
+										face[ii+0] + x,
+										face[ii+1],
+										face[ii+2] + z,
+
+										//face[ii+0] * this.chunk.scale + x * this.chunk.scale,
+										//face[ii+1] * this.chunk.scale,
+										//face[ii+2] * this.chunk.scale + z * this.chunk.scale,
+
+										face[ii+3]
+									);
+								}
+
+								//Generate Triangle Indexes
+								for(i=0; i < VoxelChunk.INDEX.length; i++) index.push( VoxelChunk.INDEX[i] + idx );
+							}
+
+						}
+					}
+
+					this.vao = VAO.standardRenderable("voxel",4,vert,null,null,index);//
+					//console.log(vert);
+				}				
+			}
 		</script>
 	</head>
 <body>
