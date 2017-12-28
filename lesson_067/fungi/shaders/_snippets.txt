@@ -1,0 +1,121 @@
+================================================================
+
+ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+float zTexDepth	= texelFetch(bufDepth, fCoord , 0).x;
+
+const float PROJ_NEAR = 0.1; //This can also be uniforms or part of a UBO.
+const float PROJ_FAR = 100.0;	
+
+float mapDepthToProj(float depth){ //depth is should be between 0:1
+	float ndc = 2.0 * depth - 1.0;  //Normalized Device Space -1:1
+	return -(2.0 * PROJ_FAR * PROJ_NEAR) / (ndc * (PROJ_FAR - PROJ_NEAR) - PROJ_FAR - PROJ_NEAR);
+}
+
+================================================================
+
+float LinearizeDepth(float z){ 
+  float n = 1.0; // camera z near
+  float f = 100.0; // camera z far
+  return (2.0 * n) / (f + n - z * (f - n));	
+}
+
+================================================================
+
+const float _NearClip = 1.0;
+const float _FarClip = 100.0;
+float LinearEyeDepth(float rawdepth){
+    float x, y, z, w;
+
+	x = -1.0 + _NearClip / _FarClip;
+	y = 1.0;
+	z = x / _NearClip;
+	w = 1.0 / _NearClip;
+
+	
+	//x = 1.0 - _NearClip / _FarClip;
+	//y = _NearClip / _FarClip;
+	//z = x / _NearClip;
+	//w = y / _NearClip;
+	
+	return 1.0 / (z * rawdepth + w);
+}
+
+================================================================
+
+// Pixelate post effect with Grid lines
+
+ivec2 texSize = textureSize(bufColor,0);	//Get Size of Texture
+
+float pixelSize = 7.0;
+float xMod		= mod(float(fCoord.x),pixelSize);
+float yMod		= mod(float(fCoord.y),pixelSize);
+
+if( xMod == 0.0 || yMod == 0.0 ) outColor = vec4(0.0,0.0,0.0,0.3);
+else{
+	ivec2 pix = fCoord;
+	pix.x -= int( xMod );
+	pix.y -= int( yMod );
+	outColor = texelFetch(bufColor, pix , 0);
+}
+
+
+================================================================
+//ROTATE UVs;
+
+    uniform float timer;
+    uniform float rate;
+    uniform sampler2D texture;
+ 
+    void main( void )
+    {
+        vec2 texCoords = vec2(gl_TexCoord[0].x-0.5, gl_TexCoord[0].y-0.5);
+ 
+        float sinX = sin(timer*rate);
+        float cosX = cos(timer*rate);
+ 
+        mat2 rotMat = mat2( cosX, -sinX, sinX, cosX);
+                 
+        vec2 newCoords=(texCoords*rotMat);
+        newCoords += 0.5;
+        gl_FragColor = texture2D(texture, newCoords );
+    }
+
+//Sprite Sheet.
+uniform int frame;
+uniform int cols;
+uniform int rows;
+uniform sampler2D texture;
+ 
+   void main()
+   {   
+        float stepx = 1.0/cols;
+        float stepy = 1.0/rows;
+        vec2 texCoords = vec2(gl_TexCoord[0].x, gl_TexCoord[0].y);
+         
+        texCoords.y += stepy * 1;
+        texCoords.x += stepx * frame;
+         
+        texCoords.y += stepy * ((frame - (frame % cols)) / cols);
+ 
+        gl_FragColor = texture2D(texture, texCoords );        
+   }
+
+
+
+================================================================
+vec4 alphaBlendA(vec4 from, vec4 to){
+    return vec4(to.rgb * (1.0-from.a) + (from.rgb * from.a), to.a+from.a);
+  }
+
+  vec4 alphaBlendB(vec4 from, vec4 to){
+    return vec4(to.rgb * to.a * (1.0-from.a) + (from.rgb * from.a), to.a+from.a);
+  }
+
+  vec4 alphaBlendC(vec4 from, vec4 to){
+    return vec4(to.rgb * (1.0-from.a) + (from.rgb * from.a), from.a);
+  }
+
+  //https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/blendFunc
+  vec4 srcAlpha_oneMinusSrcAlpha(vec4 src, vec4 dst){ 
+    return (src * src.a) + (dst * (1.0-src.a));
+  }

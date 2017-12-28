@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import gl,{VAO} 	from "./fungi/gl.js";
+
+			import Renderable	from "./fungi/entities/Renderable.js";
+			import {Quat,Vec3}	from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+
+				//........................................
+				//Add extra items to the scenen
+
+
+				//var vao = VAO.standardRenderable("test",4,VoxelChunk.FACES[2].v,null,null,VoxelChunk.INDEX);//,aryNorm,aryUV,aryInd
+				//var model = new Renderable(vao,"MatVecWColor");
+				//model.drawMode	= gl.ctx.TRIANGLES;
+				//Fungi.scene.push(model);
+
+				var chunk = new VoxelChunk();
+				var voxel = new VoxelRender(chunk,"MatVecWColor");
+				Fungi.scene.push(voxel);
+				//console.log( chunk.get(1,1,1, VoxelChunk.DOWN ) );
+
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			class VoxelChunk{
+				constructor(x=2,y=1,z=2){
+					this.scale = 0.2;
+
+					//Overall size of the Chunk
+					this.xLen	= x;
+					this.yLen	= y;
+					this.zLen	= z;
+
+					//Cache max coord values to save repeating the math
+					this.xMax	= (x != 0)? x-1 : 0;
+					this.yMax	= (y != 0)? y-1 : 0;
+					this.zMax	= (z != 0)? z-1 : 0;
+
+					this.xzLen 	= x * z;	//Cache value, since this is used to help calc index
+
+					this.cells	= new Array(x*z*y); //Create flat array to hold Voxel Data.
+
+					for(var i=0; i < this.cells.length; i++) this.cells[i] = 1;
+
+					this.cells[0] = 1;
+					this.cells[1] = 1;
+					this.cells[2] = 1;
+					this.cells[3] = 1;
+				}
+
+				get(x, y, z, dir = -1){
+					//Apply Direction to get a cell next to the requested cell
+					switch(dir){
+						case VoxelChunk.NORTH:	z = Math.max(z-1, 0);			break;
+						case VoxelChunk.EAST:	x = Math.min(x+1, this.xMax);	break;
+						case VoxelChunk.SOUTH:	z = Math.min(z+1, this.zMax);	break;
+						case VoxelChunk.WEST:	x = Math.max(x-1, 0);			break;
+						case VoxelChunk.UP:		y = Math.min(y+1, this.yMax);	break;
+						case VoxelChunk.DOWN:	y = Math.max(y-1, 0);			break;
+					}
+
+					//Validate that coords are within the bounds of the chunk
+					if( x < 0 || x > this.xMax ||
+						y < 0 || y > this.yMax ||
+						z < 0 || z > this.zMax ) return null;
+
+					//Return the cell data
+					return this.cells[ this.coordToIndex(x,y,z) ];
+				}
+
+				coordToIndex(x,y,z){
+					//var xx = x % this.xLen,
+					//	zz = z * this.xLen,
+					//	yy = y * this.xzLen;
+					//console.log(xx,zz,yy);
+
+					return x + z * this.xLen + y * this.xzLen;
+				}
+			}
+			VoxelChunk.NORTH	= 0;
+			VoxelChunk.EAST		= 1;
+			VoxelChunk.SOUTH	= 2;
+			VoxelChunk.WEST		= 3;
+			VoxelChunk.UP		= 4;
+			VoxelChunk.DOWN		= 5;
+
+			VoxelChunk.UV = [0.0,0.0, 1.0,0.0, 1.0,1.0, 0.0,1.0];
+			VoxelChunk.INDEX = [0,1,2,2,3,0];
+			VoxelChunk.FACES = [ //TODO, REMOVE 4th component when no longer in need.
+				{ 	n:[0.0,0.0,-1.0],
+					v:[1.0,0.0,0.0,0.0,
+					   0.0,0.0,0.0,1.0,
+					   0.0,1.0,0.0,2.0,
+					   1.0,1.0,0.0,3.0] }, //Back
+
+				{ 	n:[-1.0,0.0,0.0],
+					v:[0.0,0.0,0.0,0.0,
+					   0.0,0.0,1.0,1.0,
+					   0.0,1.0,1.0,2.0,
+					   0.0,1.0,0.0,3.0] }, //Right
+
+				{ 	n:[0.0,0.0,1.0],
+					v:[0.0,0.0,0.0,0.0,
+					   1.0,0.0,0.0,1.0,
+					   1.0,1.0,0.0,2.0,
+					   0.0,1.0,0.0,3.0] }, //Front
+
+				{ 	n:[1.0,0.0,0.0],
+					v:[0.0,0.0,1.0,0.0,
+					   0.0,0.0,0.0,1.0,
+					   0.0,1.0,0.0,2.0,
+					   0.0,1.0,1.0,3.0] }, //Left
+
+				{ 	n:[0.0,1.0,0.0],
+					v:[0.0,0.0,1.0,0.0,
+					   1.0,0.0,1.0,1.0,
+					   1.0,0.0,0.0,2.0,
+					   0.0,0.0,0.0,3.0] }, //Top
+
+				{ 	n:[0.0,-1.0,0.0],
+					v:[0.0,0.0,0.0,0.0,
+					   1.0,0.0,0.0,1.0,
+					   1.0,0.0,1.0,2.0,
+					   0.0,0.0,1.0,3.0] } //Bottom
+			];
+
+
+			class VoxelRender extends Renderable{
+				constructor(vc,matName){
+					super(null,matName);
+					this.drawMode = gl.ctx.TRIANGLES; //gl.ctx.POINTS; //
+					this.useCulling = true;
+
+					this.chunk = vc;
+					this.buildMesh();
+				}
+
+				buildMesh(){
+					var x,y,z,
+						idx,i,ii;
+
+					var vert = [];
+					var index = [];
+
+					var face = VoxelChunk.FACES[4].v;
+
+					for(z=0; z <= this.chunk.zMax; z++){		//Loop Rows
+						for(x=0; x <= this.chunk.xMax; x++){	//Loop Columns
+							
+							if( this.chunk.get(x,0,z) == 1){
+								idx = vert.length / 4;			//Starting INDEX for vertex
+								
+								//Generate Vertices
+								for(i=0; i < 4; i++){
+									ii = i * 4;
+									vert.push(
+										face[ii+0] + x,
+										face[ii+1],
+										face[ii+2] + z,
+
+										//face[ii+0] * this.chunk.scale + x * this.chunk.scale,
+										//face[ii+1] * this.chunk.scale,
+										//face[ii+2] * this.chunk.scale + z * this.chunk.scale,
+
+										face[ii+3]
+									);
+								}
+
+								//Generate Triangle Indexes
+								for(i=0; i < VoxelChunk.INDEX.length; i++) index.push( VoxelChunk.INDEX[i] + idx );
+							}
+
+						}
+					}
+
+					this.vao = VAO.standardRenderable("voxel",4,vert,null,null,index);//
+					//console.log(vert);
+				}				
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
