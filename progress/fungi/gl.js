@@ -480,7 +480,7 @@ class VAO{
 		return VAO;		
 	}
 
-	static emptyFloatArrayBuffer(out,name,aryCount,attrLoc,compLen,stride,offset,isStatic,isInstance){
+	static emptyFloatArrayBuffer(out,name,byteCount,attrLoc,compLen,stride,offset,isStatic,isInstance){
 		var rtn = {
 			ptr:ctx.createBuffer(),
 			compLen:compLen,
@@ -490,7 +490,7 @@ class VAO{
 		};
 
 		ctx.bindBuffer(ctx.ARRAY_BUFFER, rtn.ptr);
-		ctx.bufferData(ctx.ARRAY_BUFFER,aryCount,(isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW);		//Allocate Space needed
+		ctx.bufferData(ctx.ARRAY_BUFFER,byteCount,(isStatic != false)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW);		//Allocate Space needed
 		ctx.enableVertexAttribArray(attrLoc);
 		ctx.vertexAttribPointer(attrLoc,compLen,ctx.FLOAT,false,stride || 0,offset || 0);
 
@@ -581,6 +581,20 @@ class VAO{
 		if(aryNorm)	VAO.floatArrayBuffer(rtn,	"bNormal",	aryNorm,	ATTR_NORM_LOC,	3,0,0,true);
 		if(aryUV)	VAO.floatArrayBuffer(rtn,	"bUV",		aryUV,		ATTR_UV_LOC,	2,0,0,true);
 		if(aryInd)	VAO.indexBuffer(rtn,		"bIndex",	aryInd, true);
+
+		VAO.finalize(rtn,name);
+
+		return rtn;
+	}
+
+	static standardEmpty(name,vertCompLen=3,vertCnt=4,normLen=0,uvLen=0,indexLen=0){
+		var rtn = VAO.create();
+		VAO.emptyFloatArrayBuffer(rtn,"bVertices",Float32Array.BYTES_PER_ELEMENT * vertCompLen * vertCnt,ATTR_POSITION_LOC,vertCompLen,0,0,false);
+	
+
+		//if(aryNorm)	VAO.floatArrayBuffer(rtn,	"bNormal",	aryNorm,	ATTR_NORM_LOC,	3,0,0,true);
+		//if(aryUV)	VAO.floatArrayBuffer(rtn,	"bUV",		aryUV,		ATTR_UV_LOC,	2,0,0,true);
+		if(indexLen > 0) VAO.emptyIndexBuffer(rtn, "bIndex", Uint16Array.BYTES_PER_ELEMENT * indexLen, false);
 
 		VAO.finalize(rtn,name);
 

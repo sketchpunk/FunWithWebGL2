@@ -13,12 +13,10 @@
 		<script type="module">
 			import Fungi 		from "./fungi/Fungi.js";
 			import Downloader	from "./fungi/util/Downloader.js";
-			import FacedCube	from "./fungi/primitives/FacedCube.js";
-			import gl,{VAO} 		from "./fungi/gl.js";
 
-			import Renderable	from "./fungi/entities/Renderable.js";
-			import {Quat,Vec3} from "./fungi/Maths.js";
 			import WireFrame	from "./fungi/util/WireFrame.js";
+			import { Voxel, VoxelChunk, VoxelRender, DynamicVoxel } from "./fungi/util/Voxel.js";
+			import {Vec3} 		from "./fungi/Maths.js";
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -36,243 +34,175 @@
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
 
+			var xLen 	= 16,
+				yLen 	= 16,
+				zLen 	= 16,
+				yMax 	= yLen-1,
+				mid 	= (xLen-1) / 2,		//Mid Point, used to find the center of chunk.
+				mid1Sqr = (mid+1)*(mid+1);	//Gives best value for sphere radius that fills up the chunk.
+
+			
+			var chunk,voxel,aryOffset;
+
+			function createVoxelSphere(){
+				var idx = chunk.coordToIndex(0,8,0,0);
+
+				for(var i=idx; i < chunk.cells.length; i++){
+					var coord = chunk.indexToCoord(i);
+					var dx = coord[0] - mid,		//Calc Vector Length
+						dy = coord[1] - mid,
+						dz = coord[2] - mid,
+						d = dx*dx + dy*dy + dz*dz; //Math.sqrt(dx*dx + dy*dy + dz*dz);
+					//console.log(coord,d,mid);
+
+					//Set top Half		
+					chunk.cells[i] = (d > mid1Sqr)? 0 : 1;  //mid+1
+
+					//Figure out Index for the mirror position on the bottom half.
+						//var my = coord[1] - (Math.floor(dy)*2) - 1;
+						//chunk.cells[ chunk.coordToIndex(coord[0],my,coord[2]) ] = chunk.cells[i];
+					var ii = i - (coord[1] - (8 - (coord[1] - 8 + 1))) * chunk.xzLen;
+					chunk.cells[ ii ] = chunk.cells[i];
+				}
+			}
+
+			function createVoxelSphereMap(){
+				var coord,dx, dy, dz, d, oi,
+					aryOffset = new Array(chunk.xzLen);
+
+				aryOffset.fill(null);
+
+				//....................................
+				//Generate Height Data
+				for(var i = chunk.coordToIndex(0,8,0,0); i < chunk.cells.length; i++){
+					coord	= chunk.indexToCoord(i);
+					dx		= coord[0] - mid;			//Calc Vector Length
+					dy		= coord[1] - mid;
+					dz		= coord[2] - mid;
+					d		= dx*dx + dy*dy + dz*dz;	//Distance Squared
+					oi		= i % chunk.xzLen;			//Offset Index
+
+					if(aryOffset[oi] == null) aryOffset[oi] = { x:coord[0], y:-1, z:coord[2] };
+
+					if( d <= mid1Sqr ) aryOffset[oi].y = coord[1] - 8; //Save a Height Map
+				}
+
+				//....................................
+				//Use data to enable/disable voxels
+				for(var i=0; i < aryOffset.length; i++){
+					//if(aryOffset[i].y == -1) continue;
+
+					//chunk.setColHeightMirror(i % xLen,
+					//	(aryOffset[i] != null)? aryOffset[i] : -1,
+					//	Math.floor(i / xLen));
+
+					chunk.setColHeightMirror(
+						aryOffset[i].x,
+						aryOffset[i].y,
+						aryOffset[i].z
+					);
+				}
+
+				return aryOffset;
+			}
+
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
 				Fungi.ready(onRender);
-				Fungi.mainCamera.setPosition(0,0.1,1).setEulerDegrees(-15,10,0);
+				Fungi.mainCamera.setPosition(0,0.5,10).setEulerDegrees(-15,10,0);
 
 				//........................................
 				//Add extra items to the scenen
-
-				var chunk = new VoxelChunk(3,1,1);
-
-
-				//var chunk = new VoxelChunk(3,3,3);
-				/*
-				chunk.set(1,1,0,0);
-				chunk.set(1,1,1,0);
-				chunk.set(1,1,2,0);
-				chunk.set(0,1,1,0);
-				chunk.set(2,1,1,0);
-				chunk.set(1,0,1,0);
-				chunk.set(1,2,1,0);
-				*/
-
-				/*
-				chunk.set(0,0,0,0);
-				chunk.set(2,0,0,0);
-				chunk.set(0,0,2,0);
-				chunk.set(2,0,2,0);
-				chunk.set(0,2,0,0);
-				chunk.set(2,2,0,0);
-				chunk.set(0,2,2,0);
-				chunk.set(2,2,2,0);
-				*/
-
-				/* Phong 
-				var voxel = new VoxelRender(chunk,"MatLowPolyPhong"); //MatVecWColor
-				Fungi.scene.push(voxel);
-				*/
-
-				/*WireFrame*/
-				var vAry = [], iAry = [];
-				VoxelRender.buildMesh(chunk,vAry,iAry);
-				Fungi.scene.push( WireFrame.fromTriangles(vAry,iAry,4) );
+				chunk = new VoxelChunk(xLen,yLen,zLen);
+				//chunk.setColHeight(0,0,15);
+				//chunk.setColHeightMirror(0,0,15);
 				
+				//createVoxelSphere();
+				aryOffset = createVoxelSphereMap();
+
+				voxel = new DynamicVoxel(chunk,"MatLowPolyPhong").chunkUpdate().setPosition(-1.6,0,-1.6);
+				Fungi.scene.push(voxel);
+
+
+				/*WireFrame
+				var vAry = [], iAry = [];
+				Voxel.buildMesh(chunk,vAry,iAry);
+				Fungi.scene.push( WireFrame.fromTriangles(vAry,iAry,4).setPosition(-1.6,0,-1.6) );
+				*/
+
 
 				//........................................
 				//Begin rendering the scene
 				Fungi.renderLoop.start();
 			}
 
-			function onRender(){ Fungi.update().render(Fungi.scene); }
 
-			class VoxelChunk{
-				constructor(x=2,y=2,z=2){
-					this.scale = 0.2;
+			var sLimit = 0;				//Time limiting the animation
+			var cntr = 0;				//Counter to move animation forward
+			var fMid = Math.floor(mid);	//Half of Chunk height, floored
+			var inc = 1;				//Counter Incremement
+			
+			function onRender(dt,ss){
+				/* */
+				if(sLimit > 0.09){ //control rate of update
+					sLimit = 0;
+					
+					//loop through offset
+					var yy;
+					for(var i=0; i < aryOffset.length; i++){
+						if(aryOffset[i].y == -1) continue; //Skip the non drawn voxels
 
-					//Overall size of the Chunk
-					this.xLen	= x;
-					this.yLen	= y;
-					this.zLen	= z;
+						//yy = triWave(cntr + aryOffset[i].y, fMid); //oscillate between 0-7
+						//yy = triWave(cntr + aryOffset[i].y + i, fMid);
 
-					//Cache max coord values to save repeating the math
-					this.xMax	= (x != 0)? x-1 : 0;
-					this.yMax	= (y != 0)? y-1 : 0;
-					this.zMax	= (z != 0)? z-1 : 0;
+						/*
+						var dx = Math.abs(aryOffset[i].x - fMid),
+							dz = Math.abs(aryOffset[i].z - fMid),
+							d = Math.floor(Math.sqrt(dx*dx + dz*dz)),
+							dd = Math.abs(Math.sin(Math.PI/2 / 8  * d));
+							//console.log(dx,dz,d,Math.abs(Math.sin(Math.PI/2 / 7  * d)));
+						yy = triWave(cntr + aryOffset[i].y * dd, fMid);
+						*/
 
-					this.xzLen 	= x * z;	//Cache value, since this is used to help calc index
-					this.xyzLen = x * y * z;
+						yy = Math.abs(Math.sin(Math.PI / 2 / 8 * (cntr + aryOffset[i].y))) * fMid;
+						//yy = Math.abs(Math.sin(Math.PI / 2 / 8 * (cntr + aryOffset[i].y))) * fMid+1;
 
-					this.cells	= new Array(this.xyzLen); //Create flat array to hold Voxel Data.
-
-					for(var i=0; i < this.cells.length; i++) this.cells[i] = 1;
-				}
-
-				coordToIndex(x,y,z){ return x + z * this.xLen + y * this.xzLen; }
-
-				set(x,y,z, v){ this.cells[ this.coordToIndex(x,y,z) ] = v; }
-
-				get(x, y, z, dir = -1){
-					//Apply Direction to get a cell next to the requested cell
-					if(dir != -1){
-						var n = VoxelChunk.FACES[dir].n;
-						x += n[0];
-						y += n[1];
-						z += n[2];
-					}
-
-					/*
-					switch(dir){
-						case VoxelChunk.NORTH:	z = Math.max(z-1, 0);			break;
-						case VoxelChunk.EAST:	x = Math.min(x+1, this.xMax);	break;
-						case VoxelChunk.SOUTH:	z = Math.min(z+1, this.zMax);	break;
-						case VoxelChunk.WEST:	x = Math.max(x-1, 0);			break;
-						case VoxelChunk.UP:		y = Math.min(y+1, this.yMax);	break;
-						case VoxelChunk.DOWN:	y = Math.max(y-1, 0);			break;
-					}
-					*/
-
-					//Validate that coords are within the bounds of the chunk
-					if( x < 0 || x > this.xMax ||
-						y < 0 || y > this.yMax ||
-						z < 0 || z > this.zMax ) return null;
-
-					//Return the cell data
-					return this.cells[ this.coordToIndex(x,y,z) ];
-				}
-			}
-			VoxelChunk.NORTH	= 0; //BACK
-			VoxelChunk.EAST		= 1; //RIGHT
-			VoxelChunk.SOUTH	= 2; //FORWARD
-			VoxelChunk.WEST		= 3; //LEFT
-			VoxelChunk.UP		= 4; //TOP
-			VoxelChunk.DOWN		= 5; //BOTTOM
-
-			VoxelChunk.COMPLEN = 4; 
-
-			VoxelChunk.UV = [0.0,0.0, 1.0,0.0, 1.0,1.0, 0.0,1.0];
-			VoxelChunk.INDEX = [0,1,2,2,3,0];
-			VoxelChunk.FACES = [ //TODO, REMOVE 4th component when no longer in need.
-				{ 	n:[0.0,0.0,-1.0], nOffset:false,
-					v:[1.0,0.0,0.0,0.0,
-					   0.0,0.0,0.0,1.0,
-					   0.0,1.0,0.0,2.0,
-					   1.0,1.0,0.0,3.0] }, //Back
-
-				{ 	n:[-1.0,0.0,0.0], nOffset:false,
-					v:[0.0,0.0,0.0,0.0,
-					   0.0,0.0,1.0,1.0,
-					   0.0,1.0,1.0,2.0,
-					   0.0,1.0,0.0,3.0] }, //Right
-
-				{ 	n:[0.0,0.0,1.0], nOffset:true,
-					v:[0.0,0.0,0.0,0.0,
-					   1.0,0.0,0.0,1.0,
-					   1.0,1.0,0.0,2.0,
-					   0.0,1.0,0.0,3.0] }, //Front
-
-				{ 	n:[1.0,0.0,0.0], nOffset:true,
-					v:[0.0,0.0,1.0,0.0,
-					   0.0,0.0,0.0,1.0,
-					   0.0,1.0,0.0,2.0,
-					   0.0,1.0,1.0,3.0] }, //Left
-
-				{ 	n:[0.0,1.0,0.0], nOffset:true,
-					v:[0.0,0.0,1.0,0.0,
-					   1.0,0.0,1.0,1.0,
-					   1.0,0.0,0.0,2.0,
-					   0.0,0.0,0.0,3.0] }, //Top
-
-				{ 	n:[0.0,-1.0,0.0], nOffset:false,
-					v:[0.0,0.0,0.0,0.0,
-					   1.0,0.0,0.0,1.0,
-					   1.0,0.0,1.0,2.0,
-					   0.0,0.0,1.0,3.0] } //Bottom
-			];
-
-
-			class VoxelRender extends Renderable{
-				constructor(vc,matName){
-					super(null,matName);
-					this.drawMode = gl.ctx.TRIANGLES; //gl.ctx.POINTS; //
-					this.useCulling = false;
-
-					this.chunk = vc;
-
-					var vAry = [], iAry = [];
-					VoxelRender.buildMesh(vc,vAry,iAry);
-
-					this.vao = VAO.standardRenderable("voxel",VoxelChunk.COMPLEN,vAry,null,null,iAry);//
-				}
-
-				//This is Static so we can build build voxels without needing a render, need to wireframing
-				static buildMesh(vc, vAry, iAry){
-					var x,y,z,node;
-					/* Two loops, using Get and coordToIndex to get cell data
-					for(z = 0; z <= this.chunk.zMax; z++){		//Loop Rows
-						for(x = 0; x <= this.chunk.xMax; x++){	//Loop Columns
-							if(this.chunk.get(x,0,z) == 1) this.appendQuad(4,x,0,z,vAry,iAry);
-						}
-					}
-					*/
-
-					/* Single Loop on the whole floor, calc x,z from index, access cell directly */
-					for(var i=0; i < vc.xyzLen; i++){
-						if(vc.cells[i] == 1){
-							x = i % vc.xLen;						//Convert Index to Voxel Coord
-							z = Math.floor(i / vc.xLen) % vc.zLen;
-							y = Math.floor(i / vc.xzLen);
-
-							//Check all 6 Neighboring cells to see if they're being drawn
-							for(var f=0; f < 6; f++){
-								var node = vc.get(x,y,z,f);
-
-
-								//if(node == 0 || node == null)
-								if(node != 1)
-									VoxelRender.appendQuad(vc,f,x,y,z,vAry,iAry);
-							}
-							
-						}
-					}
-				}
-
-
-				//Take quad template and append it to the Vertex and Index Arrays
-				static appendQuad(vc,fIdx,x,y,z,vAry,iAry){
-					var i,ii,
-						xx=0, yy=0, zz=0, 						//Translate Vertices if needed
-						idx = vAry.length / VoxelChunk.COMPLEN,	//Get vertex count, use that as a starting index value
-						v 	= VoxelChunk.FACES[fIdx].v;
-
-					//.............................................
-					//Should this face be moved from its original local position.
-					if(VoxelChunk.FACES[fIdx].nOffset){
-						xx = VoxelChunk.FACES[fIdx].n[0] * vc.scale;
-						yy = VoxelChunk.FACES[fIdx].n[1] * vc.scale;
-						zz = VoxelChunk.FACES[fIdx].n[2] * vc.scale;
-					}
-
-					//.............................................
-					//Generate Vertices
-					for(i=0; i < 4; i++){ //4 Verts per Quad
-						ii = i * VoxelChunk.COMPLEN;
-
-						vAry.push(
-							v[ii+0] * vc.scale + x * vc.scale + xx,
-							v[ii+1] * vc.scale + y * vc.scale + yy,
-							v[ii+2] * vc.scale + z * vc.scale + zz,
-							v[ii+3] //Just color Index, TODO get rid of down the line
+						chunk.setColHeightMirror(
+							aryOffset[i].x,
+							yy,
+							aryOffset[i].z
 						);
 					}
+					voxel.chunkUpdate();
+					
+					cntr -= inc;
+					if(cntr >= 14) cntr = 0; //integers have a limit, so lets reset at 14.
+				}else sLimit += dt;
+				
 
-					//.............................................
-					//Generate Triangle Indexes
-					for(i=0; i < VoxelChunk.INDEX.length; i++) iAry.push( VoxelChunk.INDEX[i] + idx );
-				}
+				Fungi.update().render(Fungi.scene);
 			}
+
+
+function triWave2(t){
+	t %= 1000;
+	if (t < 250) return t / 250;
+	if (t < 750) return -t / 250 + 2;
+	return t / 250 - 4;
+}
+
+//https://en.wikipedia.org/wiki/Triangle_wave
+//https://stackoverflow.com/questions/1073606/is-there-a-one-line-function-that-generates-a-triangle-wave
+function triWave(x,A,P){
+	if(P == undefined) P = A;
+	return (A/P) * (P - Math.abs(x % (2*P) - P) );
+}
+//for(var x = 0; x <= 14; x++){
+	//console.log(x,triWave(x,7));
+	//console.log(x,triWave(x,8,4));
+	//console.log(x,triWave(x,6,12));
+//}
 		</script>
 	</head>
 <body>
