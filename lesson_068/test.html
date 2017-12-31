@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+
+			import WireFrame	from "./fungi/util/WireFrame.js";
+			import { Voxel, VoxelChunk, VoxelRender, DynamicVoxel } from "./fungi/util/Voxel.js";
+			import {Vec3} 		from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"},
+					{type:"shader",file:"fungi/shaders/WireFrame.txt"},
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var xLen 	= 16,
+				yLen 	= 16,
+				zLen 	= 16,
+				yMax 	= yLen-1,
+				mid 	= (xLen-1) / 2,		//Mid Point, used to find the center of chunk.
+				mid1Sqr = (mid+1)*(mid+1);	//Gives best value for sphere radius that fills up the chunk.
+
+			
+			var chunk,voxel,aryOffset;
+
+			function createVoxelSphere(){
+				var idx = chunk.coordToIndex(0,8,0,0);
+
+				for(var i=idx; i < chunk.cells.length; i++){
+					var coord = chunk.indexToCoord(i);
+					var dx = coord[0] - mid,		//Calc Vector Length
+						dy = coord[1] - mid,
+						dz = coord[2] - mid,
+						d = dx*dx + dy*dy + dz*dz; //Math.sqrt(dx*dx + dy*dy + dz*dz);
+					//console.log(coord,d,mid);
+
+					//Set top Half		
+					chunk.cells[i] = (d > mid1Sqr)? 0 : 1;  //mid+1
+
+					//Figure out Index for the mirror position on the bottom half.
+						//var my = coord[1] - (Math.floor(dy)*2) - 1;
+						//chunk.cells[ chunk.coordToIndex(coord[0],my,coord[2]) ] = chunk.cells[i];
+					var ii = i - (coord[1] - (8 - (coord[1] - 8 + 1))) * chunk.xzLen;
+					chunk.cells[ ii ] = chunk.cells[i];
+				}
+			}
+
+			function createVoxelSphereMap(){
+				var coord,dx, dy, dz, d, oi,
+					aryOffset = new Array(chunk.xzLen);
+
+				aryOffset.fill(null);
+
+				//....................................
+				//Generate Height Data
+				for(var i = chunk.coordToIndex(0,8,0,0); i < chunk.cells.length; i++){
+					coord	= chunk.indexToCoord(i);
+					dx		= coord[0] - mid;			//Calc Vector Length
+					dy		= coord[1] - mid;
+					dz		= coord[2] - mid;
+					d		= dx*dx + dy*dy + dz*dz;	//Distance Squared
+					oi		= i % chunk.xzLen;			//Offset Index
+
+					if(aryOffset[oi] == null) aryOffset[oi] = { x:coord[0], y:-1, z:coord[2] };
+
+					if( d <= mid1Sqr ) aryOffset[oi].y = coord[1] - 8; //Save a Height Map
+				}
+
+				//....................................
+				//Use data to enable/disable voxels
+				for(var i=0; i < aryOffset.length; i++){
+					//if(aryOffset[i].y == -1) continue;
+
+					//chunk.setColHeightMirror(i % xLen,
+					//	(aryOffset[i] != null)? aryOffset[i] : -1,
+					//	Math.floor(i / xLen));
+
+					chunk.setColHeightMirror(
+						aryOffset[i].x,
+						aryOffset[i].y,
+						aryOffset[i].z
+					);
+				}
+
+				return aryOffset;
+			}
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				Fungi.mainCamera.setPosition(0,0.5,10).setEulerDegrees(-15,10,0);
+
+				//........................................
+				//Add extra items to the scenen
+				chunk = new VoxelChunk(xLen,yLen,zLen);
+				//chunk.setColHeight(0,0,15);
+				//chunk.setColHeightMirror(0,0,15);
+				
+				//createVoxelSphere();
+				aryOffset = createVoxelSphereMap();
+
+				voxel = new DynamicVoxel(chunk,"MatLowPolyPhong").chunkUpdate().setPosition(-1.6,0,-1.6);
+				Fungi.scene.push(voxel);
+
+
+				/*WireFrame
+				var vAry = [], iAry = [];
+				Voxel.buildMesh(chunk,vAry,iAry);
+				Fungi.scene.push( WireFrame.fromTriangles(vAry,iAry,4).setPosition(-1.6,0,-1.6) );
+				*/
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+
+			var sLimit = 0;				//Time limiting the animation
+			var cntr = 0;				//Counter to move animation forward
+			var fMid = Math.floor(mid);	//Half of Chunk height, floored
+			var inc = 1;				//Counter Incremement
+			
+			function onRender(dt,ss){
+				/* */
+				if(sLimit > 0.09){ //control rate of update
+					sLimit = 0;
+					
+					//loop through offset
+					var yy;
+					for(var i=0; i < aryOffset.length; i++){
+						if(aryOffset[i].y == -1) continue; //Skip the non drawn voxels
+
+						//yy = triWave(cntr + aryOffset[i].y, fMid); //oscillate between 0-7
+						//yy = triWave(cntr + aryOffset[i].y + i, fMid);
+
+						/*
+						var dx = Math.abs(aryOffset[i].x - fMid),
+							dz = Math.abs(aryOffset[i].z - fMid),
+							d = Math.floor(Math.sqrt(dx*dx + dz*dz)),
+							dd = Math.abs(Math.sin(Math.PI/2 / 8  * d));
+							//console.log(dx,dz,d,Math.abs(Math.sin(Math.PI/2 / 7  * d)));
+						yy = triWave(cntr + aryOffset[i].y * dd, fMid);
+						*/
+
+						yy = Math.abs(Math.sin(Math.PI / 2 / 8 * (cntr + aryOffset[i].y))) * fMid;
+						//yy = Math.abs(Math.sin(Math.PI / 2 / 8 * (cntr + aryOffset[i].y))) * fMid+1;
+
+						chunk.setColHeightMirror(
+							aryOffset[i].x,
+							yy,
+							aryOffset[i].z
+						);
+					}
+					voxel.chunkUpdate();
+					
+					cntr -= inc;
+					if(cntr >= 14) cntr = 0; //integers have a limit, so lets reset at 14.
+				}else sLimit += dt;
+				
+
+				Fungi.update().render(Fungi.scene);
+			}
+
+
+function triWave2(t){
+	t %= 1000;
+	if (t < 250) return t / 250;
+	if (t < 750) return -t / 250 + 2;
+	return t / 250 - 4;
+}
+
+//https://en.wikipedia.org/wiki/Triangle_wave
+//https://stackoverflow.com/questions/1073606/is-there-a-one-line-function-that-generates-a-triangle-wave
+function triWave(x,A,P){
+	if(P == undefined) P = A;
+	return (A/P) * (P - Math.abs(x % (2*P) - P) );
+}
+//for(var x = 0; x <= 14; x++){
+	//console.log(x,triWave(x,7));
+	//console.log(x,triWave(x,8,4));
+	//console.log(x,triWave(x,6,12));
+//}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
