@@ -209,6 +209,27 @@ class GLTFLoader{
                 { "input": 5, "interpolation": "LINEAR", "output": 8 }
             ]
         },
+	
+
+		++++++++++++++++++++++++++++++++++++++++++++++
+        Data Exported as the following structure
+		{
+			name:"",
+			items:[
+				joint1:{
+					translation:{interp,samples},
+					scale:{interp,samples},
+					rotation:{
+						interp:"LINEAR",
+						samples:[
+							{t:0.25,v:array}
+							{t:1.80,v:array}
+						]
+					}
+				}
+			]
+		}
+
 		*/
 		//............................
 
@@ -226,6 +247,7 @@ class GLTFLoader{
 
 		//Save the name
 		rtn.name = (anim[idx].name !== undefined)? anim[idx].name : "anim" + idx;
+		rtn.items = [];
 
 		//Process Channels and Samples.
 		for(var ich=0; ich < anim[idx].channels.length; ich++){
@@ -249,8 +271,8 @@ class GLTFLoader{
 			vData	= this.processAccessor(sPtr.output) //Get Value that changes per keyframe
 			//console.log(tData); console.log(vData);
 			//.......................
-			if(!rtn[nPtr.name]) joint = rtn[nPtr.name] = {};
-			else 				joint = rtn[nPtr.name];
+			if(!rtn.items[nPtr.name]) 	joint = rtn.items[nPtr.name] = {};
+			else 						joint = rtn.items[nPtr.name];
 
 			var samples = [];
 			joint[chPtr.target.path] = { interp:sPtr.interpolation, samples:samples };

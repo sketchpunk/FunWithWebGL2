@@ -23,7 +23,7 @@ class Renderable extends Transform{
 		if(isNew && this.useNormals) Mat4.normalMat3(this.normalMatrix,this.worldMatrix);
 	}
 
-	setMaterial(matName){ this.material = gl.res.getMaterial(matName); }
+	setMaterial(matName){ this.material = gl.res.getMaterial(matName); return this; }
 
 	setOptions(culling,depthTest=true){
 		this.useCulling		= culling;
