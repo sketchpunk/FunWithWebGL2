@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+	<head>
+
+	</head>
+<body>
+
+	<canvas id="canvasTex" style="border:1px solid red; box-sizing: content-box;" width="256px" height="256px"></canvas>
+
+<script type="module">
+	import Noise 		from "../extra/Noise.js";
+
+	window.addEventListener("load",function(){
+
+		var tex = new TextureCanvas("canvasTex"),
+			w = 1 / tex.width,	// Inverse value so we can do multiplication later
+			h = 1 / tex.height,
+			n,					// Noise Result
+			c,					// Color
+			s = 8;				// Scale (or Frequency) go to 5
+
+		var p = 0;
+		for(var y = 0; y < tex.height; y++){
+			for(var x = 0; x < tex.width; x++){
+				n = Noise.perlin2( x * w * s , y * h * s ); // x/w * s
+				n = Math.abs( n );
+				
+				n *= 5;
+				n -= p * 0.9;
+				//n = (n < 0.9)? 0 : 1;
+				n = smoothStep(0.75, 0.9, n);
+				//n = smoothStep(0.2, 0.9, n);
+
+				//n = 1 - n; //Invert
+
+				/* SCALE = 7
+				n *= 3;
+				n = smoothStep(0.5, 0.6, n);
+				*/
+
+				/* SCALE = 20
+				n *= 5;
+				n = smoothStep(0.4, 0.6, n);
+				*/
+				p = n;
+				c = n * 255;
+				tex.setPixel(x, y, c, c, c, 255);
+			}
+		}
+
+		tex.update();
+	});
+
+
+	function smoothStep(min,max,v){
+		var x = Math.max(0, Math.min(1, (v-min)/(max-min)));
+		return x * x * (3 - 2 * x);
+	}
+
+
+	class TextureCanvas{
+		constructor(canvasID){
+			this.canvas		= document.getElementById(canvasID);	//Get Canvas Reference...
+			this.context	= this.canvas.getContext("2d");			//Then get its context to access some bits
+			this.width		= this.canvas.width;					//Save Size for quick access.
+			this.height		= this.canvas.height;				
+
+			this.imageData	= this.context.getImageData(0,0,this.width,this.height);	//Get Image Data object
+			this.aryRGBA	= this.imageData.data;										//Then its raw RGBA Array
+		}
+
+		update(){
+			this.context.putImageData(this.imageData,0,0);
+			return this;
+		}
+
+		setPixel(x,y,r,g,b,a){
+			var idx = (y*this.width + x) * 4; //RowStart Plus Col Times RGBA component count
+			this.aryRGBA[idx]	= r;
+			this.aryRGBA[idx+1]	= g;
+			this.aryRGBA[idx+2]	= b;
+			this.aryRGBA[idx+3]	= a;
+			return this;
+		}
+
+		getPixel(x,y){
+			var idx = (y*this.width + x) * 4;
+			return [
+				this.aryRGBA[idx],
+				this.aryRGBA[idx+1],
+				this.aryRGBA[idx+2],
+				this.aryRGBA[idx+3]
+			];
+		}
+
+		download(){
+			//Force it to download, instead of view by changing the mime time.
+			var uri = this.canvas.toDataURL().replace("image/png","image/octet-stream");
+			//window.location.href = uri;
+
+			console.log(uri);
+    		return this;
+		}
+	}
+</script>
+</body>
+</html>

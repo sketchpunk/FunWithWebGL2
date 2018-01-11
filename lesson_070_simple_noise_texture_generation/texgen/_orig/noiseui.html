@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" type="text/css" href="noiseui.css">
+		<script src="perlin.js"></script>
+		<script src="noiseui.js"></script>
+	</head>
+<body>
+
+<table><tr><td valign="top" width="300px">
+
+	<span>Base Frequency : </span>
+	<label>0.035</label><input class="slider" type="range" step="0.001" min="0.01" max="1.0" value="0.035" onInput="preview(this);" onChange="updateFreq(this)"/>
+	
+	<span>Frequency Offset : </span>
+	<label>0.0</label><input class="slider" type="range" step="0.01" min="0.0" max="10" value="0.0" onInput="preview(this);" onChange="updateFreqOffset(this)"/>
+
+	<span>Aptitude : </span>
+	<label>100</label><input class="slider" type="range" step="1" min="10" max="200" value="100" onInput="preview(this);" onChange="updateAptitude(this)"/>
+
+	<span>Samples : </span>
+	<label>30</label><input class="slider" type="range" step="10" min="10" max="100" value="30" onInput="preview(this);" onChange="updateSamples(this)"/>
+
+	<span>lacunarity : </span>
+	<label>2</label><input class="slider" type="range" step="0.1" min="1" max="4" value="2" onInput="preview(this);" onChange="updateLacunarity(this)"/>
+
+	<span>persistance : </span>
+	<label>0.5</label><input class="slider" type="range" step="0.01" min="0.01" max="1" value="0.5" onInput="preview(this);" onChange="updatePersistance(this)"/>
+
+	<span>weight : </span>
+	<label>0.8</label><input class="slider" type="range" step="0.01" min="0.01" max="2.0" value="0.8" onInput="preview(this);" onChange="updateWeight(this)"/>
+
+</td><td width="310px" valign="top">
+	<b>Octave 1</b><br>
+	<canvas id="canvas00" style="border:1px solid red; width:300px; height:200px; box-sizing: content-box;"></canvas>
+	<b>Octave 2</b><br>
+	<canvas id="canvas01" style="border:1px solid red; width:300px; height:200px; box-sizing: content-box;"></canvas>
+	<b>Octave 3</b><br>
+	<canvas id="canvas02" style="border:1px solid red; width:300px; height:200px; box-sizing: content-box;"></canvas>
+</td><td valign="top">
+	<b>Final</b><br>
+	<canvas id="canvas03" style="border:1px solid red; width:300px; height:200px; box-sizing: content-box;"></canvas>
+
+	<canvas id="canvasTex" style="border:1px solid red; box-sizing: content-box;" width="100px" height="100px"></canvas>
+</td></tr></table>
+
+
+
+
+	
+<script>
+var d1,d2,d3,cf,
+	useSin = 1,
+	usePerlin = 1,
+	useRand = 1,
+	freq = 30,
+	mergeType=0;
+
+var aryWaveUI;
+var waveData;
+var perlinOct;
+
+window.addEventListener('load',() => {		
+	//d2 = new WaveData(219, 0.11, freq, new CanvasWave("canvas2")).gen(true);//.setY(0.59).setZ(0.06).gen(true);
+	noise.seed(4);
+	perlinOct = new PerlinOctaves();
+	aryWaveUI = [
+		new WaveView("canvas00"),
+		new WaveView("canvas01"),
+		new WaveView("canvas02"),
+		new WaveView("canvas03")
+	];
+
+	updateWaveUI();
+	render();
+});
+
+function updateWaveUI(){
+	waveData = perlinOct.getWaveSamples();
+	for(var i=0; i < waveData.length; i++){
+		aryWaveUI[i].drawArray(waveData[i]);
+	}
+
+	render();
+}
+
+function preview(o){ o.previousSibling.innerHTML = o.value; }
+function updateFreq(o){ perlinOct.freq = parseFloat(o.value); updateWaveUI(); }
+function updateFreqOffset(o){ perlinOct.freqOffset = parseFloat(o.value); updateWaveUI(); }
+function updateAptitude(o){ perlinOct.aptitude = parseInt(o.value); updateWaveUI(); }
+function updateSamples(o){ perlinOct.sampleCnt = parseInt(o.value); updateWaveUI(); }
+
+
+function updateLacunarity(o){ perlinOct.lacunarity = parseFloat(o.value); updateWaveUI(); }
+function updatePersistance(o){ perlinOct.persistance = parseFloat(o.value); updateWaveUI(); }
+function updateWeight(o){ perlinOct.weight = parseFloat(o.value); updateWaveUI(); }
+
+
+function render() {
+	var can = document.getElementById("canvasTex"),
+		c = can.getContext("2d"),
+		w = can.width,
+		h = can.height,
+		imgData = c.getImageData(0,0,w,h),
+		dat = imgData.data;
+
+		for(var x = 0; x < w; x++){
+			for(var y = 0; y < h; y++){
+				var ind = (y*w + x) * 4; //RowStart Plus Col Times RGBA component count
+
+				var n = perlinOct.getXY(x,y);
+				//console.log(x/w,y/h);
+				//console.log(ind);
+
+				dat[ind] = 255 * n;
+				dat[ind+1] = 255 * n;
+				dat[ind+2] = 255 * n;
+				dat[ind+3] = 255;
+			}
+		}
+ 		
+		//w = 5;
+		//h = 5;
+		//ind = (h * can.height + w) * 4;
+		//console.log(ind);
+
+		//dat[ind] = 0;
+		//dat[ind+1] = 0;
+		//dat[ind+2] = 0;
+		//dat[ind+3] = 255;
+
+		c.putImageData(imgData, 0, 0);
+
+		/*
+
+
+
+        var imageData = ctx.getImageData(0, 0, width, height),
+        	data = imageData.data;
+
+        for (var i = 0; i < width; i++) {
+            for (var j = 0; j < height; j++) {
+                var index = (i + j * width) * 4;
+                var x = 10 * (i / width), 
+                    y = 10 * (j / height),
+                    z = 0;
+                var n = noises[select.value](x, y, z),
+                	r = 255 * n,
+                    g = 255 * n,
+                    b = 255 * n;
+                data[index + 0] = r;
+                data[index + 1] = g;
+                data[index + 2] = b;
+                data[index + 3] = 255;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+        */
+	}
+
+
+</script>
+
+</body>
+</html>
