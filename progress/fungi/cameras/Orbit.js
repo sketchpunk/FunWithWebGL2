@@ -21,6 +21,17 @@ class Orbit extends Transform{
 		this.euler = new Vec3();
 	}
 
+	orthoProjection(zoom=1,near=-10,far=100){
+		var w = 1 * zoom,
+			h = gl.height / gl.width * zoom;
+
+		Mat4.ortho(this.projectionMatrix, -w, w, -h, h, near, far);
+		Mat4.invert(this.invertedProjectionMatrix, this.projectionMatrix); //Save Inverted version for Ray Casting.
+
+		gl.UBOTransform.update("matProjection",this.projectionMatrix); //Initialize The Transform UBO.
+		return this;
+	}
+
 	//Override how this transfer creates the localMatrix : Call Update, not this function in render loop.
 	updateMatrix(){
 		//Only Update the Matrix if its needed.
