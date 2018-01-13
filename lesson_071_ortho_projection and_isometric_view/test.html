@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import {Easing}		from "./fungi/util/Tween.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/Diamond.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var cube;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				Fungi.mainCamera.orthoProjection(8).setPosition(0,0,0).setEulerDegrees(-35,45,0);
+
+				//........................................
+				//Add extra items to the scenen
+				//cube = FacedCube("MatDiamond").setPosition(0,0.5,0);
+				//Fungi.scene.push(cube);
+
+				cube = new FancyCubes();
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(dt,ss){
+				//animateCubes(dt);
+				cube.update(dt);
+				Fungi.update().render(Fungi.scene);
+			}
+
+
+
+			var t = 0;
+			var halfPI = Math.PI / 2;
+
+			var animDelay = 0;
+			var animStart = 1;
+			var animState = 0;
+			var animStateMax = 2;
+			var animSpeed = 1.1;
+
+			var axisState = 0;
+			var axisList = [ [0,1,0], [1,0,0], [0,0,1] ];
+			var axis = axisList[ axisState ];
+
+
+			function animateCubes(dt){
+				if(animDelay > animStart){
+					t = Math.min( t + animSpeed * dt , 1 ); //Move Time forward, not let it over a value of 1.
+
+					//What animation state are 
+					switch(animState){
+						//............................................
+						case 0: //Scale Down
+							var s = 1 - 0.4 * Easing.cubic_Out(t)
+							cube.setScale(s,s,s);
+						break;
+						
+						//............................................
+						case 1: //Rotate
+							cube.rotation.setAxisAngle(axis, Easing.cubic_Out(t) * halfPI );
+							if(t == 1) axis = axisList [ ++axisState % 3 ]; //When done animating an axis, switch to the next
+						break;
+						
+						//............................................
+						case 2: //Scale Up
+							var s = 0.6 + 0.4 * Easing.cubic_Out(t);
+							cube.setScale(s,s,s);
+						break;
+					}
+
+					//Are we done with an animation state
+					if(t >= 1){
+						t = 0;	//reset time
+
+						//If all out of states, reset the whole thing.
+						if(animState++ > animStateMax){ 
+							animDelay = 0;
+							animState = 0;
+						}
+					}
+					//console.log(t);
+				}else animDelay += dt;
+			}
+
+			class FancyCubes{
+				constructor(){
+					this.cubes = [];
+
+					this.t = 0;
+					this.halfPI = Math.PI / 2;
+
+					this.animDelay = 0;
+					this.animStart = 0.1;
+					this.animState = 0;
+					this.animStateMax = 2;
+					this.animSpeed = 1.9;
+
+					this.axisState = 0;
+					this.axisList = [ [0,1,0], [1,0,0], [0,0,1] ];
+					this.axis = this.axisList[ this.axisState ];
+
+					this.buildCubes();
+				}
+
+				buildCubes(){
+					var pos = [
+						[0,0.5,0,0],
+						[-1,0.5,0,1],
+						//[-1,0.5,-1,0],
+						[0,0.5,-1,1],
+
+						[-1,1.5,-1,1],
+						[0,1.5,-1,0],
+						[0,1.5,0,1],
+						[-1,1.5,0,0],
+					];
+
+					var cube;
+					for(var i = 0; i < pos.length; i++){
+						cube = FacedCube("MatDiamond")
+							.setPosition( pos[i][0], pos[i][1], pos[i][2] )
+							.setMaterial( (pos[i][3] == 0)? "MatDiamond" : "MatDiamondInv" );
+						this.cubes.push(cube);
+						Fungi.scene.push(cube);						
+					}
+				}
+
+  				isEven(n){ n = Number(n); return n === 0 || !!(n && !(n%2)); }
+
+				update(dt){
+					if(this.animDelay > this.animStart){
+						var t = Math.min( this.t + this.animSpeed * dt , 1);//Move Time forward, not let it over a value of 1.
+
+						//What animation state are 
+						switch(this.animState){
+							//............................................
+							case 0: //Scale Down
+								var s = 1 - 0.3 * Easing.cubic_Out(t);
+								this.cubes.forEach( (v,i,ary)=>v.setScale(s,s,s) );
+							break;
+							
+							//............................................
+							case 1: //Rotate
+
+								this.cubes.forEach( (v,i,ary)=>
+									v.rotation.setAxisAngle(this.axis, 
+										Easing.cubic_Out(t) * this.halfPI * ((this.isEven(i))? 1 : -1)
+									)
+								);
+
+								if(t == 1) this.axis = this.axisList [ ++this.axisState % 3 ]; //When done animating an axis, switch to the next
+							break;
+							
+							//............................................
+							case 2: //Scale Up
+								var s = 0.7 + 0.3 * Easing.cubic_Out(t);
+								this.cubes.forEach( (v,i,ary)=>v.setScale(s,s,s) );
+							break;
+						}
+
+						//Are we done with an animation state
+						if(t >= 1){
+							t = 0;	//reset time
+
+							//If all out of states, reset the whole thing.
+							if(this.animState++ > this.animStateMax){ 
+								this.animDelay = 0;
+								this.animState = 0;
+							}
+						}
+
+						this.t = t;
+					}else this.animDelay += dt;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
