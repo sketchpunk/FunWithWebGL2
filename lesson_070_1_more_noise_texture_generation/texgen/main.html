@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+	<head>
+
+	</head>
+<body>
+
+	<canvas id="canvasTex" style="border:0px solid red; box-sizing: content-box;" width="126px" height="126px"></canvas>
+
+<script type="module">
+	import Noise 		from "../extra/Noise.js";
+	import {Easing} 	from "../fungi/util/Tween.js";
+
+	window.addEventListener("load",function(){
+		tex001();
+	});
+
+
+	function tex001(){
+		var tex = new TextureCanvas("canvasTex"),
+			//w = 1 / tex.width,	// Inverse value so we can do multiplication later
+			//h = 1 / tex.height,
+			n,					// Noise Result
+			c;					// Color
+			//s = 7;				// Scale (or Frequency) go to 5 
+
+		var nData = new NoiseData(Noise.perlin2)
+						.setFreq(1 / tex.width,1 / tex.height)
+						.setAptitude(7);
+		//Noise.seed(2);
+
+		for(var y = 0; y < tex.height; y++){
+			for(var x = 0; x < tex.width; x++){
+				//n = Noise.perlin2( x * w * s , y * h * s );
+				n = nData.get(x,y);
+				//console.log(n);
+
+				//n = nData.get(x,x);
+				//n = nData.get(x,x+x*10);
+				//n = nData.get(x,x+y*10);
+				//n = nData.get(x,Math.sin(y*50)*1.5);
+
+				//n = Math.abs( n );
+				n = n * 0.5 + 0.5; //Shift wavelength into 0-1 range
+				
+				//n = Easing.elastic_Out(n);
+				n = Easing.bounce_Out(n); //try with abs and shift
+				//n = Easing.circ_Out(n);
+
+				//n *= 0.9;
+				//n = (n < 0.5)? 0 : 1;
+				//n = smoothStep(0.5, 0.6, n);
+				//n = smoothStep(0.2, 0.9, n);
+
+				//n = 1 - n; //Invert
+
+				/* SCALE = 7
+				n *= 3;
+				n = smoothStep(0.5, 0.6, n);
+				*/
+
+				/* SCALE = 20
+				n *= 5;
+				n = smoothStep(0.4, 0.6, n);
+				*/
+
+				c = n * 255;
+				tex.setPixel(x, y, c, c, c, 255);
+			}
+		}
+
+		tex.update();
+	}
+
+	function tex002(){
+		var n,c;
+		var tex = new TextureCanvas("canvasTex");
+		var nData = new NoiseData(Noise.perlin2,3); //simplex2 //perlin2
+						//.setFreq(1 / tex.width,1 / tex.height)
+						//.setAptitude(1.8);
+
+		for(var y = 0; y < tex.height; y++){
+			for(var x = 0; x < tex.width; x++){
+				//n = nData.get(x,y);
+				//n = nData.getOctave(x,y);
+				n = nData.getOctave2(x,y);
+
+				//n = Math.abs( n );
+				//n = n * 0.5 + 0.5;	
+				//n *= 1.2;	
+				//n = smoothStep(0.9,0.95,n);
+
+				c = n * 255;
+				tex.setPixel(x, y, c, c, c, 255);
+			}
+		}
+
+		tex.update();
+	}
+
+	function tex003(){
+		var tex = new TextureCanvas("canvasTex");
+		var nData = new NoiseData(Noise.perlin2,2); //simplex2 //perlin2
+		var ary = nData.getOctave3(tex.width,tex.height); 
+		//var ary = nData.getOctave3(tex.width,tex.height, 4, 0.4, 2.3, .03);
+		var c,n;
+
+		for(var y = 0; y < tex.height; y++){
+			for(var x = 0; x < tex.width; x++){
+				n = ary[y][x];
+
+				//n = smoothStep(0.53,0.55,n);
+				if( n >= 0.4 && n <= 0.6 ) n = 0; //smoothStep(0.6,0.4,n);
+
+				c = n * 255;
+				tex.setPixel(x, y, c, c, c, 255);
+			}
+		}
+
+		tex.update();
+	}
+
+	function tex004(){
+		var tex = new TextureCanvas("canvasTex");
+
+		var d = 6,				//Divide up the texture area into a grid of 6x6 pixel cells
+			w = tex.width / d,	
+			h = tex.height / d;
+
+		var nData = new NoiseData(Noise.perlin2,2); //simplex2 //perlin2
+		var ary = nData.getOctave3(w,h);  //Get a smaller set of data based on the grid
+		//var ary = nData.getOctave3(tex.width,tex.height, 4, 0.4, 2.3, .03);
+		//var ary = nData.getOctave3(tex.width,tex.height, 6, 0.5, 3.3, .1);
+
+		var c,n,chk=0;
+		var chkStart = 0;
+		var yy,xx;
+
+		for(var y = 0; y < tex.height; y++){ //
+			//if(y % 6 == 0) chkStart = ++chkStart % 2;
+			//chk = chkStart;
+
+			yy = Math.floor(y / d);
+
+			for(var x = 0; x < tex.width; x++){
+				//if(x % 6 == 0) chk = ++chk % 2;
+				//c = chk * 255;
+
+				xx = Math.floor(x / d);
+				n = ary[yy][xx];
+				c = n * 255;
+
+				//tex.setPixel(x, y, c, c, c, 255);
+				tex.setPalette(x, y, n, [0.5, 0.5, 0.5],[0.5, 0.5, 0.5],[1.0, 0.7, 0.4],[0.00, 0.15, 0.20]);
+			}
+		}
+
+		tex.update();
+	}
+
+	function smoothStep(min,max,v){
+		var x = Math.max(0, Math.min(1, (v-min)/(max-min)));
+		return x * x * (3 - 2 * x);
+	}
+
+
+	class TextureCanvas{
+		constructor(canvasID){
+			this.canvas		= document.getElementById(canvasID);	//Get Canvas Reference...
+			this.context	= this.canvas.getContext("2d");			//Then get its context to access some bits
+			this.width		= this.canvas.width;					//Save Size for quick access.
+			this.height		= this.canvas.height;				
+
+			this.imageData	= this.context.getImageData(0,0,this.width,this.height);	//Get Image Data object
+			this.aryRGBA	= this.imageData.data;										//Then its raw RGBA Array
+		}
+
+		update(){
+			this.context.putImageData(this.imageData,0,0);
+			return this;
+		}
+
+		setPixel(x,y,r,g,b,a){
+			var idx = (y*this.width + x) * 4; //RowStart Plus Col Times RGBA component count
+			this.aryRGBA[idx]	= r;
+			this.aryRGBA[idx+1]	= g;
+			this.aryRGBA[idx+2]	= b;
+			this.aryRGBA[idx+3]	= a;
+			return this;
+		}
+
+		//http://iquilezles.org/www/articles/palettes/palettes.htm
+		//vec3 palette( in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d ){
+    	//return a + b*cos( 6.28318*(c*t+d) );
+		setPalette(x, y, t, a, b, c, d){
+			var idx = (y*this.width + x) * 4; //RowStart Plus Col Times RGBA component count
+			this.aryRGBA[idx]	= ( a[0] + b[0] * Math.cos( 6.28318 * ( c[0] * t + d[0]) ) ) * 255;
+			this.aryRGBA[idx+1]	= ( a[1] + b[1] * Math.cos( 6.28318 * ( c[1] * t + d[1]) ) ) * 255;
+			this.aryRGBA[idx+2]	= ( a[2] + b[2] * Math.cos( 6.28318 * ( c[2] * t + d[2]) ) ) * 255;
+			this.aryRGBA[idx+3]	= 255;
+		}
+
+
+
+
+		getPixel(x,y){
+			var idx = (y*this.width + x) * 4;
+			return [
+				this.aryRGBA[idx],
+				this.aryRGBA[idx+1],
+				this.aryRGBA[idx+2],
+				this.aryRGBA[idx+3]
+			];
+		}
+
+		download(){
+			//Force it to download, instead of view by changing the mime time.
+			var uri = this.canvas.toDataURL().replace("image/png","image/octet-stream");
+			//window.location.href = uri;
+
+			console.log(uri);
+    		return this;
+		}
+	}
+
+	/*[[[ NOTES ]]]
+		.lacunarity : Control how freq gets increased per octave, should be a value >= 1
+		.persistance : Control How aptitude decreases per octave, should be a value <= 1
+	*/
+	class NoiseData{
+		constructor(nfunc,dim = 2){
+			this.nFunc		= nfunc;	//Noise function to use.
+			this.nSeed		= 0;		//TODO Noise Functions need to hold a different seed per instance, right now its global
+
+			this.nDim		= new Array(dim);
+			this.nDimNum	= new Array(dim);
+			for(var i=0; i < dim; i++) this.nDim[i] = { freq:1, offset:0, aptitude:1 };
+
+			/*[[[ NOTES ]]]
+				.freq : How to increment when stepping through the noise functions.
+				.offset : Starting point of a dimension. Instead of starting at 0, start at 2 for example.
+				.aptitude : scale the dimension value before passing it to the noise function. (Like zooming in/out)
+			*/
+		}
+
+		get(){
+			//Calc the value for each dimension then cache in array to send to noise function.
+			for(var i=0; i < arguments.length; i++){
+				this.nDimNum[i] = arguments[i] * this.nDim[i].freq * this.nDim[i].aptitude;
+			}
+			return this.nFunc.apply(null, this.nDimNum);
+		}
+
+		getOctave(x, y, oct=3, persistance=0.5, lacunarity=1.6, freq=0.1){
+			var tNoise	= 0, //freq 0.035,
+				tAmp	= 0,
+				amp		= 1;
+
+			for(var i=0; i < oct; i++){
+				tNoise	+= this.nFunc(x * freq, y * freq) * amp;
+				tAmp	+= amp;
+				amp		*= persistance;	//Decrease Amp , This is the weighted noise, less influence
+				freq	*= lacunarity;	//Increase Freq, zooming out.
+			}
+
+			return tNoise / tAmp;
+		}
+
+		getOctave2(x, y, oct=3, persistance=0.5, lacunarity=1.6, freq=0.1){
+			var n,
+				lac,
+				nTotal = 0,
+				nMax = -1000,
+				nMin = 1000;
+
+			//var weight = 0.5;
+
+			for(var o=0; o < oct; o++){
+				lac = Math.pow(lacunarity,o);
+				n = this.nFunc(x * freq * lac, y * freq * lac) * Math.pow(persistance,o);
+				//n *= Math.pow(weight,o);
+
+				if(n < nMin) nMin = n;
+				if(n > nMax) nMax = n;
+
+				nTotal += n;
+			}
+
+			//nTotal /= oct;
+			return (nTotal - nMin) / (nMax - nMin);
+		}
+
+		getOctave3(xx, yy, oct=3, persistance=0.5, lacunarity=1.6, freq=0.1){
+			var n, f, a, nMax = -1000, nMin = 1000;
+			
+			var ary = new Array(yy);
+			for(var y=0; y < yy; y++){
+				ary[y] = new Array(xx);
+
+				for(var x=0; x < xx; x++){
+					n = 0;		//noise
+					a = 1;		//amptitude
+					f = freq;	//frequency
+					
+					//Create Octave Noise Value
+					for(var o=0; o < oct; o++){
+						n += this.nFunc(x * f, y * f) * a;
+						a *= persistance;	//Decrease Amp
+						f *= lacunarity;	//Increase Freq
+					}
+
+					//Keep track of Min/Max to normalize data later.
+					if(n < nMin) nMin = n;
+					if(n > nMax) nMax = n;
+
+					//Save Octive Noise Value
+					ary[y][x] = n;
+				}
+			}
+
+			//Normalize Data : (n - nMin) / (nMax - nMin)
+			var rng = (nMax - nMin); //Range
+			for(var y=0; y < yy; y++){
+				for(var x=0; x < xx; x++) ary[y][x] = ( ary[y][x] - nMin ) / rng;
+			}
+			return ary;
+		}
+
+		//======================================================
+		setFreq(){		return this.set(arguments,"freq"); }
+		setAptitude(){	return this.set(arguments,"aptitude"); }
+		set(ary,prop){
+			if(ary.length == 1) for(var i=0; i < this.nDim.length; i++)		this.nDim[i][prop] = ary[0];
+			else 				for(var i=0; i < ary.length; i++)			this.nDim[i][prop] = ary[i];
+			return this;
+		}
+	}
+</script>
+</body>
+</html>
