@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl, { VAO } 		from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Renderable	from "./fungi/entities/Renderable.js";
+			import { Quat,Vec3 }	from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init(3);	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},					
+					{type:"shader",file:"shader.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,7);
+
+				//........................................
+				//step001();
+				//step002();
+				step003();
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function step001(){
+				var shape = [
+					0.0,-0.2, 0.2,
+					0.0,-0.2,-0.2,
+					0, 0.2,-0.2,
+					0, 0.2, 0.2
+				];
+
+				var rad = Math.PI/4;
+				var center = [0,0,0];
+				var norm = [0,0,0];
+
+				//Move and Rotate Quad and Center Point
+				//RawVerts.rotate(shape,"x",rad);
+				RawVerts.translate(shape,[0,0,1]);
+				RawVerts.rotate(shape,"y",rad);
+
+				//Find Center Point
+				RawVerts.centroid(shape,center);
+				shape.push( center[0], center[1], center[2] );
+
+				//Determine Direction
+				RawVerts.quadNormal(shape,norm);
+				Fungi.debugLine.addVecLine([0,0,0],0, norm,0);
+				console.log(norm);
+
+				makeRenderable(shape);
+			}
+
+			function step002(){
+				var shape = [
+					0.0,-0.2, 0.2,
+					0.0,-0.2,-0.2,
+					0, 0.2,-0.2,
+					0, 0.2, 0.2
+				];
+
+				//====================================================
+
+				var steps = 3;
+				var iRad = Math.PI * 2 / steps;
+				var a;
+				var segments = [];
+
+				for(var i=0; i < steps; i++){
+					a = shape.slice(0); // Copy the shape
+
+					//Modify the shape
+					//RawVerts.rotate(a, "x", i * iRad); 		//Rotate on X, helps make it a mobus strip
+					RawVerts.translate(a, [0,0,1]);		//Move it away from origin...
+					RawVerts.rotate(a, "y", i * iRad);		//Now rotate it into position to form a circle shape
+
+					segments.push(...a);
+				}
+				makeRenderable(segments,3);
+			}
+
+
+			function step003(){
+				var shape = [
+					0.3,-0.2, 0.2,
+					0.3,-0.2,-0.2,
+					0, 0.2,-0.2,
+					0, 0.2, 0.2
+				];
+
+				//====================================================
+
+				var steps = 30;
+				var iRad = Math.PI * 2 / steps;
+				var a;
+				var segments = [];
+
+				for(var i=0; i < steps; i++){
+					a = shape.slice(0); // Copy the shape
+
+					//Modify the shape
+					RawVerts.rotate(a, "x", i * iRad); 		//Rotate on X, helps make it a mobus strip
+					RawVerts.translate(a, [0,0,0.6]);		//Move it away from origin...
+					RawVerts.rotate(a, "y", i * iRad);		//Now rotate it into position to form a circle shape
+
+					//Save it as a segment in the tube
+					var seg = [ a.slice(0,3), a.slice(3,6), a.slice(6,9), a.slice(9,12) ];
+
+					//Find Center point for the shape
+					seg.pCenter = [];
+					RawVerts.centroid(a,seg.pCenter);
+
+					//Find the forward direction is, need it as a rotation axis.
+					seg.pDir = [];
+					RawVerts.quadNormal(a,seg.pDir);
+
+					segments.push(seg);
+				}
+
+				//====================================================
+				//GO THROUGH EACH SEGMENT AND CONNECT THEM UP AS QUADs / TRIANGLES
+				var aVert = []; //All the triangle Vertices
+				var aCent = [];	//All the center points of each segment, used to move back to origin.
+				var aDir = []; 	//Direction segment is facing, uses as a rotation axis.
+				var aUV = [];	//UV for each vertex 
+
+				var pquad = [1,2,3,3,0,1]; //[0,1,2,2,3,0]; //Quad Order, want it dynamic for reasons
+				var quad = [ {s:null,i:0} , {s:null,i:0} , {s:null,i:0} , {s:null,i:0} ]; //Keep Track which segment and vert accessing
+
+
+				//Walk up the tube, two segments at a time, 0-1, 1-2, 2-3, etc
+				for(var i=0; i < segments.length; i++){
+					var ii = (i+1) % segments.length; //next I
+					var s1 = segments[i];
+					var s2 = segments[ii];
+
+					//With segment chunk, Loop around to form the walls by connecting quads
+					for(var p=0; p < s1.length; p++){
+						var pp = (p+1) % s1.length;
+
+						//Define the 4 points of a quad, Which segment it belongs to and index.
+						//Knowing its segment means we can pull the relative vertex data for the
+						//vertice easily. Overall, not happy with the data structure but it works.
+						quad[0].s = s1;
+						quad[0].i = p;
+						
+						quad[1].s = s1;
+						quad[1].i = pp;
+
+						quad[2].s = s2;
+						quad[2].i = pp;
+						
+						quad[3].s = s2;
+						quad[3].i = p;
+
+						//Quith a quad defined, break apart as two triangles
+						//Then save vertex date for each vertex of the triangle
+						for(var x=0; x < pquad.length; x++){
+							var q =  quad[ pquad[x] ];
+							aVert.push( ...q.s[ q.i ] );
+							aCent.push( ...q.s.pCenter );
+							aDir.push( ...q.s.pDir );
+						}
+						aUV.push(0,0, 1,0, 1,1, 1,1, 0,1, 0,0);
+					}
+				}
+
+				//====================================================
+				makeRenderable(aVert,3,null,aCent,aDir,aUV);
+			}
+
+
+
+			function makeRenderable(aryVert,compLen=3,aryIdx = null,aryCent=null,aryDir=null,aryUV=null){
+				//..................................................
+				//Create Buffers
+				var vao = VAO.create();
+				VAO.floatArrayBuffer(vao,"bVertices",aryVert,0,compLen);
+
+				if(aryIdx != null)	VAO.indexBuffer(vao,"bIndex",aryIdx);
+				if(aryDir != null)	VAO.floatArrayBuffer(vao,"bDir",aryDir,1,3);
+				if(aryCent != null)	VAO.floatArrayBuffer(vao,"bCenter",aryCent,2);
+				if(aryUV != null)	VAO.floatArrayBuffer(vao,"bUV",aryUV,3,2);
+
+				VAO.finalize(vao,"test");
+				//console.log(vao);
+				//..................................................
+				//Create Renderable from Buffer Data
+				var r = new Renderable(vao,"Shader"); //MatVecWColor Shader MatWireFrame MatLowPolyPhong
+				//r.useCulling = false;
+				r.drawMode = gl.ctx.TRIANGLES; //.POINTS;  TRIANGLE_STRIP TRIANGLES
+				r.position.y = 0.5;
+				Fungi.scene.push(r);
+			}
+
+
+			class RawVerts{
+				static quadNormal(ary,out,compLen=3){
+					var i0 = 0,
+						i1 = compLen,
+						i2 = compLen * 2,
+						// PB = P0 - P1
+						bx = ary[i0]	- ary[i1],
+						by = ary[i0+1]	- ary[i1+1],
+						bz = ary[i0+2]	- ary[i1+2],
+						// PA = P2 - P1
+						ax = ary[i2]	- ary[i1],
+						ay = ary[i2+1]	- ary[i1+1],
+						az = ary[i2+2]	- ary[i1+2];
+
+					//cross(PA,PB)
+					out[0] = ay * bz - az * by;
+					out[1] = az * bx - ax * bz;
+					out[2] = ax * by - ay * bx;
+
+					//normalize
+					var mag = 1 / Math.sqrt( out[0]*out[0] + out[1]*out[1] + out[2]*out[2] );
+					out[0] *= mag;
+					out[1] *= mag;
+					out[2] *= mag;
+				}
+
+				static centroid(ary,out,compLen=3){
+					out[0] = 0; out[1] = 0; out[2] = 0;
+					for(var i=0; i < ary.length; i+=compLen){
+						out[0] += ary[i];
+						out[1] += ary[i+1];
+						out[2] += ary[i+2];
+					}
+
+					var cnt = 1 / (ary.length / compLen);
+					out[0] *= cnt;
+					out[1] *= cnt;
+					out[2] *= cnt;
+				}
+
+				static translate(ary, dir){
+					var dirLen = dir.length;
+					for(var i=0; i < ary.length; i++) ary[i] += dir[i%dirLen];
+				}
+
+				//https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm
+				static rotate(ary, axis, rad, compLen=3){
+					var sin = Math.sin(rad),
+						cos = Math.cos(rad),
+						x,y,z;
+
+					for(var i=0; i < ary.length; i+=compLen){
+						x = ary[i];
+						y = ary[i+1];
+						z = ary[i+2];
+
+						switch(axis){
+							case "y": //..........................
+								ary[i]		= z*sin + x*cos; //x
+								ary[i+2]	= z*cos - x*sin; //z
+							break;
+							case "x": //..........................
+								ary[i+1]	= y*cos - z*sin; //y
+								ary[i+2]	= y*sin + z*cos; //z
+							break;
+							case "z": //..........................
+								ary[i]		= x*cos - y*sin; //x
+								ary[i+1]	= x*sin + y*cos; //y
+							break;
+						}
+					}
+				}
+
+				//Rotate a Vector3 by a Quaternion
+				static qrotate(ary, q, compLen=3){
+					// Port GLSL Quat Vector Rotation code into JS.
+					// vec3 pos = v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v); 
+					var q2x = q[0] * 2.0,	// 2.0 * Qr.xyz :: cach since its reusable
+						q2y = q[1] * 2.0, 
+						q2z = q[2] * 2.0,
+						cx,cy,cz,			// first set of cross product
+						vx,vy,vz;			// copy over vec3
+
+					for(var i=0; i < ary.length; i += compLen){
+						vx = ary[i];
+						vy = ary[i+1];
+						vz = ary[i+2];
+
+						// cross(Qr.xyz, v) + (Qr.w * v)
+						cx = ( q[1] * vz - q[2] * vy ) + ( q[3] * vx );
+						cy = ( q[2] * vx - q[0] * vz ) + ( q[3] * vy );
+						cz = ( q[0] * vy - q[1] * vx ) + ( q[3] * vz );
+
+						// v + cross( q2xyz , cxyz );
+						ary[i]		+= ( q2y * cz - q2z * cy );
+						ary[i+1]	+= ( q2z * cx - q2x * cz );
+						ary[i+2]	+= ( q2x * cy - q2y * cx );
+					}
+				}
+
+				//Rotate a Vector3 by a an axis direction and angle (creates a Quaternion)
+				static arotate(ary, axis, rad, compLen=3){
+					//Create Quaternion
+					var rHalf	= rad * .5,
+						s		= Math.sin(rHalf),
+						qx		= axis[0] * s,
+						qy		= axis[1] * s,
+						qz		= axis[2] * s,
+						qw		= Math.cos(rHalf);
+
+					// Port GLSL Quat Vector Rotation code into JS.
+					// vec3 pos = v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v); 
+					var q2x = qx * 2.0,	// 2.0 * Qr.xyz :: cach since its reusable
+						q2y = qy * 2.0, 
+						q2z = qz * 2.0,
+						cx,cy,cz,			// first set of cross product
+						vx,vy,vz;			// copy over vec3
+
+					for(var i=0; i < ary.length; i += compLen){
+						vx = ary[i];
+						vy = ary[i+1];
+						vz = ary[i+2];
+
+						// cross(Qr.xyz, v) + (Qr.w * v)
+						cx = ( qy * vz - qz * vy ) + ( qw * vx );
+						cy = ( qz * vx - qx * vz ) + ( qw * vy );
+						cz = ( qx * vy - qy * vx ) + ( qw * vz );
+
+						// v + cross( q2xyz , cxyz );
+						ary[i]		+= ( q2y * cz - q2z * cy );
+						ary[i+1]	+= ( q2z * cx - q2x * cz );
+						ary[i+2]	+= ( q2x * cy - q2y * cx );
+					}
+				}
+
+
+				static lathe(pathAry,steps,rotAxis,outVert){
+					var len 	= pathAry.length,		//Length of Vertices array
+						origin	= Math.PI/-2,			//Starting Rotation Angle
+						inc		= (Math.PI*2) / steps,	//360 divided in increments
+						rad		= 0,					//Rotation Angle in radians
+						sin,cos,						//Trig values of the radian angle
+						x,z,y,							//Pre Rotation Values
+						rx,ry,rz,						//New Rotation Values
+						v;								//Index of the vert array
+
+					//Loop through how many divisions we're making
+					for(var i=0; i < steps; i++){
+						rad = origin + (inc*i);
+						cos = Math.cos(rad);
+						sin = Math.sin(rad);
+
+						//Now rotate all the verts in the path to the new angle
+						//then add it to our final vert array.
+						for(v = 0; v < len; v+=3){
+							x = pathAry[v];
+							y = pathAry[v+1];
+							z = pathAry[v+2];
+
+							switch(rotAxis){ // https://www.siggraph.org/education/materials/HyperGraph/modeling/mod_tran/3drota.htm#Y-Axis%20Rotation
+								case "y": ry = y; rx = z*sin + x*cos; rz = z*cos - x*sin; break;
+								case "x": rx = x; ry = y*cos - z*sin; rz = y*sin + z*cos; break;
+								case "z": rz = z; rx = x*cos - y*sin; ry = x*sin + y*cos; break;
+							}
+							outVert.push(rx,ry,rz);
+						}
+					}
+				}
+
+				static triangleStrip(indAry,rLen,cLen,isLoop=false,doClose=false){ 
+					// isLoop :: ties the left to the right
+					// doClose :: is for paths that are closed shapes like a square
+					var iLen = (rLen-1) * cLen,		//How many indexes do we need
+						iEnd = (cLen*(rLen-1))-1,	//What the final index for triangle strip
+						iCol = cLen - 1,			//Index of Last col
+						posA = 0,					//Top Index
+						posB = posA + cLen,			//Bottom Index
+						c = 0;						//Current Column : 0 to iCol
+
+					for(var i=0; i < iLen; i++){
+						c = i % cLen;
+						indAry.push(posA+c,posB+c);
+
+						//Create degenerate triangles, The last then the first index of the current bottom row.
+						if(c == iCol){
+							if(i == iEnd && isLoop == true){
+								if(doClose == true) indAry.push(posA,posB);
+								indAry.push(posB+cLen-1,posB);
+								iLen += cLen; //Make loop go overtime for one more row that connects the final row to the first.
+								posA += cLen;
+								posB = 0;
+							}else if(i >= iEnd && doClose == true){
+								indAry.push(posA,posB);
+							}else if(i < iEnd){ //if not the end, then skip to next row
+								if(doClose == true) indAry.push(posA,posB);
+								indAry.push(posB+cLen-1, posB);
+								posA += cLen;
+								posB += cLen;
+							}
+						}
+					}
+				}
+
+				//Used mostly to wireframe a mesh that is setup in a traingle strip pattern.
+				static triangulateTriStrip(aVert,aIndex,out){ 
+					//console.log(aIndex);
+					var j,p,bi,qi,skip,
+						ind = [0,0,0,0];
+					for(var i=0; i < aIndex.length-2; i+=2){
+						if(aIndex[i+1] == aIndex[i+2]) continue; //Skip degenerate triangles
+						
+						//console.log("xxxx",aIndex[i],aIndex[i+1],aIndex[i+2],aIndex[i+3]);
+
+						//Tri-Strip has a upside down N like shape, swop 2 & 3 to make it a square shape
+						ind[0] = aIndex[i];
+						ind[1] = aIndex[i+1];
+						ind[3] = aIndex[i+2];
+						ind[2] = aIndex[i+3];
+						skip = false;			//Reset skip var
+						bi = 0;					//Reset barycentric index
+
+						//loop quat pattern 0,1,2 - 2,3,0
+						for(j=0; j <= 4; j++){		//Loop quad path
+							if(j == 3 && !skip){	//Begin Second Triangle
+								skip = true;
+								bi = 0;
+								j--;
+							}
+
+							qi = (j!=4)?j:0;		//What quad index are we on.
+							p = ind[qi]*3;			//Get starting index of float vertice.
+
+							//console.log(qi,p);
+							//console.log(aVert[p],aVert[p+1],aVert[p+2]);
+							out.push(aVert[p],aVert[p+1],aVert[p+2],bi);
+							//var p = (i + j) * 3
+							bi++;
+						}
+						//console.log(aIndex[i],aIndex[i+1],aIndex[i+3],aIndex[i+2]);
+					}
+				}
+
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

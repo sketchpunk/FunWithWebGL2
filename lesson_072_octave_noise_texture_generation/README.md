@@ -1,6 +1,6 @@
 # Fun with WebGL 2.0 - 072 - Octave Noise Texture Generation
 **Description**:
-We continue doing more texture generation by making our noise function go threw different octaves, which is taking samples at different resolutions and combinding it together in one form or another. We explore different methods and see the texture results.
+We continue doing more texture generation by making our noise function go threw different octaves, which is taking samples at different resolutions and combining it together in one form or another. We explore different methods and see the texture results.
 
 ### Links of Interest
 http://iquilezles.org/www/articles/palettes/palettes.htm

@@ -1,0 +1,100 @@
+<shader>
+{
+	"name":"Shader",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uColorAry","vec3"]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"Shader", "uniforms":[ "uColorAry", "color", ["ff0000","00ff00","0000ff","555555","999999","dddddd","000000","ff7f7f"] ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_dir;
+	layout(location=2) in vec3 a_center;
+	layout(location=3) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform vec3 uColorAry[20];
+
+	out vec3 oColor;
+	out vec2 oUV;
+	//out float oC;
+
+	#define PI		3.141592653589793
+	#define PI_2	6.283185307179586
+	//#define PI_H	1.5707963267948966
+	//#define PI_Q	0.7853981633974483
+
+	vec4 quatAxis(vec3 axis, float rad){
+		float hRad = rad * .5;
+		return vec4( axis * sin(hRad), cos(hRad) );
+	}
+
+	//Quaternion rotation of a vector
+	vec3 qrotate(vec4 q, vec3 v){ return v + cross(2.0 * q.xyz, cross(q.xyz, v) + q.w * v); }
+	//http://tobyschachman.com/Shadershop/
+	//http://www.cdglabs.org/Shadershop/
+
+	void main(void){
+		gl_PointSize = 10.0;
+		
+		//.......................
+		oColor = uColorAry[ int(a_position.w) ];
+		oUV = a_uv;
+
+		//.......................
+		//Rotate Vertex on on a specific direction axis
+		vec3 pos =	a_position.xyz;
+		pos -=		a_center; //Move Vertex back to origin
+		pos =		qrotate( quatAxis(a_dir, fract(fTime * 0.0002) * PI_2 ), pos); //Rotate
+		pos +=		a_center; //Move Vertex back to original position.
+
+		//.......................
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(pos,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in lowp vec3 oColor;
+	in vec2 oUV;
+
+	out vec4 outColor;
+
+	const vec2 uv_center = vec2(0.5,0.5);
+	void main(void){
+		vec2 dst = uv_center - oUV;
+		//vec2 s = smoothstep(vec2(0.5,0.5),vec2(0.4,0.4),dst);
+
+		vec3 c = vec3(1.0, 0.5, 0.5);
+		if(oUV.x < 0.05 || oUV.x > 0.95 ||
+			oUV.y < 0.01 || oUV.y > 0.99 ) c = vec3(0.0, 0.0, 0.0);
+		//else if (dst.y < 0.1) c = 0.0;
+
+		outColor = vec4(c,1.0);
+
+		//float c = abs(oC - 0.5);
+		//c = smoothstep(0.5,0.48,c);
+
+		//vec3 color  = vec3(c,c,c) * vec3(1.0,0.0,0.0);
+		//outColor = vec4(color,1.0);
+
+		//outColor = vec4(oColor,1.0);
+	}
+</fragment>
