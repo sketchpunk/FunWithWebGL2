@@ -120,6 +120,17 @@ class Vec3 extends Float32Array{
 			return this;
 		}
 
+		//When values are very small, like less then 0.000001, just make it zero.
+		nearZero(out){
+			out = out || this;
+
+			if(Math.abs(out[0]) <= 1e-6) out[0] = 0;
+			if(Math.abs(out[1]) <= 1e-6) out[1] = 0;
+			if(Math.abs(out[2]) <= 1e-6) out[2] = 0;
+
+			return this;
+		}
+
 		transformMat3(m,out){
 			var x = this[0], y = this[1], z = this[2];
 			out = out || this;

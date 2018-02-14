@@ -54,6 +54,26 @@ class VisualDebugger extends Renderable{
 		return this;
 	}
 
+	addVecBoundCube(v1, v2, c){ return this.addRawBoundCube(v1[0],v1[1],v1[2], v2[0],v2[1],v2[2], c); }
+	addRawBoundCube(x1,y1,z1, x2,y2,z2,c){//Min -> Max to creating a bounding box.		
+		//TopLeft,TopRight,BotRight,BotLeft
+		var b = [	[x1,y1,z1], [x2,y1,z1],
+					[x2,y1,z2], [x1,y1,z2] ],
+			t = [	[x1,y2,z1], [x2,y2,z1],
+					[x2,y2,z2], [x1,y2,z2] ],
+			ii;
+
+		for(var i=0; i < 4; i++){
+			ii = (i+1) % 4;
+			this.addVecLine( b[i], c, b[ii], c ); //Draw Bottom
+			this.addVecLine( t[i], c, t[ii], c ); //Draw Top
+			this.addVecLine( b[i], c, t[i], c ); //draw sides
+		}
+
+		this.isModified = true;	
+		return this;
+	}
+
 	reset(){
 		this.vertBuffer.data.length = 0;
 		this.vao.count = 0;

@@ -6,11 +6,18 @@ import {Vec3, Mat4}	from "../Maths.js";
 // Ray
 /////////////////////////////////////////////////////////////////////
 class Ray{
-	constructor(){
+	constructor(aPos = null,bPos = null){
 		this.origin		= new Vec3(); // Starting position of the ray
 		this.end		= new Vec3(); // Ending position of the ray
 		this.vecLen		= new Vec3(); // Vector Length of Origin to End
 		this.dir		= new Vec3(); // Unit Direction Vector
+
+		if(aPos != null && bPos != null){
+			this.origin.copy(aPos);					// Save Origin of the Ray
+			this.end.copy(bPos);					// Save End Position of the ray
+			this.end.sub(this.origin,this.vecLen);	// Vector Length of the ray :: end - origin = vLen
+			this.vecLen.normalize(this.dir);		// Unit Direction Vector of ray
+		}
 	}
 
 	getPos(t,out){
@@ -73,7 +80,7 @@ class Ray{
 	static DebugLine(ray){ Fungi.debugLine.addVecLine(ray.origin,6,ray.end,0); }
 
 	static inAABB(box,ray,out){
-		var tMin, tMax, min, max;
+		var tMin, tMax, min, max, minAxis = 0;//, maxAxis = 0;
 
 		//X Axis ---------------------------
 		tMin = (box.worldBounds[	ray.aabb[0]].x - ray.origin.x) * ray.vecLenInv.x;
@@ -84,22 +91,24 @@ class Ray{
 		max = (box.worldBounds[1 - 	ray.aabb[1]].y - ray.origin.y) * ray.vecLenInv.y;
 
 		if(max < tMin || min > tMax) return false; //if it criss crosses, its a miss
-		if(min > tMin) tMin = min; //Get the greatest min
-		if(max < tMax) tMax = max; //Get the smallest max
+		if(min > tMin){ tMin = min; minAxis = 1; } //Get the greatest min
+		if(max < tMax){ tMax = max; }//Get the smallest max
 
 		//Z Axis ---------------------------
 		min = (box.worldBounds[		ray.aabb[2]].z - ray.origin.z) * ray.vecLenInv.z;
 		max = (box.worldBounds[1 - 	ray.aabb[2]].z - ray.origin.z) * ray.vecLenInv.z;
 
 		if(max < tMin || min > tMax) return false; //if criss crosses, its a miss
-		if(min > tMin) tMin = min; //Get the greatest min
-		if(max < tMax) tMax = max; //Get the smallest max
+		if(min > tMin){ tMin = min; minAxis = 2; } //Get the greatest min
+		if(max < tMax){ tMax = max; } //Get the smallest max
 
 		//Finish ------------------------------
 		//var ipos = dir.clone().scale(tMin).add(ray.start); //with the shortist distance from start of ray, calc intersection
 		if(out !== undefined){
-			out.min = tMin;
-			out.max = tMax;
+			out.min		= tMin;
+			out.max		= tMax;
+			out.nAxis	= minAxis;
+			out.nDir	= (ray.aabb[minAxis] == 1)? 1 : -1;
 		}
 		return true;
 	}
@@ -146,9 +155,13 @@ class AABB{
 		}else if(arguments.length == 2){	//Passing in two Vec3 / arrays
 			this.localBounds[0].copy(arguments[0]);
 			this.localBounds[1].copy(arguments[1]);
+			this.worldBounds[0].copy(arguments[0]);
+			this.worldBounds[1].copy(arguments[1]);
 		}else if(arguments.length == 6){	//Passing in raw values for bounds.
 			this.localBounds[0].set(arguments[0],arguments[1],arguments[2]);
 			this.localBounds[1].set(arguments[3],arguments[4],arguments[5]);
+			this.worldBounds[0].set(arguments[0],arguments[1],arguments[2]);
+			this.worldBounds[1].set(arguments[3],arguments[4],arguments[5]);
 		}
 	}
 

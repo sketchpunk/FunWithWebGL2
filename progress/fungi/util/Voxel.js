@@ -78,6 +78,20 @@ class VoxelChunk{
 		//Return the cell data
 		return this.cells[ x + z * this.xLen + y * this.xzLen ];
 	}
+
+	getMaxBound(){ return [ this.xLen*this.scale, this.yLen*this.scale, this.zLen*this.scale ]; }
+	getCellBound(x,y,z){
+		if( x > this.xMax || y > this.yMax || z > this.zMax ) return null;
+
+		var xpos = x * this.scale,
+			ypos = y * this.scale,
+			zpos = z * this.scale;
+
+		return {
+			min:[xpos, ypos, zpos],
+			max:[xpos+this.scale, ypos+this.scale, zpos+this.scale]
+		};
+	}
 }
 
 
