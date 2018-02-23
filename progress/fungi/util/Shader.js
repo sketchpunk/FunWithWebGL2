@@ -2,8 +2,8 @@ import gl,{ UNI_MODEL_MAT_NAME,UNI_NORM_MAT_NAME } from "../gl.js";
 import fungi from "../fungi.js";
 
 //Shortcut to create a shader based on the vert/frag progress text
-function createShader(name,vert,frag){
-	var shader = new ShaderBuilder(vert,frag);
+function createShader(name,vert,frag,tfeedback = null){
+	var shader = new ShaderBuilder(vert,frag,tfeedback);
 	gl.res.shaders[name] = shader;
 	return shader;
 }
@@ -111,8 +111,8 @@ class Material{
 // Shaders
 //------------------------------------------------------
 class ShaderBuilder{
-	constructor(vertShader,fragShader,tfeedback){
-		this.program = gl.createProgramFromText(vertShader,fragShader,true,tfeedback);
+	constructor(vertShader, fragShader, tfeedback = null, tfeedbackInterleaved = true){
+		this.program = gl.createProgramFromText(vertShader, fragShader, true, tfeedback, tfeedbackInterleaved);
 		this.useModelMatrix = true;
 		this.useNormalMatrix = false;
 

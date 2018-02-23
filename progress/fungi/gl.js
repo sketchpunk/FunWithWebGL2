@@ -67,14 +67,12 @@ function clear(){ ctx.clear(ctx.COLOR_BUFFER_BIT | ctx.DEPTH_BUFFER_BIT); return
 //Buffers
 //------------------------------------------------------
 //Create and fill our Array buffer.
-function createArrayBuffer(floatAry,isStatic,isUnbind){
-	if(isStatic === undefined) isStatic = true; //So we can call this function without setting isStatic
-
+function createArrayBuffer(floatAry,isStatic = true,isUnbind = true){
 	var buf = ctx.createBuffer();
 	ctx.bindBuffer(ctx.ARRAY_BUFFER,buf);
 	ctx.bufferData(ctx.ARRAY_BUFFER, floatAry, (isStatic)? ctx.STATIC_DRAW : ctx.DYNAMIC_DRAW);
 
-	if(isUnbind != false) ctx.bindBuffer(ctx.ARRAY_BUFFER,null);
+	if(isUnbind) ctx.bindBuffer(ctx.ARRAY_BUFFER,null);
 	return buf;
 };
 
@@ -156,10 +154,10 @@ function rgbaArray(){
 //------------------------------------------------------
 //Shaders
 //------------------------------------------------------
-function createProgramFromText(vShaderTxt,fShaderTxt,doValidate,transFeedbackVars){
+function createProgramFromText(vShaderTxt, fShaderTxt, doValidate, transFeedbackVars = null, transFeedbackInterleaved = true){
 	var vShader		= createShader(vShaderTxt,ctx.VERTEX_SHADER);	if(!vShader)	return null;
 	var fShader		= createShader(fShaderTxt,ctx.FRAGMENT_SHADER);	if(!fShader){	ctx.deleteShader(vShader); return null; }			
-	return createProgram(vShader,fShader,true,transFeedbackVars);
+	return createProgram(vShader, fShader, true, transFeedbackVars, transFeedbackInterleaved);
 }
 
 //Create a shader by passing in its code and what type
@@ -179,7 +177,7 @@ function createShader(src,type){
 }
 
 //Link two compiled shaders to create a program for rendering.
-function createProgram(vShader,fShader,doValidate,transFeedbackVars){
+function createProgram(vShader, fShader, doValidate, transFeedbackVars = null, feedbackInterleaved = true){
 	//Link shaders together
 	var prog = ctx.createProgram();
 	ctx.attachShader(prog,vShader);
@@ -191,7 +189,11 @@ function createProgram(vShader,fShader,doValidate,transFeedbackVars){
 	//ctx.bindAttribLocation(prog,ATTR_UV_LOC,ATTR_UV_NAME);
 
 	//Need to setup Transform Feedback Varying Vars before linking the program.
-	if(transFeedbackVars !== undefined && transFeedbackVars != null) ctx.transformFeedbackVaryings(prog, transFeedbackVars, ctx.SEPARATE_ATTRIBS); //INTERLEAVED_ATTRIBS
+	if(transFeedbackVars != null){
+		ctx.transformFeedbackVaryings(prog, transFeedbackVars,
+			((feedbackInterleaved)? ctx.INTERLEAVED_ATTRIBS : ctx.SEPARATE_ATTRIBS)
+		);
+	}
 
 	ctx.linkProgram(prog);
 
@@ -448,7 +450,7 @@ class VAO{
 
 	//----------------------------------------------------------
 	//Float Array Buffers
-	static floatArrayBuffer(out,name,aryData,attrLoc,compLen,stride,offset,isStatic,isInstance){
+	static floatArrayBuffer(out,name,aryData,attrLoc,compLen=3,stride=0,offset=0,isStatic=true,isInstance=false){
 		var rtn = {
 			ptr:ctx.createBuffer(),
 			compLen:compLen,
@@ -545,7 +547,7 @@ class VAO{
 
 	//----------------------------------------------------------
 	//Indexes
-	static indexBuffer(out,name,aryData,isStatic){
+	static indexBuffer(out,name,aryData,isStatic=true){
 		var rtn = { ptr:ctx.createBuffer(), count:aryData.length },
 			ary = (aryData instanceof Uint16Array)? aryData : new Uint16Array(aryData);
 
