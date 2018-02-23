@@ -1,0 +1,66 @@
+<shader>
+{
+	"name":"Diamond",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":[ "u_invert","float" ]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatDiamond", "uniforms":[ "u_invert","float",0.0 ] },
+	{ "name":"MatDiamondInv", "uniforms":[ "u_invert","float",1.0 ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec2 v_uv;
+
+	void main(void){
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+		v_uv = a_uv;
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform float u_invert;
+
+	in vec2 v_uv;
+
+	out vec4 outColor;
+
+	const vec2 uvCenter = vec2(0.5,0.5);
+	const float radius = 1.0;
+	const float aaf = 0.02;
+
+	void main(void){
+		float dst = dot(abs(v_uv-uvCenter), vec2(2.0));
+		//outColor = vec4(dst,dst,dst,1.0);
+
+		//vec3 color = vec3(1.0 - step(1.0, dst));
+		//vec3 color = vec3(1.0 - smoothstep(radius - aaf, radius, dst));
+		//outColor = vec4(color,1.0);
+
+		float c = abs( u_invert - smoothstep(radius - aaf, radius, dst) );
+		outColor = vec4(c,c,c,1.0);
+	}
+</fragment>
+
+http://www.numb3r23.net/2015/08/17/using-fwidth-for-distance-based-anti-aliasing/

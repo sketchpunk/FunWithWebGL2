@@ -1,0 +1,141 @@
+<shader>
+{
+	"name" : "TransFeedback",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : ["u_time","float"],
+	"transFeedback" : [ "v_position", "v_velocity", "v_age" ]
+}
+</shader>, "v_life"
+
+<materials>
+[
+	{ "name":"MatTransFeedback","useBlending":true }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_vertices;
+	layout(location=1) in vec3 a_position;
+	layout(location=2) in vec3 a_velocity; //which direction to move an how fast
+	layout(location=3) in float	a_age;
+	layout(location=4) in float	a_life;
+
+	out vec3 v_position;
+	out vec3 v_velocity;
+	out float v_age;
+	//out float v_life;
+
+	highp float random(vec2 co){
+		highp float a = 12.9898;
+		highp float b = 78.233;
+		highp float c = 43758.5453;
+		highp float dt = dot(co.xy ,vec2(a,b));
+		highp float sn = mod(dt,3.14);
+		return fract(sin(sn) * c);
+	}
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform float u_time;
+	uniform mat4 uModalMatrix;
+
+	void main(void){
+		float age = u_time - a_age;
+		gl_PointSize = 10.0 * (1.0 - (age / a_life));
+
+		if(age > a_life){
+			//float r = random(vec2(gl_VertexID,u_time));
+			float r = random(vec2(gl_InstanceID,u_time));
+
+			float ra = 6.283 * r; //PI*2*Rand
+			float rx = r * 2.0 * cos(ra);
+			float rz = r * 2.0 * sin(ra);
+
+			// Generate a new particle
+			v_position	= vec3(0.0, 0.0, 0.0);
+			v_velocity	= vec3(rx,(6.0 * r) + 2.0,rz);
+			v_age		= u_time;
+			//v_life		= a_life;
+		}else{
+			v_velocity	= a_velocity - vec3(0.0,0.05,0.0); //Apply Gravity to Velocity
+			v_position	= a_position + 0.01 * v_velocity;
+			v_age		= a_age;
+			//v_life		= a_life;
+		}
+
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(a_vertices + v_position, 1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	out vec4 outColor;
+
+	void main(void){
+		outColor = vec4(0.0,0.0,0.0,1.0);
+
+		/* 
+		vec2 delta 		= gl_PointCoord - vec2(0.5,0.5);//Distance from center
+		float lenSqr 	= abs(dot(delta,delta));		//Length Squared (avoiding square roots)
+		float a 		= smoothstep(0.25,0.24,lenSqr);	//Center, so 0.5*0.5 = 0.25, the squared len from center, avoiding roots.
+		outColor		= vec4(0.0,0.0,0.0,a);			//Whatever the smooth step is, set as alpha blend.
+		*/
+	}
+</fragment>
+
+
+float rand(vec2 co){ return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453); }
+
+
+------------------------------
+in highp uint randomSeed;
+highp uint curRandomSeed;
+flat out highp uint outRandomSeed;
+
+float rand(){
+	//Use Microsoft's Visual C++ constants for the linear congruential generator
+	curRandomSeed = (uint(214013) * curRandomSeed + uint(2531011));
+    return float((curRandomSeed >> 16) & uint(0x7FFF)) / 32767.0;
+};
+main(){
+	curRandomSeed = randomSeed;
+	rand();
+	outRandomSeed = curRandomSeed;
+}
+------------------------------
+
+#ifndef __noise_hlsl_
+#define __noise_hlsl_
+// hash based 3d value noise
+// function taken from https://www.shadertoy.com/view/XslGRr
+// Created by inigo quilez - iq/2013
+// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
+// ported from GLSL to HLSL
+
+float hash( float n ){ return frac(sin(n)*43758.5453); }
+float noise( vec3 x ){
+	// The noise function returns a value in the range -1.0f -> 1.0f
+	vec3 p	= floor(x);
+	vec3 f	= frac(x);
+	float n	= p.x + p.y * 57.0 + 113.0 * p.z;
+
+	f = f * f * ( 3.0 - 2.0 * f );
+	return lerp(
+				lerp(
+					lerp( hash(n+0.0), hash(n+1.0), f.x),
+					lerp( hash(n+57.0), hash(n+58.0), f.x),
+					f.y ),
+				lerp(
+					lerp( hash(n+113.0), hash(n+114.0), f.x),
+					lerp( hash(n+170.0), hash(n+171.0), f.x),
+					f.y ),
+				f.z );
+}
+#endif

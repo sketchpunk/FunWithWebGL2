@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import { Vec3 }	from "./fungi/Maths.js";
+			import { Ray, AABB }			from "./fungi/util/Raycast.js";
+			import { Voxel, VoxelChunk, VoxelRender, DynamicVoxel } from "./fungi/util/Voxel.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+			
+
+			var chunk,aabb;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,7);
+				Fungi.mainCamera.setPosition(0,0.5,4);//.setEulerDegrees(-15,10,0);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;
+
+
+				//........................................
+				var ray = new Ray(
+					[2.174753189086914, 1.8679566383361816, 2.6889309883117676],
+					[-55.09250259399414, -44.50711441040039, -65.65923309326172] ).prepareAABB();
+				
+				/*
+				var ray = new Ray(
+					[-0.2763001024723053, 0.9796221852302551, 1.1938954591751099],
+					[28.119382858276367, -58.06777572631836, -78.7260513305664] ).prepareAABB();
+				*/
+				/*
+				var ray = new Ray(
+					[-0.4192240238189697, 0.48642292618751526, 0.326862096786499],
+					[93.35798645019531, -30.602642059326172, -38.82568359375] ).prepareAABB();
+				*/
+				/*
+				var ray = new Ray(
+					[0.052896104753017426, 1.2090529203414917, 1.229308009147644],
+					[1.8459997177124023, -66.7754898071289, -75.6815414428711] ).prepareAABB();
+				*/
+				/*
+				var ray = new Ray(
+					[0.3368125855922699, 0.17246554791927338, -0.8136069774627686],
+					[-12.797842979431152, 12.231401443481445, 103.67646789550781] ).prepareAABB();
+				*/
+				Ray.DebugLine(ray);
+
+
+				//........................................
+				chunk = new VoxelChunk(2,2,2);
+				aabb = new AABB([0,0,0],chunk.getMaxBound());
+
+				Fungi.debugLine.addRawBoundCube(0,0,0, 
+					chunk.xLen * chunk.scale,
+					chunk.yLen * chunk.scale,
+					chunk.zLen * chunk.scale, 3);
+
+
+				//voxel_rayTest(ray,chunk,aabb);
+				voxel_raycast(ray,chunk,aabb);
+				//voxel_raycast_min(ray,chunk,aabb);
+
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(!e.ctrlKey) return false;
+
+				Fungi.debugLine.reset();
+				Fungi.debugPoint.reset();
+
+				var ray = Ray.MouseSegment(ix,iy).prepareAABB();
+				Ray.DebugLine(ray);
+
+				Fungi.debugLine.addRawBoundCube(0,0,0,
+					chunk.xLen * chunk.scale,
+					chunk.yLen * chunk.scale,
+					chunk.zLen * chunk.scale, 3);
+				Ray.DebugLine(ray);
+
+				voxel_rayTest(ray,chunk,aabb);
+				//voxel_raycast(ray,chunk,aabb);
+				return true;
+			}
+
+			var EPSILON = 1e-6;
+
+			//TODO Check if Start and End are the same Voxel.
+			//http://www.cse.chalmers.se/edu/year/2010/course/TDA361/grid.pdf
+			//http://www.flipcode.com/archives/Raytracing_Topics_Techniques-Part_4_Spatial_Subdivisions.shtml
+			function voxel_rayTest(ray,chunk,aabb){
+				console.log("-------------------------------------");
+				//..................................................
+				//Determine if the voxel chunk has an intersection.
+				var tBox = {};
+				if(!Ray.inAABB(aabb,ray,tBox)){
+					console.log("no intersection");
+					return;
+				}
+
+				//..................................................
+				//Calc the Start and end points of the ray
+				var rStart = new Vec3(),
+					rEnd = new Vec3(); //Dont really need rEnd in final version, only for visualize testing
+
+				ray.getPos(tBox.min,rStart);
+				ray.getPos(tBox.max,rEnd);
+
+				Fungi.debugPoint.addVecPoint(rStart,6);
+				Fungi.debugPoint.addVecPoint(rEnd,4);
+
+				//..................................................
+				//Using the intersection points, calc the first and last voxel cell in the ray
+				//By using intersection point position, divide by voxel cell floord gives you 
+				//the voxel coord integers  (x,y,z)
+				var ix = Math.min( Math.floor(rStart.x / chunk.scale), chunk.xMax), 
+					iy = Math.min( Math.floor(rStart.y / chunk.scale), chunk.yMax),
+					iz = Math.min( Math.floor(rStart.z / chunk.scale), chunk.zMax);
+
+
+				var cellBound = chunk.getCellBound(ix,iy,iz);
+				if(cellBound == null){
+					console.log("inital boundary missing",ix,iy,iz,rStart);
+					return false;
+				}
+				//console.log("Start Point", ix,iy,iz);
+				Fungi.debugLine.addVecBoundCube(cellBound.min, cellBound.max, 6);
+
+				var iix = Math.min( Math.floor(rEnd.x / chunk.scale), chunk.xMax), //Dont need this in final version
+					iiy = Math.min( Math.floor(rEnd.y / chunk.scale), chunk.yMax),
+					iiz = Math.min( Math.floor(rEnd.z / chunk.scale), chunk.zMax);
+
+				cellBound = chunk.getCellBound(iix,iiy,iiz);
+				Fungi.debugLine.addVecBoundCube(cellBound.min, cellBound.max, 4);
+
+				//..................................................
+				//Determine the direction we need to move to be used as a sign scalar
+				//In PDF these values are called step, but I prefer direction since it makes more sense.
+				var xDir = (ray.dir.x > 0) ? 1 : (ray.dir.x < 0)? -1 : 0,
+					yDir = (ray.dir.y > 0) ? 1 : (ray.dir.y < 0)? -1 : 0, 
+					zDir = (ray.dir.z > 0) ? 1 : (ray.dir.z < 0)? -1 : 0;
+
+				//..................................................
+				//At What point in the ray from the origin does each axis reach its first axis boundary.
+				//If direction is negative, we use the min boundary else we use max boundary ( +1 )
+				//TODO : All this is local space, may need to handle in world space.
+				var cellSize = chunk.scale;
+				var xBound = ((xDir > 0)? ix+1 : ix) * cellSize, // + worldPos.x
+					yBound = ((yDir > 0)? iy+1 : iy) * cellSize,
+					zBound = ((zDir > 0)? iz+1 : iz) * cellSize; 
+
+				Fungi.debugPoint.addRawPoint(xBound,yBound,zBound,1);
+				//console.log("bound", ix,iy,iz, "---", xBound,yBound,zBound);
+
+				//..................................................
+				//Need to determine the TIME for when axis reaches its first boundary.
+				//Vector normals move by using : pos = t * vecLen
+				//We know the position and length, not time. So we rewrite to : t = pos / vecLen
+				var xt = (xBound - rStart.x) / ray.dir.x,
+					yt = (yBound - rStart.y) / ray.dir.y,
+					zt = (zBound - rStart.z) / ray.dir.z;
+
+				//..................................................
+				//Now we need to know how much to move for each step.
+				//We do it by dividing the cellSize by vector direction to get a step increment for each axis
+				//This then allows us to move a faction of one voxel worth at a time based on direction
+				var xDelta = cellSize * xDir / ray.dir.x,
+					yDelta = cellSize * yDir / ray.dir.y,
+					zDelta = cellSize * zDir / ray.dir.z;
+
+				console.log(xt,yt,zt, "---", xDelta,yDelta,zDelta);
+				
+				//..................................................
+				//Next we determine at which point to exit in terms of voxel coords.
+				//if going neg direction, -1, else the voxel count in that axis.
+				var xOut = (xDir < 0)? -1 : chunk.xLen,
+					yOut = (yDir < 0)? -1 : chunk.yLen,
+					zOut = (zDir < 0)? -1 : chunk.zLen;
+				
+				//..................................................
+				//Now by using T, we traverse the ray by the smallest T axis available
+				//Once we process that axis, we move the voxel coord in that direction
+				//then move T by that axis delta.
+				for(var i=0; i < 30; i++){
+					if (xt < yt && xt < zt){
+
+						//Find voxel Intersection Point
+						var xx = ((xDir > 0)? ix+1 : ix) * cellSize;
+						var tt = ( xx - ray.origin.x ) / ray.vecLen.x; // original eq: vecLen * t + origin = pos
+						var pp = ray.getPos(tt)
+						Fungi.debugPoint.addVecPoint(pp,2); //See Intersection Point
+						Fungi.debugLine.addVecLine(pp,2 ,new Vec3(pp).add([-xDir*0.1 ,0,0]),2 ); //See Normal Dir
+
+						ix += xDir;	 //Move to next voxel
+						if(ix == xOut){ console.log("done on x"); return; }
+						xt += xDelta; //Move T so the next loop has a chance to move in a different axis
+						console.log("move x");
+					}else if (yt < zt){
+
+						//Find voxel Intersection Point
+						var yy = ((yDir > 0)? iy+1 : iy) * cellSize;
+						var tt = ( yy - ray.origin.y ) / ray.vecLen.y; // original eq: vecLen * t + origin = pos
+						var pp = ray.getPos(tt);
+						Fungi.debugPoint.addVecPoint(pp,2);
+						Fungi.debugLine.addVecLine(pp,2 ,new Vec3(pp).add([0,-yDir*0.1 ,0]),2 ); //See Normal Dir
+
+						iy += yDir; //Move to next voxel
+						if(iy == yOut){ console.log("done on y"); return; }
+						yt += yDelta; //Move T so the next loop has a chance to move in a different axis
+						console.log("move y");
+					}else{
+
+						//Find voxel Intersection Point
+						var zz = ((zDir > 0)? iz+1 : iz) * cellSize;
+						var tt = ( zz - ray.origin.z ) / ray.vecLen.z; // original eq: vecLen * t + origin = pos
+						var pp = ray.getPos(tt);
+						Fungi.debugPoint.addVecPoint(pp,2);
+						Fungi.debugLine.addVecLine(pp,2 ,new Vec3(pp).add([0,0,-zDir*0.1 ]),2 ); //See Normal Dir
+
+						iz += zDir; //Move to next voxel
+						if(iz == zOut){ console.log("done on z"); return; }
+						zt += zDelta; //Move T so the next loop has a chance to move in a different axis
+						console.log("move z");
+					}
+
+					console.log(ix,iy,iz, "- t - ", xt,yt,zt);
+
+					var cellBound = chunk.getCellBound(ix,iy,iz);
+					if(cellBound == null){
+						console.log("inital boundary missing",ix,iy,iz,rStart);
+						return false;
+					}
+
+					Fungi.debugLine.addVecBoundCube(cellBound.min, cellBound.max, 0);
+				}
+			}
+
+			function voxel_raycast(ray,chunk,aabb){
+				//console.log(ray.origin,ray.end); 
+				//..................................................
+				//Determine if the voxel chunk has an intersection.
+				var tBox = {};
+				if(!Ray.inAABB(aabb,ray,tBox)){ return null; }
+
+				//..................................................
+				var inPos		= ray.getPos(tBox.min).nearZero(), //entry point for chunk, Clean up vals near zero.
+					cellSize	= chunk.scale,
+					tries		= 30,
+
+					ix			= Math.min( Math.floor(inPos.x / cellSize), chunk.xMax), //Calc Voxel Coord Integer(x,y,z)
+					iy			= Math.min( Math.floor(inPos.y / cellSize), chunk.yMax),
+					iz			= Math.min( Math.floor(inPos.z / cellSize), chunk.zMax),
+					
+					xDir, yDir, zDir,		//Direction -1,0,1
+					xOut, yOut, zOut,		//Index value to exit loop -1,MaxCell
+					xBound, yBound, zBound; //Position of the closest boundary line for each axis at the ray direction
+
+				//Determine X Direction Values
+				if(ray.dir.x >= 0){
+					xDir	= (ray.dir.x > 0)? 1:0;
+					xOut	= chunk.xLen;
+					xBound	= (ix + 1) * cellSize; // + worldPos.x
+				}else{
+					xDir 	= xOut = -1;
+					xBound	= ix * cellSize;
+				}
+
+				//Determine Y Direction Values
+				if(ray.dir.y >= 0){
+					yDir	= (ray.dir.y > 0)? 1:0;
+					yOut	= chunk.yLen;
+					yBound	= (iy + 1) * cellSize;
+				}else{
+					yDir	= yOut = -1;
+					yBound	= iy * cellSize;
+				}
+
+				//Determine Z Direction Values
+				if(ray.dir.z >= 0){
+					zDir	= (ray.dir.z > 0)? 1:0;
+					zOut	= chunk.zLen;
+					zBound	= (iz + 1) * cellSize;
+				}else{
+					zDir	= zOut = -1;
+					zBound	= iz * cellSize;
+				}
+
+
+				//..................................................
+				//Calc time on the ray to the axis boundaries, then Delta T to increment one voxel at a time.
+				var dir 	= [xDir, yDir, zDir],	//Just a short cut to make it ez to access dir, used for in
+
+					invRdx	= 1.0 / ray.dir.x, //Invert the direction to avoid 6 division operations, replace with multi
+					invRdy	= 1.0 / ray.dir.y,
+					invRdz	= 1.0 / ray.dir.z,
+
+					xt		= (xBound - inPos.x) * invRdx,	//Time for axis //(xBound - inPos.x) / ray.dir.x,
+					yt 		= (yBound - inPos.y) * invRdy,
+					zt		= (zBound - inPos.z) * invRdz,
+
+					xDelta	= cellSize * xDir * invRdx,	//Delta T for each axis as we traverse one voxel at a time
+					yDelta	= cellSize * yDir * invRdy,
+					zDelta	= cellSize * zDir * invRdz;
+
+
+				//..................................................
+				//Now by using T, we traverse the ray by the smallest T axis available
+				//Once we process that axis, we move the voxel coord in that direction
+				//then move T by that axis delta.
+
+				var norm 		= [0,0,0],	//Normal Direction of Face Intersection
+					normLen 	= 0.1,		//Display Length of normal
+					ip 			= inPos,
+					boundPos,
+					tt,ii,
+					nAxis 		= tBox.nAxis,			//Axis Vector Component 0:x, 1:y, 2:z
+					iAxis 		= [ix, iy, iz][nAxis];	//Voxel Index of a specific axis
+
+				norm[tBox.nAxis] = tBox.nDir * normLen; //Set the starting voxel
+				//console.log(tBox,ix,iy,iz);
+
+				for(var i=0; i < tries; i++){
+					//-----------------------------------------------
+					//DISPLAY VOXEL
+					var cellBound = chunk.getCellBound(ix,iy,iz);
+					if(cellBound == null){ console.log("inital boundary missing",ix,iy,iz,inPos); return false; }
+
+					Fungi.debugLine.addVecBoundCube(cellBound.min, cellBound.max, 0); //Display Voxel
+					Fungi.debugPoint.addVecPoint(ip,2);	//Display IP
+					Fungi.debugLine.addVecLine(ip,2 ,new Vec3(ip).add(norm),2 ); //Display Normal 
+
+					
+					//-----------------------------------------------
+					//Figure out the next voxel to move to based on which t axis value is the smallest first
+					if(xt < yt && xt < zt){
+						ii = ix + xDir;
+						if(ii == xOut) break;
+						
+						nAxis	= 0;		//Numeric Axis Index (x,y,z // 0,1,2)
+						iAxis	= ix;		//Save before modifing it.
+						ix		= ii;		//Move to next voxel
+						xt		+= xDelta;	//Move T so the next loop has a chance to move in a different axis
+					}else if (yt < zt){
+						ii = iy + yDir;				
+						if(ii == yOut) break; //TODO
+
+						nAxis 	= 1;
+						iAxis 	= iy;
+						iy 		= ii;
+						yt 		+= yDelta;
+					}else{
+						ii = iz + zDir;
+						if(ii == zOut) break; //TODO
+
+						nAxis	= 2;
+						iAxis	= iz;
+						iz		= ii;
+						zt		+= zDelta;
+					}
+
+					//console.log(ix,iy,iz, "- t - ", xt,yt,zt);
+
+					//-----------------------------------------------
+					//SETUP INTERSECTION POINT AND NORMAL FOR THE NEXT VOXEL.
+					norm[0]		= 0;
+					norm[1]		= 0;
+					norm[2]		= 0;
+					norm[nAxis]	= -dir[nAxis] * normLen;	//Update the specific axis
+
+					boundPos 	= (( dir[nAxis] > 0)? iAxis+1 : iAxis) * cellSize;	//Position of boundary		
+					tt			= ( boundPos - ray.origin[nAxis] ) / ray.vecLen[nAxis]; //Time when at boundary
+					ip 			= ray.getPos(tt);	// Intersection point on voxel face
+				}
+
+				console.log("FINAL",
+					"::Axis",nAxis,
+					"::Dir",-dir[nAxis],
+					"::Voxel",ix,iy,iz,
+					"::InPos",ip.x,ip.y,ip.z
+				);
+			}
+
+			function voxel_raycast_min(ray,chunk,aabb){
+				//..................................................
+				//Determine if the voxel chunk has an intersection.
+				var tBox = {};
+				if(!Ray.inAABB(aabb,ray,tBox)){ return null; }
+
+				//..................................................
+				var inPos		= ray.getPos(tBox.min).nearZero(), //entry point for chunk, Clean up vals near zero.
+					cellSize	= chunk.scale,
+					tries		= 30,
+					//------------- Calc Voxel Coord Integer(x,y,z)
+					ix			= Math.min( Math.floor(inPos.x / cellSize), chunk.xMax),
+					iy			= Math.min( Math.floor(inPos.y / cellSize), chunk.yMax),
+					iz			= Math.min( Math.floor(inPos.z / cellSize), chunk.zMax),
+					
+					//------------- Simplify direction with -1,0,1
+					xDir		= (ray.dir.x > 0)? 1 : (ray.dir.x == 0)? 0 : -1,
+					yDir		= (ray.dir.y > 0)? 1 : (ray.dir.y == 0)? 0 : -1,
+					zDir		= (ray.dir.z > 0)? 1 : (ray.dir.z == 0)? 0 : -1,
+					dir 		= [xDir, yDir, zDir],	//Just a short cut to make it ez to access dir, used for in
+
+					//------------- Index value to exit loop -1,MaxCell
+					xOut		= (ray.dir.x > 0)? chunk.xLen : -1,
+					yOut		= (ray.dir.y > 0)? chunk.yLen : -1,
+					zOut		= (ray.dir.z > 0)? chunk.zLen : -1,
+
+					//------------- Position of the closest boundary line for each axis at the ray direction. Depends on direction.
+					xBound		= ((ray.dir.x >= 0)? ix + 1 : ix) * cellSize,
+					yBound		= ((ray.dir.y >= 0)? iy + 1 : iy) * cellSize,
+					zBound		= ((ray.dir.z >= 0)? iz + 1 : iz) * cellSize,
+
+					//------------- Time for axis //(xBound - inPos.x) / ray.dir.x,
+					xt			= (xBound - inPos.x) / ray.dir.x,
+					yt 			= (yBound - inPos.y) / ray.dir.y,
+					zt			= (zBound - inPos.z) / ray.dir.z,
+
+					//------------- Delta T for each axis as we traverse one voxel at a time
+					xDelta		= cellSize * xDir / ray.dir.x,
+					yDelta		= cellSize * yDir / ray.dir.y,
+					zDelta		= cellSize * zDir / ray.dir.z,
+
+					//------------- 
+					nAxis 		= tBox.nAxis,			//Axis Vector Component 0:x, 1:y, 2:z
+					iAxis 		= [ix, iy, iz][nAxis],	//Preselect the initial axis voxel coord.
+					ii;									//Voxel Index of a specific axis
+
+				//..................................................
+				for(var i=0; i < tries; i++){
+					console.log("current voxel", ix,iy,iz);
+					//Do something with this voxel
+
+					//-------------------------
+					//Figure out the next voxel to move to based on which t axis value is the smallest first
+					if(xt < yt && xt < zt){	//--------- X AXIS
+						ii = ix + xDir;
+						if(ii == xOut) break;	// When out of bounds of the voxel chunk.
+						
+						nAxis	= 0;			// Numeric Axis Index (x,y,z // 0,1,2)
+						iAxis	= ix;			// Save before modifing it.
+						ix		= ii;			// Move to next voxel
+						xt		+= xDelta;		// Move T so the next loop has a chance to move in a different axis
+
+					}else if (yt < zt){		//--------- Y AXIS
+						ii = iy + yDir;				
+						if(ii == yOut) break;
+						
+						nAxis 	= 1;
+						iAxis 	= iy;
+						iy 		= ii;
+						yt 		+= yDelta;
+
+					}else{					//--------- Z AXIS
+						ii = iz + zDir;
+						if(ii == zOut) break;
+						
+						nAxis	= 2;
+						iAxis	= iz;
+						iz		= ii;
+						zt		+= zDelta;
+					}
+				}
+
+				//..................................................
+				console.log("FINAL",
+					"::Axis",nAxis,
+					"::Dir",-dir[nAxis],
+					"::Voxel",ix,iy,iz,
+				);
+
+				//Sample on how to get the intersection point where the voxel was hit.
+				var boundPos	= (( dir[nAxis] > 0)? iAxis+1 : iAxis) * cellSize,		// Position of boundary		
+					tt			= ( boundPos - ray.origin[nAxis] ) / ray.vecLen[nAxis],	// Time when at axis boundary
+					ip			= ray.getPos(tt);	// Intersection point on voxel face
+				console.log(ip);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
