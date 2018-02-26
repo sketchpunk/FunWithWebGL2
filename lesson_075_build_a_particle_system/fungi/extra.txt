@@ -1,0 +1,49 @@
+private Vector3 RandomPointOnPlane(Vector3 position, Vector3 normal, float radius)
+    {
+        Vector3 randomPoint;
+ 
+        do
+        {
+            randomPoint = Vector3.Cross(Random.insideUnitSphere, normal);
+        } while (randomPoint == Vector3.zero);
+       
+        randomPoint.Normalize();
+        randomPoint *= radius;
+        randomPoint += position;
+       
+        return randomPoint;
+    }
+
+function quickSort(ary){
+	var partition = [{start:0,end:ary.length-1}],
+		pos,		//Current position of the partition
+		pivot,		//Main Item to use to compare with the other items
+		i,			//For loop, reuse variable
+		tmp,		//tmp var to hold item when swopping them in the array
+		posStart;	//save starting pos to help partition the current partition
+
+	while(partition.length > 0){
+		pos = partition.pop();	//Get a partition to process.
+		posStart = pos.start;
+		pivot = ary[pos.end];
+		
+		for(i = pos.start; i < pos.end; i++){
+			//Swop the current item with the start item, then move the start position up.
+			if(ary[i] <= pivot){
+				tmp = ary[i];
+				ary[i] = ary[pos.start];
+				ary[pos.start] = tmp;
+				pos.start++;
+			}
+		}
+
+		//Now move the first item to the end then save the pivot to the start position
+		//Because everything before the new start position should be less then the pivot.
+		ary[pos.end] = ary[pos.start];
+		ary[pos.start] = pivot;
+
+		//Determine if can divide the current partition into sub partitions.
+		if(posStart < pos.start-1)	partition.push( {start:posStart,end:pos.start-1} );	//Left Partition
+		if(pos.start+1 < pos.end)	partition.push( {start:pos.start+1,end:pos.end} );	//Right Partition
+	}
+}

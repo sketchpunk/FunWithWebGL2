@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+
+			import { TransformFeedback,ParticleSystem,FeedbackUseMode } from "./fungi/util/ParticleSystem.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				Fungi.mainCamera.setPosition(0,0.5,5);//.setEulerDegrees(-15,10,0);
+
+				//........................................
+				//Add extra items to the scenen
+
+				var ps = new ParticleSystem(9);
+				ps	.setMesh( [0,0,0] )
+					//.addMod("Position",{ placement:"test" })
+					.addMod("Position",{ placement:"circleSegment", radius:0.4 })
+					.addMod("Velocity",{ placement:"test" })
+					//.addMod("Velocity",{ placement:"normalizePos", speed:0.006 })
+					.addMod("Color",{ placement:"test" })
+					.compile();
+				Fungi.scene.push(ps);
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
