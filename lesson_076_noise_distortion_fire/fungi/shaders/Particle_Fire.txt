@@ -1,0 +1,116 @@
+<shader>
+{
+	"name" : "TransFeedback_P2",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : ["uTex01","sample2D"]
+}
+</shader>
+	
+
+<materials>[ 
+	{ "name":"MatTransFeedback_P2","useBlending":true,"useSampleAlphaCoverage":false, 
+		"uniforms":[ "uTex01","tex","tex01" ]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec2 a_uv;
+	layout(location=2) in vec3 a_offset;
+	layout(location=3) in vec3 a_velocity;
+	layout(location=4) in float a_lifeSpan;
+	
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec2 v_uv;
+	flat out float v_age;
+
+	const float gridSize  	= 4.0;
+	const float colSize		= 1.0 / gridSize;
+	const float colYOffset  = (gridSize - 1.0) / gridSize;  //Y is inverted, So start near the top, second last increment
+	//const float lifeTime	= 2500.0;
+	//const float iLifeTime	= 1.0 / lifeTime;
+
+	void main(void){
+		
+		//v_uv = a_uv;
+		//v_uv *= iDiv;
+
+		//v_age = mod(fTime,lifeTime) * iLifeTime;  //  (time % lifeTime) / lifeTime == 0 -> 1 Ratio
+		float time = mod(fTime,a_lifeSpan);
+
+		v_age = time / a_lifeSpan;  //  (time % lifeTime) / lifeTime == 0 -> 1 Ratio
+
+		float s = 1.3 - v_age;
+		s = clamp(s,0.0,1.0);
+
+		float scale = s * s * 0.1; //wide parabola curve
+		vec3 pos = a_position * scale;
+
+		//......................................
+		//GridCell Y (X is inverse 0 to 1)
+		//0 = 1.00 -> 0.75
+		//1 = 0.75 -> 0.50
+		//2 = 0.50 -> 0.25
+		//3 = 0.25 -> 0.00
+
+		//Grid Atlas UV Position
+		float 	c	= floor(16.0 * v_age),
+				cx	= floor( mod(c, gridSize) ) * colSize,
+				cy	= colYOffset - floor( c * colSize ) * colSize;
+
+		v_uv = vec2( cx + (a_uv.x * colSize) , cy + (a_uv.y * colSize) );
+
+		//......................................
+		//Spherical billboarding
+		vec3 right 	= vec3( matCameraView[0][0], matCameraView[1][0], matCameraView[2][0] ),
+			 up 	= vec3( matCameraView[0][1], matCameraView[1][1], matCameraView[2][1] );
+		pos = a_offset + (a_velocity * time * 0.001 ) + (right * pos.x) + (up * pos.y); //Rotate vertex toward camera
+
+		//pos += a_offset + (a_velocity * v_age);
+
+
+		//pos += vec3(0,1,0) * v_age;
+
+		//......................................
+		//Finish up Position Valcs
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec2 v_uv;
+	flat in float v_age;
+
+	uniform sampler2D uTex01;
+	out vec4 outColor;
+
+	const vec4 col = vec4(0.8, 0.25, 0.25, 1.0);
+
+	void main(void){
+		
+		//vec3 a = vec3(0.1, 0.1, 0.1);
+		//vec3 b = vec3(0.15, 0.15, 0.15);
+		//vec3 c = vec3(1.0, 1.0, 1.0);
+		//vec3 d = vec3(1.00, 0.90, 0.90);
+		//vec4 cc = vec4(a + b*cos( 6.28318*(c*v_age+d) ), 1.0);
+
+
+		outColor = col * texture(uTex01,v_uv);
+		outColor.a *= v_age;
+
+		//outColor = texture(uTex01,v_uv);
+		//outColor.a = 0.3 + outColor.r - (1.0 - v_age);
+	}
+</fragment>
