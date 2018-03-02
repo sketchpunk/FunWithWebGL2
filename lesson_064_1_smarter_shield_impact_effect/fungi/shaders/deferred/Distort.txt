@@ -1,0 +1,222 @@
+<shader>
+{
+	"name":"Distort",
+	"useModelMatrix":true,
+	"useNormalMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":[
+		"bufColor","sample2D",
+		"bufDepth","sample2D",
+		"u_tex01","sample2D"
+	]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatDistort", "useBlending":false, "useSampleAlphaCoverage":false,
+		"uniforms":[ "u_tex01","tex","tex01" ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	//precision highp float;
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform mat3 uNormalMatrix;
+
+	out vec3 oColor;
+	out vec3 oNorm;
+	out float vDotFromCamera;
+	out vec2 v_uv;
+	flat out float v_time;
+
+	void main(void){
+		//..............................
+		//Calc World Space for Vertex & Rotate Normals to be pointing in correct direction.
+		vec4 worldPos	= uModalMatrix * vec4(a_position.xyz,1.0);
+		vec3 worldNorm	= normalize(uNormalMatrix * a_normal);
+
+		//..............................
+		// FRESNEL
+		// Angle difference between vertex's normal direction and the vertex's camera direction
+		vec3 dirToCamera = normalize(posCamera - worldPos.xyz);
+		vDotFromCamera = dot(worldNorm,dirToCamera);
+
+		//..............................
+		//gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+		gl_Position	= matProjection * matCameraView * worldPos;
+
+		v_uv = a_uv;
+		v_uv.x += fTime * 0.0001;
+		v_uv.y += fTime * 0.0006;
+
+		v_time = fTime;
+
+		//v_uv.x = clamp(fract(fTime * 0.0002),0.0,1.0); //Really Cool Effect
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	in vec3 oNorm;
+	in float vDotFromCamera;
+	in vec2 v_uv;
+	flat in float v_time;
+
+	uniform sampler2D bufColor;
+	uniform sampler2D bufDepth;
+	uniform sampler2D u_tex01;
+
+	out vec4 outColor;
+
+	const float PROJ_NEAR = 0.1; //This can also be uniforms or part of a UBO.
+	const float PROJ_FAR = 100.0;	
+
+	float mapDepthToProj(float depth){ //depth is should be between 0:1
+		float ndc = 2.0 * depth - 1.0;  //Normalized Device Space -1:1
+		return -(2.0 * PROJ_FAR * PROJ_NEAR) / (ndc * (PROJ_FAR - PROJ_NEAR) - PROJ_FAR - PROJ_NEAR);
+	}
+
+	vec4 alphaBlendA(vec4 from, vec4 to){
+		return vec4(to.rgb * (1.0-from.a) + (from.rgb * from.a), to.a+from.a);
+	}
+
+	vec4 alphaBlendB(vec4 from, vec4 to){
+		return vec4(to.rgb * to.a * (1.0-from.a) + (from.rgb * from.a), to.a+from.a);
+	}
+
+	vec4 alphaBlendC(vec4 from, vec4 to){
+		return vec4(to.rgb * (1.0-from.a) + (from.rgb * from.a), from.a);
+	}
+
+	//https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/blendFunc
+	vec4 oneMinusSrcAlpha(vec4 src, vec4 dst){ return (src * (1.0-src.a)) + (dst * (1.0-dst.a)); }
+
+	//Should be uniforms down the line.
+	const vec4 mainColor = vec4(0.0,0.9,0.0,0.2);
+	const vec4 highliteColor = vec4(0.0,1.0,0.0,1.0);
+	const float highliteLen = 0.2;
+
+	const float fresnelLen = 0.4;
+
+	void main(void){
+		//..................................		
+		// Get Depth and exit out if current pixel Z is greater then whats in the depth buffer.
+		// exit if current fragment is further away from camera then depth tex fragment
+		ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+		float zTexDepth	= texelFetch(bufDepth, fCoord , 0).x;
+
+		//if(gl_FragCoord.z > zTexDepth) discard;
+
+		//..................................
+		vec4 mask = texture(u_tex01,v_uv);
+		//vec4 distort = texelFetch(bufColor, fCoord, 0);
+		//vec4 tex = mask * vec4(0.0,1.0,0.0,1.0);
+		//tex.a = mask.r;
+		//outColor = tex;
+
+		//if(vDotFromCamera > 0.21){
+			fCoord.x += int( (mask.x * 2.0 - 1.0)  * 10.0 );
+			vec4 clrTex = texelFetch(bufColor, fCoord, 0); //texture(bufColor, v_uv); //+ int(mask.x * 15.0)
+			//outColor = alphaBlendA(tex,clrTex);
+			//outColor = oneMinusSrcAlpha(tex,clrTex);
+			outColor = clrTex;
+		//}
+
+
+		//outColor = mix(clrTex,tex, tex.a);
+		//outColor.a *= 1.9;
+
+		//outColor = tex;//+ clrTex;
+
+		float zPixelTex		= mapDepthToProj(zTexDepth);		//Pixel Depth from Texture
+		float zPixelFrag	= mapDepthToProj(gl_FragCoord.z);	//Pixel Depth of current rendering fragment
+		float zDelta		= abs(zPixelTex - zPixelFrag);		//Difference between the two
+		if(zDelta < highliteLen){
+			//outColor += vec4(0.0,1.0,0.0,1.0) * ( 1.0 - zDelta / highliteLen);
+		}
+
+
+
+
+
+		//..................................
+		//outColor = mainColor;
+
+		//Add fresnel
+		//if(vDotFromCamera >= 0.0 && vDotFromCamera <= fresnelLen)
+		//	outColor.a += 1.0 - (vDotFromCamera/fresnelLen);
+
+/*
+		//Add Intersection
+		float zPixelTex		= mapDepthToProj(zTexDepth);		//Pixel Depth from Texture
+		float zPixelFrag	= mapDepthToProj(gl_FragCoord.z);	//Pixel Depth of current rendering fragment
+		float zDelta		= abs(zPixelTex - zPixelFrag);		//Difference between the two
+
+		if(zDelta < highliteLen){
+			//outColor.a += 1.0 - zDelta / highliteLen;
+		}
+
+		vec4 mask = texture(u_tex01,v_uv);
+		vec4 tex = mask * vec4(0.0,1.0,0.0,1.0);
+		tex.a = mask.r;
+		
+		outColor = tex;
+		outColor = mainColor;
+
+		outColor = alphaBlendA(tex,mainColor);	//Blend base Color and Texture.
+		outColor.rgb += smoothstep(0.95,1.0,tex.a) * vec3(0.8,1.0,0.8); //Add High lights
+		
+		//abs(sin(v_time*0.0007)) *
+
+		//Add fresnel
+		if(vDotFromCamera >= 0.0 && vDotFromCamera <= fresnelLen)
+			outColor += vec4(0.0,1.0,0.0,1.0) * (1.0 - (vDotFromCamera/fresnelLen));
+
+
+		if(zDelta < highliteLen){
+			outColor += vec4(0.0,1.0,0.0,1.0) * ( 1.0 - zDelta / highliteLen);
+		}
+
+		//Distort
+		fCoord.x += int( (mask.x * 2.0 - 1.0)  * 10.0 );
+		vec4 clrTex = texelFetch(bufColor, fCoord, 0); //texture(bufColor, v_uv); //+ int(mask.x * 15.0)
+		outColor = alphaBlendA(outColor,clrTex);
+/*
+
+		/*
+		//..................................
+		float zPixelTex		= mapDepthToProj(zTexDepth);		//Pixel Depth from Texture
+		float zPixelFrag	= mapDepthToProj(gl_FragCoord.z);	//Pixel Depth of current rendering fragment
+		float zDelta		= abs(zPixelTex - zPixelFrag);		//Difference between the two
+
+		if(zDelta < highliteLen)
+			outColor = vec4(highliteColor.rgb,
+				max( 1.0-zDelta/highliteLen , mainColor.a )
+			);
+		else{
+			outColor = mainColor;
+			if(vDotFromCamera >= 0.0 && vDotFromCamera <= fresnelLen) outColor = vec4( 0.0, 1.0, 0.0, 1.0 - (vDotFromCamera/fresnelLen));
+		}*/
+		
+	}
+</fragment>
+
+
+Other functions that try to map
+
+

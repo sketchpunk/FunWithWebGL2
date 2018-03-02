@@ -1,0 +1,84 @@
+<shader>
+{
+	"name":"IntersectHighlight",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["bufDepth","sample2D" ]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatIntersectHighlight", "useBlending":false,"useSampleAlphaCoverage":true,  "uniforms":[ ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec3 oColor;
+
+	void main(void){
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	uniform sampler2D bufDepth;
+
+	out vec4 outColor;
+
+	const float PROJ_NEAR = 0.1; //This can also be uniforms or part of a UBO.
+	const float PROJ_FAR = 100.0;	
+
+	float mapDepthToProj(float depth){ //depth is should be between 0:1
+		float ndc = 2.0 * depth - 1.0;  //Normalized Device Space -1:1
+		return -(2.0 * PROJ_FAR * PROJ_NEAR) / (ndc * (PROJ_FAR - PROJ_NEAR) - PROJ_FAR - PROJ_NEAR);
+	}
+
+	//Should be uniforms down the line.
+	const vec4 mainColor = vec4(0.0,0.9,0.0,0.2);
+	const vec4 highliteColor = vec4(0.0,1.0,0.0,1.0);
+	const float highliteLen = 0.2;
+
+	void main(void){
+		//..................................		
+		//Get Depth and exit out if current pixel Z is greater then whats in the depth buffer.
+
+		ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+		float zTexDepth	= texelFetch(bufDepth, fCoord , 0).x;
+
+		if(gl_FragCoord.z > zTexDepth) discard; //exit if current fragment is further away from camera then depth tex fragment
+
+		//..................................
+		float zPixelTex		= mapDepthToProj(zTexDepth);		//Pixel Depth from Texture
+		float zPixelFrag	= mapDepthToProj(gl_FragCoord.z);	//Pixel Depth of current rendering fragment
+		float zDelta		= abs(zPixelTex - zPixelFrag);		//Difference between the two
+
+		//if(zPixelFrag > zPixelTex) discard; //Same as above, but use origin vals to test to save gpu time.
+
+		if(zDelta < highliteLen)
+			outColor = vec4(highliteColor.rgb,
+				max( 1.0-zDelta/highliteLen , mainColor.a )
+			);
+		else
+			outColor = mainColor;
+	}
+</fragment>
+
+
+Other functions that try to map
+
+
