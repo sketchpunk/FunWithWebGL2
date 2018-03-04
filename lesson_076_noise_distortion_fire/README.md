@@ -6,10 +6,14 @@ I never found a good tutorial that explained how to use distortion in shaders to
 ### Links of Interest
 https://twitter.com/minionsart/status/964257071423283200
 
+https://twitter.com/minionsart
+https://www.patreon.com/minionsart
+
 http://iquilezles.org/www/articles/palettes/palettes.htm
 
+
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/uT5w3Bwhk4s)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 
 * [Twitter](https://twitter.com/SketchpunkLabs)
