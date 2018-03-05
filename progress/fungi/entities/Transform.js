@@ -25,13 +25,11 @@ class Transform{
 		//01 05 09 13
 		//02 06 10 14
 		//03 07 11 15
-		left(v,d){		return this._getDirection(0,1,2,d,v);	}
-		up(v,d){		return this._getDirection(4,5,6,d,v);	}
-		forward(v,d){	return this._getDirection(8,9,10,d,v);	}
-		_getDirection(xi,yi,zi,d,v){
+		left(v,d=1){	return this._getDirection(0,1,2,d,v);	}
+		up(v,d=1){		return this._getDirection(4,5,6,d,v);	}
+		forward(v,d=1){	return this._getDirection(8,9,10,d,v);	}
+		_getDirection(xi,yi,zi,d=1,v){
 			this.updateMatrix();
-			if(d == undefined) d = 1; //Distance
-			//d = d || 1; //Distance
 			v = v || new Vec3();
 
 			var x = this.localMatrix[xi], y = this.localMatrix[yi], z = this.localMatrix[zi],

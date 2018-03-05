@@ -15,7 +15,10 @@ class Orbit extends Transform{
 		Mat4.perspective(this.projectionMatrix, fov || 45, ratio, near || 0.1, far || 100.0);
 		Mat4.invert(this.invertedProjectionMatrix, this.projectionMatrix); //Save Inverted version for Ray Casting.
 
-		gl.UBOTransform.update("matProjection",this.projectionMatrix); //Initialize The Transform UBO.
+		gl.UBOTransform.update(
+			"matProjection",this.projectionMatrix,
+			"screenRes", new Float32Array( [ gl.width, gl.height ] )
+		); //Initialize The Transform UBO.
 
 		//Orbit Camera will control things based on euler, its cheating but not ready for quaternions
 		this.euler = new Vec3();
@@ -28,7 +31,11 @@ class Orbit extends Transform{
 		Mat4.ortho(this.projectionMatrix, -w, w, -h, h, near, far);
 		Mat4.invert(this.invertedProjectionMatrix, this.projectionMatrix); //Save Inverted version for Ray Casting.
 
-		gl.UBOTransform.update("matProjection",this.projectionMatrix); //Initialize The Transform UBO.
+		gl.UBOTransform.update(
+			"matProjection",this.projectionMatrix,
+			"screenRes", new Float32Array( [ gl.width, gl.height ] )
+		); //Initialize The Transform UBO.
+
 		return this;
 	}
 

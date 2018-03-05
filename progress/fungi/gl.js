@@ -40,7 +40,8 @@ function init(canvas,bgColor,wp,hp){
 		{name:"matProjection",type:"mat4"}, 
 		{name:"matCameraView",type:"mat4"}, 
 		{name:"posCamera",type:"vec3"},
-		{name:"fTime",type:"f"}
+		{name:"fTime",type:"f"},
+		{name:"screenRes",type:"vec2"}
 	]);
 
 	return this;
