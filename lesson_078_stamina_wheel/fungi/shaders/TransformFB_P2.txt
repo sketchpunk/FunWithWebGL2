@@ -1,0 +1,89 @@
+<shader>
+{
+	"name" : "TransFeedback_P2",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : ["uTex01","sample2D"]
+}
+</shader>
+	
+
+<materials>[ 
+	{ "name":"MatTransFeedback_P2","useBlending":false,"useSampleAlphaCoverage":true, 
+		"uniforms":[ "uTex01","tex","tex01" ]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec2 a_uv;
+	layout(location=2) in vec3 a_offset;
+	layout(location=3) in float a_ageNorm;
+	
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec2 v_uv;
+	out float v_age;
+
+	void main(void){
+		v_uv = a_uv;
+		//v_age = a_ageNorm;
+
+		vec3 pos = a_position;
+    	//pos *= (1.0 - v_age);
+
+		//gl_Position = matProjection * matCameraView * uModalMatrix * vec4(a_offset + pos, 1.0);
+
+		//Spherical billboarding
+		//Quad Billboard : Works only on quads that have its center at origin.
+		vec3 right 	= vec3( matCameraView[0][0], matCameraView[1][0], matCameraView[2][0] ),
+			 up 	= vec3( matCameraView[0][1], matCameraView[1][1], matCameraView[2][1] );
+
+		up = vec3(0.0, 1.0, 0.0); //Cylindrical
+		pos = a_offset + (right * pos.x) + (up * pos.y); //Rotate vertex toward camera
+		//pos += a_offset; //No Billboarding.
+
+		if(gl_VertexID > 1){  //Only Move the top vertices of the quad to create a skew effect
+			pos.x += sin( float(gl_InstanceID) + (fTime * 0.0008) ) * 0.2;
+		}
+
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec2 v_uv;
+	in float v_age;
+
+	uniform sampler2D uTex01;
+
+	out vec4 outColor;
+
+	void main(void){
+		vec4 tmp = texture(uTex01,v_uv);
+		outColor = tmp;
+
+		//outColor = vec4(0.0,0.0,0.0,1.0);
+
+		/* 
+		vec2 delta 		= v_uv - vec2(0.5,0.5);			//Distance from center
+		float lenSqr 	= abs(dot(delta,delta));		//Length Squared (avoiding square roots)
+		float a 		= smoothstep(0.25,0.23,lenSqr);	//Center, so 0.5*0.5 = 0.25, the squared len from center, avoid roots.
+		a -= v_age;
+		*/
+		
+		//if(a < 0.1) discard;
+		//outColor		= vec4(0.0,0.0,0.0,a);
+		//outColor		= vec4(a,0.0,0.0,a);
+	}
+</fragment>

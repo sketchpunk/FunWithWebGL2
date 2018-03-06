@@ -1,0 +1,105 @@
+<shader>
+{
+	"name":"Bendy",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uJoints","mat2x4","uColor","vec4","uScale","float"]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatBendy", "useBlending":false }
+]
+</materials>
+	
+<vertex>
+#version 300 es
+layout(location=0) in vec4 a_position;
+layout(location=1) in vec3 a_norm;
+layout(location=2) in vec2 a_uv;
+
+layout(location=3) in vec4 a_jointIdx;
+layout(location=4) in vec4 a_jointWeight;
+
+uniform UBOTransform{
+	mat4 matProjection;
+	mat4 matCameraView;
+	vec3 posCamera;
+};
+
+uniform mat4 uModalMatrix;
+uniform mat3 uNormalMatrix;
+uniform mat2x4[76] uJoints;
+
+uniform vec4 uColor;
+uniform float uScale;
+
+out highp vec2 vUV;
+out lowp vec4 color;
+
+vec3 dqBoneTransform(){
+	/* NORMALIZE DATA */
+	float t = 1.0 / ( a_jointWeight.x + a_jointWeight.y + a_jointWeight.z + a_jointWeight.w );
+	float jw0 = a_jointWeight[0] * t;
+	float jw1 = a_jointWeight[1] * t;
+	float jw2 = a_jointWeight[2] * t;
+	float jw3 = a_jointWeight[3] * t;
+
+	mat2x4 mJoint =	uJoints[int(a_jointIdx[0])] * jw0 +
+					uJoints[int(a_jointIdx[1])] * jw1 +
+					uJoints[int(a_jointIdx[2])] * jw2 +
+					uJoints[int(a_jointIdx[3])] * jw3;
+
+	/* RAW DATA - May Not be Normalized   
+	mat2x4 mJoint =	uJoints[int(a_jointIdx[0])] * a_jointWeight[0] +
+        			uJoints[int(a_jointIdx[1])] * a_jointWeight[1] +
+        			uJoints[int(a_jointIdx[2])] * a_jointWeight[2] +
+        			uJoints[int(a_jointIdx[3])] * a_jointWeight[3]; */  
+
+	vec3 v = a_position.xyz;
+	vec4 Qr = mJoint[0].xyzw; //real (rot)
+	vec4 Qd = mJoint[1].xyzw; //dual (trans)
+
+	vec3 pos = v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);			//Rotate Vector
+	vec3 tran = 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+	return pos + tran;
+}
+
+void main(void){
+	color = uColor;
+
+    vec3 pos = dqBoneTransform();
+    if(uScale > 1.0){
+    	//float s = 1.05;
+    	//float z = pos.z;
+    	//float maxY = 2.0038719177246094;
+
+    	//pos.y -= 2.0038719177246094 * 0.5;
+    	//pos.z -= z;
+    	//pos.z = -1.0;
+    	//pos.xyz *= s;
+    	//pos.y -= 0.02;
+    	//pos.z = z;
+
+    	//pos.z = z;
+    	//pos.y += 2.0038719177246094 * 0.5;
+
+    	pos += a_norm;
+    } 
+
+    gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+
+	vUV = a_uv;
+}
+</vertex>
+
+<fragment>
+#version 300 es
+precision mediump float;
+in highp vec2 vUV;
+in lowp vec4 color;
+out vec4 outColor;
+
+void main(void){ outColor = color; }
+</fragment>

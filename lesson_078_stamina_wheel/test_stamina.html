@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="cache-control" content="no-cache" /> 
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl			from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import Quad			from "./fungi/primitives/Quad.js";
+
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"test_stamina.txt"},
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+			var stamina, shStamina;
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				gl.setClearColor("505050");
+				Fungi.gridFloor.setMaterial("MatGridFloorDark");
+				Fungi.mainCamera.setPosition(0,0.4,1).setEulerDegrees(0,0,0);
+
+				//........................................
+				//Add extra items to the scenen
+				Fungi.scene.push(Quad(-0.15,-0.15,0.15,0.15,"MatTestShader").setPosition(0,0.5,0));
+				stamina = new Stamina();
+				shStamina = gl.res.shaders["TestShader"];
+
+				document.addEventListener("keydown", onKeyDown);
+				document.addEventListener("keyup", onKeyUp);
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+
+			function onRender(dt,ss){
+				//------------------------------
+				var updateStamina = false;
+				if(isRunning && stamina.state == Stamina.READY){
+					stamina.smallUse(dt);
+					updateStamina = true;
+				}else if(!isRunning && !stamina.isFull){
+					stamina.rest(dt);
+					updateStamina = true;
+				}
+
+				if(updateStamina != -1){
+					var s = stamina.getStrength();
+					shStamina.activate().setUniforms(
+						"u_ringAUsed",s[0][0],
+						"u_ringBUsed",s[0][1],
+						"u_ringCUsed",s[0][2],
+						"u_ringAUsing",s[1][0],
+						"u_ringBUsing",s[1][1],
+						"u_ringCUsing",s[1][2],
+						"u_isHeal", (stamina.state == Stamina.EXHAUSTED)? 1:0
+					).deactivate();
+				}
+
+				//------------------------------
+				Fungi.update().render(Fungi.scene);
+			}
+
+			var isRunning = false;
+			function onKeyUp(e){ isRunning = false; }
+			function onKeyDown(e){ if(e.keyCode == 32){ isRunning = true; } }
+
+			class Stamina{
+				constructor(){
+					this.unitStrength	= 10;
+					this.iUnitStrength 	= 1 / this.unitStrength;
+					this.unitCount		= 3;
+					this.unitSmallUse	= 5;
+					this.unitHealRate	= 10;
+					this.unitUse 		= 0.05;
+					this.unitFull		= this.unitStrength * this.unitCount;
+
+					this.state 			= Stamina.READY;
+					this.current		= 30;
+				}
+
+				smallUse(t){
+					if(this.state != Stamina.READY) return;
+
+					this.current -= this.unitSmallUse * t;
+					if(this.current < 0){ console.log("EXHAUSTED");
+						this.current	= 0;
+						this.state		= Stamina.EXHAUSTED;
+					}
+				}
+
+				rest(t){
+					this.current += this.unitHealRate * t;
+
+					if(this.current >= this.unitFull){ console.log("FULL");
+						this.current	= this.unitFull;
+						this.state		= Stamina.READY;
+					}
+				}
+
+				getStrength(){
+					if(this.current <= 0) return [[1,1,1],[0,0,0]]; //All out of strength;
+
+					//......................................
+					var fCur = this.current * this.iUnitStrength;
+					if(fCur >= this.unitCount) return [[0,0,0],[0,0,0]]; //No strength used up
+
+					//......................................
+					//Calc how much stength is used in each unit;
+					var used = new Array(this.unitCount).fill(0);
+					var using = new Array(this.unitCount).fill(0);
+
+					for(var i=this.unitCount-1; i >= 0; i--){
+						if(fCur > i){ //Found the unit current in, exit.
+							used[i]  = 1 - (fCur - i);
+							using[i] = Math.min(used[i] + this.unitUse, 1);
+							break;
+						}else used[i] = 1;
+					}
+
+					return [used,using];
+				}
+
+				get isFull(){ return (this.current >= this.unitFull); }
+			}
+
+			Stamina.READY		= 0;
+			Stamina.EXHAUSTED	= 1;
+			
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
