@@ -1,6 +1,8 @@
 import gl, { VAO }		from "../gl.js";
 import DynamicBuffer	from "./DynamicBuffer.js";
 import Renderable		from "../entities/Renderable.js";
+import { Ray }			from "./Raycast.js";
+import Vec3				from "../maths/Vec3.js";
 
 //------------------------------------------------------
 //Voxel Data
@@ -24,7 +26,7 @@ class VoxelChunk{
 
 		this.cells	= new Array(this.xyzLen); //Create flat array to hold Voxel Data.
 
-		for(var i=0; i < this.cells.length; i++) this.cells[i] = 1;
+		for(var i=0; i < this.cells.length; i++) this.cells[i] = 0;
 	}
 
 	coordToIndex(x,y,z){ return x + z * this.xLen + y * this.xzLen; }
@@ -35,7 +37,6 @@ class VoxelChunk{
 			Math.floor(i / this.xLen) % this.zLen	//z
 		];
 	}
-
 
 	set(x,y,z, v){ this.cells[ this.coordToIndex(x,y,z) ] = v; }
 	
@@ -244,7 +245,132 @@ Voxel.FACES	= [ //TODO, REMOVE 4th component when no longer in need.
 		   0.0,0.0,1.0,3.0] } //Bottom
 ];
 
+
+
+//TODO: Need to test if Ray Origin is inside AABB, If it is, need to determine the initial voxel coord instead of doing a Ray-AABB Test
+function VoxelRaycast(ray,chunk,aabb,tries=30){
+	//..................................................
+	//Determine if the voxel chunk has an intersection.
+	var tBox = {};
+	if(!Ray.inAABB(aabb,ray,tBox)){ return null; }
+
+	//..................................................
+	var inPos		= ray.getPos(tBox.min).nearZero(), //entry point for chunk, Clean up vals near zero.
+		cellSize	= chunk.scale,
+
+		//--------- Calc Voxel Coord Integer(x,y,z)
+		ix			= Math.min( Math.floor(inPos.x / cellSize), chunk.xMax),
+		iy			= Math.min( Math.floor(inPos.y / cellSize), chunk.yMax),
+		iz			= Math.min( Math.floor(inPos.z / cellSize), chunk.zMax),
+
+		//--------- Simplify direction with -1,0,1
+		dir = new Vec3(-1,-1,-1),
+
+		//--------- Index value to exit loop -1,MaxCell
+		xOut = -1, yOut = -1, zOut = -1,
+
+		//--------- Position of the closest boundary line for each axis at the ray dir. Depends on direction.
+		xBound, yBound, zBound;
+
+		//--------- Original code used 9 shorthand ifs, changed it to use 3 regular ifs for optimization.
+		if(ray.dir.x >= 0){
+			dir.x	= (ray.dir.x == 0)? 0 : 1;
+			xBound	= (ix + 1) * cellSize;
+
+			if(ray.dir.x > 0) xOut = chunk.xLen;
+		}else xBound = ix * cellSize;
+
+
+		if(ray.dir.y >= 0){
+			dir.y	= (ray.dir.y == 0)? 0 : 1;
+			yBound	= (iy + 1) * cellSize;
+
+			if(ray.dir.y > 0) yOut = chunk.yLen;
+
+		}else yBound = iy * cellSize;
+
+
+		if(ray.dir.z >= 0){
+			dir.z	= (ray.dir.z == 0)? 0 : 1;
+			zBound	= (iz + 1) * cellSize;
+
+			if(ray.dir.z > 0) zOut = chunk.zLen;
+
+		}else zBound = iz * cellSize;
+
+
+		//--------- Time for axis //(xBound - inPos.x) / ray.dir.x,
+	var	xt			= (xBound - inPos.x) / ray.dir.x,
+		yt 			= (yBound - inPos.y) / ray.dir.y,
+		zt			= (zBound - inPos.z) / ray.dir.z,
+
+		//--------- Delta T for each axis as we traverse one voxel at a time
+		xDelta		= cellSize * dir.x / ray.dir.x,
+		yDelta		= cellSize * dir.y / ray.dir.y,
+		zDelta		= cellSize * dir.z / ray.dir.z,
+
+		//--------- 
+		nAxis 		= tBox.nAxis,			//Axis Vector Component 0:x, 1:y, 2:z
+		iAxis 		= [ix, iy, iz][nAxis],	//Preselect the initial axis voxel coord.
+		ii,									//Voxel Index of a specific axis
+		isHit		= false;				//Using Check Data, did we hit a voxel that exists.
+
+	//..................................................
+	for(var i=0; i < tries; i++){
+		//console.log("current voxel", ix,iy,iz);
+		//Do something with this voxel
+		if(chunk.get(ix,iy,iz) == 1){ isHit = true; break; }
+
+		//-------------------------
+		//Figure out the next voxel to move to based on which t axis value is the smallest first
+		if(xt < yt && xt < zt){	//--------- X AXIS
+			ii = ix + dir.x;
+			if(ii == xOut) break;	// When out of bounds of the voxel chunk.
+			
+			nAxis	= 0;			// Numeric Axis Index (x,y,z // 0,1,2)
+			iAxis	= ix;			// Save before modifing it.
+			ix		= ii;			// Move to next voxel
+			xt		+= xDelta;		// Move T so the next loop has a chance to move in a different axis
+
+		}else if (yt < zt){		//--------- Y AXIS
+			ii = iy + dir.y;				
+			if(ii == yOut) break;
+			
+			nAxis 	= 1;
+			iAxis 	= iy;
+			iy 		= ii;
+			yt 		+= yDelta;
+
+		}else{					//--------- Z AXIS
+			ii = iz + dir.z;
+			if(ii == zOut) break;
+			
+			nAxis	= 2;
+			iAxis	= iz;
+			iz		= ii;
+			zt		+= zDelta;
+		}
+	}
+
+	var norm = [0,0,0];
+	norm[nAxis] = -dir[nAxis];
+	return { hitNorm: norm, voxelCoord: [ix,iy,iz], isHit:isHit };
+	//..................................................
+	console.log("FINAL",
+		"::Axis",nAxis,
+		"::Dir",-dir[nAxis],
+		"::Voxel",ix,iy,iz,
+	);
+
+	//Sample on how to get the intersection point where the voxel was hit.
+	var boundPos	= (( dir[nAxis] > 0)? iAxis+1 : iAxis) * cellSize,		// Position of boundary		
+		tt			= ( boundPos - ray.origin[nAxis] ) / ray.vecLen[nAxis],	// Time when at axis boundary
+		ip			= ray.getPos(tt);	// Intersection point on voxel face
+	console.log(ip, tt, boundPos);
+}
+
+
 //------------------------------------------------------
 //Export
 //------------------------------------------------------
-export { Voxel, VoxelChunk, VoxelRender, DynamicVoxel };
+export { Voxel, VoxelChunk, VoxelRender, DynamicVoxel, VoxelRaycast };

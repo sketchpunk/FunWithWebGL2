@@ -32,8 +32,8 @@ let shader					= null;
 
 
 //process an array of transforms in a recursive fashion. Also forces world matrix update on items if needed
-function processList(ary,forceWorldUpdate){
-	var isUpdated;
+function processList(ary,forceWorldUpdate = false){
+	let isUpdated = false;
 	for(var i=0; i < ary.length; i++){
 		if(ary[i].visible == false) continue;
 		isUpdated = ary[i].updateMatrix(forceWorldUpdate);

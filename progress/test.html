@@ -11,13 +11,12 @@
 		</style>
 
 		<script type="module">
-			import Fungi 		from "./fungi/Fungi.js";
-			import Downloader	from "./fungi/util/Downloader.js";
-			import FacedCube	from "./fungi/primitives/FacedCube.js";
-
-			import gl from "./fungi/gl.js";
-			import { Vec3 } from "./fungi/Maths.js";
-
+			import Fungi 			from "./fungi/Fungi.js";
+			import Downloader		from "./fungi/util/Downloader.js";
+			import LineCube			from "./fungi/primitives/LineCube.js";
+			import { Vec3 }			from "./fungi/Maths.js";
+			import { Ray, AABB }	from "./fungi/util/Raycast.js";
+			import { Voxel, VoxelChunk, VoxelRender, DynamicVoxel, VoxelRaycast } from "./fungi/util/Voxel.js";
 
 			window.addEventListener("load",function(){
 				Fungi.init();	//Prepare Context and Canvas
@@ -25,221 +24,94 @@
 				//........................................
 				//Starting Loading data and Creating Threads to handle things
 				var dl = Downloader.start([
-					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"},
+					{type:"shader",file:"fungi/shaders/BaseColor.txt"},
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
 				//Wait for all threads to be completed
 				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
 			});
+			
 
-
-			var mesh, charCtrl, GamePad, KeyBoard;
+			var chunkData,chunkRend,chunkAABB;
+			var voxOutline,voxOutlineEx;
 
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
 				Fungi.ready(onRender,7);
-				Fungi.mainCamera.setPosition(0,0.5,7);//.setEulerDegrees(-15,10,0);
-
-				gl.setClearColor("505050");
-				Fungi.gridFloor.setMaterial("MatGridFloorDark");
+				Fungi.mainCamera.setPosition(1,0.5,6).setEulerDegrees(-35,0,0);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;				
 
 				//........................................
-				//Add extra items to the scenen
-				Fungi.scene.push(mesh = FacedCube("MatVecWColor").setPosition(0,0.5,0));
-				charCtrl = new CharacterCtrl(mesh);
-				GamePad = new GamepadTracker();
-				KeyBoard = new KeyboardTracker();
+				var size = 10;
+				chunkData = new VoxelChunk(size,size,size);
+
+				var s = chunkData.scale;
+				var voxChunkSize = chunkData.getMaxBound();
+				chunkAABB = new AABB([0,0,0], voxChunkSize);
+
+				Fungi.scene.push( LineCube("GrayColor",0,0,0, voxChunkSize[0],voxChunkSize[1],voxChunkSize[2]) );
+				Fungi.scene.push( chunkRend		= new DynamicVoxel(chunkData,"MatLowPolyPhong").chunkUpdate() ); //Render Voxels
+				Fungi.scene.push( voxOutline	= LineCube("RedColor",0,0,0, s,s,s) ); //Visualize Voxel Hit
+				Fungi.scene.push( voxOutlineEx	= LineCube("GreenColor",0,0,0, s,s,s) ); //Visualize Voxel hit's Normal Dir Hit Voxel
+				
 
 				//........................................
 				//Begin rendering the scene
 				Fungi.renderLoop.start();
 			}
 
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(! (e.altKey || e.shiftKey)) return false;
+				Fungi.debugLine.reset();
+
+				//...............................
+				var ray = Ray.MouseSegment(ix,iy).prepareAABB();
+				Ray.DebugLine(ray);
+
+				var vData = VoxelRaycast(ray,chunkData,chunkAABB);
+				if(vData == null) return false; //No Hit
+
+				//...............................
+				//See hit 
+				voxOutline.position.x = vData.voxelCoord[0] * chunkData.scale;
+				voxOutline.position.y = vData.voxelCoord[1] * chunkData.scale;
+				voxOutline.position.z = vData.voxelCoord[2] * chunkData.scale;
+
+				//See the last voxel in ray before hit.
+				voxOutlineEx.position.x = voxOutline.position.x + (vData.hitNorm[0] * chunkData.scale);
+				voxOutlineEx.position.y = voxOutline.position.y + (vData.hitNorm[1] * chunkData.scale);
+				voxOutlineEx.position.z = voxOutline.position.z + (vData.hitNorm[2] * chunkData.scale);
 
 
-			function onRender(){ 
-				GamePad.update();	//Update Controller Data
+				var x = vData.voxelCoord[0],	//Voxel Coord
+					y = vData.voxelCoord[1],
+					z = vData.voxelCoord[2],
+					v = 1;						//Add or Remove Voxel.
 
-				charCtrl.update();	//Update Character Movement
+				var addMode = e.altKey;	//If altKey, then we are adding voxels
 				
-				Fungi.update().render(Fungi.scene);
-			}
-
-
-			class GamepadTracker{
-				constructor(){
-					this.gpIndex	= -1;
-					this.buttons	= null;
-					this.joySticks	= null;
-					this.deadZone	= 0.1;
-					this.isReady 	= false;
-
-					window.addEventListener("gamepadconnected", this.onConnect.bind(this) );
-					window.addEventListener("gamepaddisconnected", this.onDisconnect.bind(this) );
-				}
-
-				onDisconnect(e){ console.log("disconnect",e); }
-				onConnect(e){
-					console.log("Index : %d, ID: %s", e.gamepad.index, e.gamepad.id);
-					if(e.gamepad.id.indexOf("XInput") && this.gpIndex == -1){
-						this.gpIndex = e.gamepad.index;
-						GamepadTracker.xboxProfile(this);
-						this.isReady = true;
+				if(addMode){
+					if(vData.isHit){ //If we hit a voxel, not not the wall, get the coords of the last voxel before hit.
+						x += vData.hitNorm[0];
+						y += vData.hitNorm[1];
+						z += vData.hitNorm[2];
 					}
+				}else{//Remove Mode
+					if(!vData.isHit) return false; //Exit if not voxel was hit.
+					v = 0;
 				}
 
-				update(){
-					/*float axis[4], GamepadButton {pressed: false, value: 0, touched: false}*/
-					if(this.gpIndex != -1){
-						var itm,v, gp = navigator.getGamepads()[ this.gpIndex ];
-
-						//Update Button Data
-						for(itm of this.buttons.values()){
-							v = (gp.buttons[ itm.idx ].value > this.deadZone)? gp.buttons[ itm.idx ].value : 0;
-
-							itm.hasChanged	= (v != itm.state);
-							itm.state 		= v;
-						}
-
-						//Update Joystick Data
-						for(itm of this.joySticks.values()){
-							//Flip Y, Up is -1, rather it be positive and down be negative.
-							//Flip X, Fungi uses Left, not Right, so flipping sign will make math work correctly
-
-							itm.x = (Math.abs( gp.axes[ itm.xIdx ] ) > this.deadZone)? -gp.axes[ itm.xIdx ] : 0;
-							itm.y = (Math.abs( gp.axes[ itm.yIdx ] ) > this.deadZone)? -gp.axes[ itm.yIdx ] : 0;
-
-							itm.isActive = (itm.x != 0 || itm.y != 0);
-						}
-					}
-				}
+				//Set voxel data and update mesh.
+				chunkData.set(x,y,z,v);
+				chunkRend.chunkUpdate();
 			}
-
-			GamepadTracker.xboxProfile = function(gt){
-				//trying out the new Map :: http://exploringjs.com/es6/ch_maps-sets.html#sec_overview-maps-sets
-				gt.joySticks = new Map()
-					.set("leftStick",	{ x:0, y:0, xIdx:0, yIdx:1, isActive:false })
-					.set("rightStick",	{ x:0, y:0, xIdx:2, yIdx:3, isActive:false });
-
-				//State is 0 or 1, But for trigger buttons, its a number between 0 and 1, so you can check how far its pulled.
-				//hasChanged, tells if the value state changes since the last update. Useful if you only want to do something
-				//when the button's state changes like turning something On/Off
-				gt.buttons	= new Map()
-					.set("a",			{idx:0, state:0, hasChanged:false })
-					.set("b",			{idx:1, state:0, hasChanged:false })
-					.set("x",			{idx:2, state:0, hasChanged:false })
-					.set("z",			{idx:3, state:0, hasChanged:false })
-					.set("bumperL",		{idx:4, state:0, hasChanged:false })
-					.set("bumperR",		{idx:5, state:0, hasChanged:false })
-					.set("triggerL",	{idx:6, state:0, hasChanged:false })
-					.set("triggerR",	{idx:7, state:0, hasChanged:false })
-					.set("back",		{idx:8, state:0, hasChanged:false })
-					.set("start",		{idx:9, state:0, hasChanged:false })
-					.set("stickL",		{idx:10, state:0, hasChanged:false })
-					.set("stickR",		{idx:11, state:0, hasChanged:false })
-					.set("dup",			{idx:12, state:0, hasChanged:false })
-					.set("ddown",		{idx:13, state:0, hasChanged:false })
-					.set("dleft",		{idx:14, state:0, hasChanged:false })
-					.set("dright",		{idx:15, state:0, hasChanged:false });
-			}
-
-
-			class KeyboardTracker{
-				constructor(){
-					document.addEventListener("keydown",	this.onKeyDown.bind(this));
-					document.addEventListener("keyup",		this.onKeyUp.bind(this));
-
-					this.keyState = []; //Keep track of the key state
-				}
-
-				key(kCode){	return (this.keyState[kCode] == true); }
-
-				arrows(){
-					var rtn = {}; 
-					for(var itm in KeyboardTracker.arrowKeys){
-						rtn[ itm ] = ( this.keyState[ KeyboardTracker.arrowKeys[itm] ] == true);
-					}
-					return rtn;
-				}
-
-				onKeyDown(e){	this.keyState[ e.keyCode ] = true; }
-				onKeyUp(e){ 	this.keyState[ e.keyCode ] = false; }
-			}
-			KeyboardTracker.arrowKeys = { left:37, up:38, right:39, down:40 }; //space:32
-			
-
-
-			class CharacterCtrl{
-				constructor(target){
-					this.target = target;
-					this.walkSpeed 	= 0.05;
-					this.turnSpeed 	= 0.04;
-				}
-
-				debug(){
-					var v = new Vec3();
-					
-					Fungi.debugLine.reset();
-
-					this.target.forward(v).add(this.target.position);
-					Fungi.debugLine.addVecLine(this.target.position,1,v,1);
-
-					this.target.left(v).add(this.target.position);
-					Fungi.debugLine.addVecLine(this.target.position,0,v,0);
-
-					this.target.up(v).add(this.target.position);
-					Fungi.debugLine.addVecLine(this.target.position,2,v,2);
-
-					return this;
-				}
-
-				update(){
-					if( this.movement() ) this.debug();
-
-					return this;
-				}
-
-				movement(){
-					var speedUp		= 1,
-						arrows		= KeyBoard.arrows(),
-						move 		= 0,
-						rotate 		= 0;
-
-					//......................................
-					//KEYBOARD CONTROL
-					if(arrows.up)			move = 1;
-					else if(arrows.down)	move = -1;
-
-					if(arrows.left)			rotate = 1;
-					else if(arrows.right)	rotate = -1;
-
-					if( KeyBoard.key(32) )	speedUp = 2.5;
-
-
-					//......................................
-					//GAMEPAD CONTROLLER
-					if(GamePad.isReady){
-						var j = GamePad.joySticks.get("leftStick");
-
-						if(j.isActive){
-							if(j.x != 0) rotate = j.x;
-							if(j.y != 0) move = j.y;
-
-							if(GamePad.buttons.get("a").state) speedUp = 2.5;
-						}
-					}
-
-
-					//......................................
-					//Apply Movement to character
-					if(move != 0) 	this.target.position.add( this.target.forward(null,this.walkSpeed * move * speedUp) );
-					if(rotate != 0) this.target.rotation.ry(this.turnSpeed * rotate * speedUp);
-
-					return (move != 0 || rotate != 0);
-				}
-			}
+			var EPSILON = 1e-6;
 		</script>
 	</head>
 <body>
