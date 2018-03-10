@@ -1,0 +1,150 @@
+<shader>
+{
+	"name":"Shield",
+	"useModelMatrix":true,
+	"useNormalMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":[
+		"bufDepth","sample2D"
+	]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"MatShield", "useBlending":true, "useSampleAlphaCoverage":false,
+		"uniforms":[  ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	//precision highp float;
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform mat3 uNormalMatrix;
+
+	out vec3 oColor;
+	out vec3 oNorm;
+	out float vDotFromCamera;
+	out vec2 v_uv;
+	out vec2 v_uv2;
+	out vec3 v_worldpos;
+	flat out float v_time;
+
+	void main(void){
+		//..............................
+		//Calc World Space for Vertex & Rotate Normals to be pointing in correct direction.
+		vec4 worldPos	= uModalMatrix * vec4(a_position.xyz,1.0);
+		vec3 worldNorm	= normalize(uNormalMatrix * a_normal);
+		v_worldpos = worldPos.xyz;
+		//..............................
+		// FRESNEL
+		// Angle difference between vertex's normal direction and the vertex's camera direction
+		vec3 dirToCamera = normalize(posCamera - worldPos.xyz);
+		vDotFromCamera = dot(worldNorm,dirToCamera);
+
+		//..............................
+		//gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+		gl_Position	= matProjection * matCameraView * worldPos;
+
+
+		//..............................
+		v_time = fTime;
+
+		//..............................
+		v_uv = a_uv;
+		//v_uv.y += fTime * 0.0001;
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	flat in float v_time;
+	
+	in vec3 oNorm;
+	in vec2 v_uv;
+	in float vDotFromCamera;
+	in vec3 v_worldpos;
+	
+	uniform sampler2D bufDepth;
+	//uniform sampler2D u_tex01;
+
+	out vec4 outColor;
+
+	//===================================
+	const float PROJ_NEAR = 0.1; //This can also be uniforms or part of a UBO.
+	const float PROJ_FAR = 100.0;	
+
+	float mapDepthToProj(float depth){ //depth is should be between 0:1
+		float ndc = 2.0 * depth - 1.0;  //Normalized Device Space -1:1
+		return -(2.0 * PROJ_FAR * PROJ_NEAR) / (ndc * (PROJ_FAR - PROJ_NEAR) - PROJ_FAR - PROJ_NEAR);
+	}
+
+	//===================================
+	//Should be uniforms down the line.
+	const vec4 baseColor = vec4(0.0,0.1,0.0,0.1);
+	const vec4 rimColor = vec4(0.0,1.0,0.0,1.0);
+
+
+	void main(void){
+		//-----------------------------
+		// Get Depth and exit out if current pixel Z is greater then whats in the depth buffer.
+		// exit if current fragment is further away from camera then depth tex fragment
+		ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+		float zTexDepth	= texelFetch(bufDepth, fCoord , 0).x;
+
+		if(gl_FragCoord.z > zTexDepth) discard;
+
+		//-----------------------------
+		/* Our texture should be a mask texture*/ 
+		//vec4 mask = texture(u_tex01,v_uv);
+		outColor = vec4(0.0,0.0,0.0,0.0);
+
+		//-----------------------------
+		/* Add fresnel */
+		float isFrontFace = clamp(0.0,1.0,float(gl_FrontFacing));
+
+		float fresnelMin = 0.05;
+		float fresnelMax = 1.1;
+		float fresnel = (1.0 - smoothstep( fresnelMin, 1.0, (vDotFromCamera/fresnelMax) )) * isFrontFace;
+		
+		//outColor = mask * mask.r * fresnel*0.5 * isFrontFace * 0.5;
+		outColor += rimColor * fresnel;
+
+		//-----------------------------
+		/* Add Intersection */
+		float zPixelTex		= mapDepthToProj(zTexDepth);		//Pixel Depth from Texture
+		float zPixelFrag	= mapDepthToProj(gl_FragCoord.z);	//Pixel Depth of current rendering fragment
+		float zDelta		= abs(zPixelTex - zPixelFrag);		//Difference between the two
+
+		float intersectMax	= 0.15; //This can be a setting
+		float intersect = (zDelta <= intersectMax)? clamp(0.0,1.0, 1.0 - zDelta / intersectMax ) : 0.0;
+
+		outColor += rimColor * intersect;
+
+		vec3 hit3 = vec3(-1.0, -3.0, -0.01);
+		vec3 hit2 = vec3(-0.6972498297691345, 1.0605579614639282, -0.27839863300323486);
+		vec3 hit = vec3(0.0,0.0,2.0);
+
+		if( dot( normalize(hit), normalize(v_worldpos) ) > 0.99 ) outColor = vec4(1.0,0.0,0.0,1.0);
+		if( dot( normalize(hit2), normalize(v_worldpos) ) > 0.995 ) outColor = vec4(1.0,0.0,0.0,1.0);
+
+		float hAngle = dot( normalize(hit3), normalize(v_worldpos) );
+		float angleStart = fract(v_time * 0.001 * 0.5) * 2.0 - 1.0; //Map 0 to 1 to -1 to 1
+		float thickness = 0.03;
+		if( hAngle <= angleStart && hAngle >= angleStart-thickness ) outColor += vec4(1.0,0.0,0.0,1.0);
+	}
+</fragment>

@@ -1,0 +1,146 @@
+<shader>
+{
+	"name" : "TestShader",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : [ 
+
+	]
+}
+</shader>
+	
+<materials>[ 
+	{ "name":"MatTestShader", "useBlending":true, "useSampleAlphaCoverage":false, 
+		"uniforms":[
+		]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec3 v_position;
+
+	void main(void){
+		//..........................
+		vec3 position	= a_position;
+
+
+		v_position = position;
+		//..........................
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(position, 1.0);
+	}
+</vertex>
+
+https://www.gamedev.net/forums/topic/529926-terrain-contour-lines-using-pixel-shader/
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec3 v_position;
+	out vec4 FragColor;
+
+	const float maxY		= 7.0;
+	const float gridSize	= 0.2;
+	const float lineWidth	= 1.0; //Dont make this value smaller then one, Orignal code didn't make things thinner, just lighter.So keeping >=1, simplifies things
+	const float layerCnt	= maxY / gridSize;
+	const float oddLayerPos = 4.0;
+
+	const vec4 loColor = vec4(0.5254, 0.3803, 0.0235, 1.0); //Land Color
+	const vec4 hiColor = vec4(0.9294, 0.8745, 0.7686, 1.0);
+
+	const vec4 loCLine = vec4(0.4662, 0.3878, 0.1372, 1.0); //Line Color
+	const vec4 hiCLine = vec4(0.6913, 0.6168, 0.3580, 1.0);
+
+	void main(void){
+/*		
+		//Create Grid;
+		vec3 gridPos	= v_position / gridSize;
+		//vec3 gridFrac	= fract(gridPos);
+		vec3 gridFrac	= abs( fract(gridPos) - 0.5 );
+		//FragColor = vec4(gridFrac.y, gridFrac.y, gridFrac.y,1.0); return;
+
+		vec3 gridDeri	= fwidth( gridPos );
+
+		//float mi = max( 0.0, gwidth-1.0), ma = max(1.0,gwidth);
+		//vec3 g = clamp( (f-df*mi) / (df*(ma-mi)), max(0.0,1.0-gwidth), 1.0);
+
+		vec3 g 	= clamp( ( gridFrac - gridDeri * (lineWidth-1.0) ) / gridDeri , 0.0 ,1.0); 
+		float c	= g.x * g.y * g.z;
+
+		//FragColor = vec4(c, c, c, 1.0);
+		FragColor = mix( 
+			vec4(0.2,0.2,0.2,1.0),
+			vec4(1.0,0.8,0.8,1.0),
+			c
+		);
+*/
+
+
+		float gridPosY		= v_position.y / gridSize;				// How many levels are we up
+		float gridFracY 	= fract(gridPosY);						// Get the fraction of the level
+		float gridFracYA	= abs( gridFracY - 0.5 );				// Shift the value to make it easier for anti alias
+		float gridDeriY		= fwidth( gridPosY );					// Derivitive of Y
+		float gridLayer 	= floor(gridPosY - 0.5) / layerCnt;		// Normalize the layer number based on total Layers possible
+
+		//float c = smoothstep(-lineWidth*gridDeriY,lineWidth*gridDeriY , gridFracYA);
+		//float c = clamp( ( gridFracYA - gridDeriY * (lineWidth-1.0) ) / gridDeriY , 0.0 ,1.0);
+		//float c = clamp( gridFracYA / gridDeriY , 0.0 ,1.0); //Simplifed because lineWidth == 1
+		
+		float oddLayer 	= mod(floor(gridPosY - 0.5), oddLayerPos); //If its the odd layer, it'll equal zero
+		//float wLine 	= (( 1.0 - step(0.1,oddLayer) ) * 1.2 ) + lineWidth;
+		float wLine = lineWidth;
+		if(oddLayer == 0.0 && gridFracY < 0.5) wLine += 0.9;
+
+		float c = clamp( ( gridFracYA - gridDeriY * (wLine-1.0) ) / gridDeriY , 0.0 ,1.0);
+
+
+		//float cc = floor(gridPosY - 0.5) * 0.04; //Gray Scale Layer Color
+		
+		//if(oddLayer == 0.0){
+		//	FragColor = mix(
+		//		mix(loCLine, hiCLine, gridLayer),
+		//		vec4(1.0,0.0,0.0,1.0),
+		//		c
+		//	);
+		//	return;
+		//}
+
+		FragColor = mix(
+			mix(loCLine, hiCLine, gridLayer),
+			mix(loColor, hiColor, gridLayer),
+			c
+		);
+	}
+</fragment>
+	//simple version
+	uniform float gsize;//size of the grid
+	uniform float gwidth;//grid lines'width in pixels
+	varying vec3 P;
+
+	vec3 f  = abs(fract (P * gsize)-0.5);
+	vec3 df = fwidth(P * gsize);
+	vec3 g = smoothstep(-gwidth*df,gwidth*df , f);
+	float c = g.x * g.y * g.z; 
+	gl_FragColor = vec4(c, c, c, 1.0);// * gl_Color;
+
+
+	//With anti-alias
+	vec3 f  = abs(fract (P * gsize)-0.5);
+	vec3 df = fwidth(P * gsize);
+	float mi=max(0.0,gwidth-1.0), ma=max(1.0,gwidth);//should be uniforms
+	vec3 g=clamp((f-df*mi)/(df*(ma-mi)),max(0.0,1.0-gwidth),1.0);//max(0.0,1.0-gwidth) should also be sent as uniform
+	float c = g.x * g.y * g.z;
+	gl_FragColor = vec4(c, c, c, 1.0);
+	gl_FragColor = gl_FragColor * gl_Color;

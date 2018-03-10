@@ -1,0 +1,87 @@
+<shader>
+{
+	"name":"LowPolyPhong",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uBaseColor","vec3"]
+}
+</shader>
+
+<materials>
+[
+	{"name":"MatLowPolyPhong", "useBlending":true, "uniforms":[ "uBaseColor","color","ff7f7f" ]}
+]
+</materials>
+	
+<vertex>
+#version 300 es
+layout(location=0) in vec3 a_position;
+layout(location=1) in vec3 a_norm;
+layout(location=2) in vec2 a_uv;
+
+uniform UBOTransform{
+	mat4 matProjection;
+	mat4 matCameraView;
+	vec3 posCamera;
+};
+
+uniform mat4 uModalMatrix;
+uniform mat3 uNormalMatrix;
+out highp vec2 vUV;
+
+out vec3 vWorldPos;
+out vec3 vCameraPos;
+
+void main(void){
+	vCameraPos 	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz; //Need to pass Camera pos turned to WorldSpace avoid inverse 
+
+	vec4 pos	= uModalMatrix * vec4(a_position,1.0);
+	gl_Position	= matProjection * matCameraView * pos;
+	vWorldPos	= pos.xyz;
+
+	vUV = a_uv;
+}
+</vertex>
+
+<fragment>
+#version 300 es
+precision mediump float;
+in highp vec2 vUV;
+
+in vec3 vWorldPos;
+in vec3 vCameraPos;
+
+out vec4 outColor;
+
+uniform vec3 uBaseColor;
+
+//const vec3 uBaseColor			= vec3(0.9,0.9,0.9);//vec3(1.0,0.5,0.5);
+const vec3 uLightPos			= vec3(8.0,4.0,1.0);
+const vec3 uLightColor			= vec3(1.0,1.0,1.0);
+
+const float uAmbientStrength	= 0.5;
+const float uDiffuseStrength	= 0.5;
+const float uSpecularStrength	= 0.2f;	//0.15
+const float uSpecularShininess	= 1.0f; //256.0
+
+void main(void){
+	vec3 pixelNorm = normalize( cross( dFdx(vWorldPos), dFdy(vWorldPos) ) ); //Calc the Normal of the Rasterizing Pixel
+
+	//Ambient Lighting
+	vec3 cAmbient		= uLightColor * uAmbientStrength;
+	
+	//Diffuse Lighting
+	vec3 lightVector	= normalize(uLightPos - vWorldPos); //light direction based on pixel world position
+	float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0); //Angle between Light Direction and Pixel Direction (1==90d)
+	vec3 cDiffuse		= uLightColor * diffuseAngle * uDiffuseStrength;
+
+	//Specular Lighting
+	vec3 camVector		= normalize(vCameraPos - vWorldPos); //Camera Direction based on pixel world position
+	vec3 reflectVector	= reflect(-lightVector, pixelNorm); //Reflective direction of line from pixel direction as pivot.
+	float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+	vec3 cSpecular		= uLightColor * specular * uSpecularStrength;
+
+	//Final Color
+	outColor = vec4(uBaseColor * (cAmbient + cDiffuse + cSpecular), 1.0);
+}
+</fragment>

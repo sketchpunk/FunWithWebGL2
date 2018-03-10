@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="cache-control" content="no-cache" /> 
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl			from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			
+			import Terrain		from "./fungi/entities/Terrain.js";
+			import { Mat4 }		from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"},
+					{type:"shader",file:"test_map.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var terrain;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				gl.setClearColor("505050");
+				//gl.setSize(512,512);
+				Fungi.gridFloor.setMaterial("MatGridFloorDark");
+				Fungi.mainCamera.setPosition(0,0.5,11).setEulerDegrees(-30,10,0);
+
+				/*
+				var L = -1, R = 1, T = 1, B = -1; //LEFT, RIGHT, TOP, BOTTOM.
+				//var L = 0, R = 5, T = 0, B = -5; //LEFT, RIGHT, TOP, BOTTOM.
+				
+
+				Mat4.ortho(Fungi.mainCamera.projectionMatrix, L, R, B, T, -10, 100);
+				Mat4.invert(Fungi.mainCamera.invertedProjectionMatrix, Fungi.mainCamera.projectionMatrix);
+
+				gl.UBOTransform.update(
+					"matProjection",Fungi.mainCamera.projectionMatrix,
+					"screenRes", new Float32Array( [ gl.width, gl.height ] )
+				);
+				
+				Fungi.mainCamera.setPosition(0,0,0).setEulerDegrees(-90,0,0);
+				*/
+
+				//........................................
+				//Add extra items to the scenen
+				var spec = { size:4, cells:10, minHeight:0, maxHeight:7, freq:7.0, seed:1 };
+				Fungi.scene.push(terrain = new Terrain("MatTestShader",spec,0,0).setPosition(0,0,0)); //MatLowPolyPhong
+
+				Fungi.scene.push(new Terrain("MatTestShader",spec,1,0).setPosition(4,0,0));
+				Fungi.scene.push(new Terrain("MatTestShader",spec,2,0).setPosition(8,0,0)); 
+				Fungi.scene.push(new Terrain("MatTestShader",spec,0,1).setPosition(0,0,4)); 
+				Fungi.scene.push(new Terrain("MatTestShader",spec,1,1).setPosition(4,0,4)); 
+				Fungi.scene.push(new Terrain("MatTestShader",spec,2,1).setPosition(8,0,4)); 
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+
+			function onRender(dt,ss){
+				//------------------------------
+				Fungi.update().render(Fungi.scene);
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
