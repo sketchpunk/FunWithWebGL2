@@ -5,10 +5,10 @@ After watching a video on how to translate UV coord to polar coord, then use tha
 
 ### Links of Interest
 Art of Code : Using Polar Coordinates to create art
-https://www.youtube.com/watch?v=r1UOB8NVE8I&t=2s
+https://www.youtube.com/watch?v=r1UOB8NVE8I
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/lS4ouHS3pUI)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 
 * [Twitter](https://twitter.com/SketchpunkLabs)
