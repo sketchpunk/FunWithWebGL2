@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi 			from "./fungi/Fungi.js";
+			import Downloader		from "./fungi/util/Downloader.js";
+			import LineCube			from "./fungi/primitives/LineCube.js";
+			import { Vec3 }			from "./fungi/Maths.js";
+			import { Ray, AABB }	from "./fungi/util/Raycast.js";
+			import { Voxel, VoxelChunk, VoxelRender, DynamicVoxel, VoxelRaycast } from "./fungi/util/Voxel.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"},
+					{type:"shader",file:"fungi/shaders/BaseColor.txt"},
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+			
+
+			var chunkData,chunkRend,chunkAABB;
+			var voxOutline,voxOutlineEx;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender,7);
+				Fungi.mainCamera.setPosition(1,0.5,6).setEulerDegrees(-35,0,0);
+				Fungi.ctrlCamera.onDownOverride = onCameraMouseDown;				
+
+				//........................................
+				var size = 10;
+				chunkData = new VoxelChunk(size,size,size);
+
+				var s = chunkData.scale;
+				var voxChunkSize = chunkData.getMaxBound();
+				chunkAABB = new AABB([0,0,0], voxChunkSize);
+
+				Fungi.scene.push( LineCube("GrayColor",0,0,0, voxChunkSize[0],voxChunkSize[1],voxChunkSize[2]) );
+				Fungi.scene.push( chunkRend		= new DynamicVoxel(chunkData,"MatLowPolyPhong").chunkUpdate() ); //Render Voxels
+				Fungi.scene.push( voxOutline	= LineCube("RedColor",0,0,0, s,s,s) ); //Visualize Voxel Hit
+				Fungi.scene.push( voxOutlineEx	= LineCube("GreenColor",0,0,0, s,s,s) ); //Visualize Voxel hit's Normal Dir Hit Voxel
+				
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			function onRender(){ Fungi.update().render(Fungi.scene); }
+
+			function onCameraMouseDown(e,ctrl,ix,iy){
+				if(! (e.altKey || e.shiftKey)) return false;
+				Fungi.debugLine.reset();
+
+				//...............................
+				var ray = Ray.MouseSegment(ix,iy).prepareAABB();
+				Ray.DebugLine(ray);
+
+				var vData = VoxelRaycast(ray,chunkData,chunkAABB);
+				if(vData == null) return false; //No Hit
+
+				//...............................
+				//See hit 
+				voxOutline.position.x = vData.voxelCoord[0] * chunkData.scale;
+				voxOutline.position.y = vData.voxelCoord[1] * chunkData.scale;
+				voxOutline.position.z = vData.voxelCoord[2] * chunkData.scale;
+
+				//See the last voxel in ray before hit.
+				voxOutlineEx.position.x = voxOutline.position.x + (vData.hitNorm[0] * chunkData.scale);
+				voxOutlineEx.position.y = voxOutline.position.y + (vData.hitNorm[1] * chunkData.scale);
+				voxOutlineEx.position.z = voxOutline.position.z + (vData.hitNorm[2] * chunkData.scale);
+
+
+				var x = vData.voxelCoord[0],	//Voxel Coord
+					y = vData.voxelCoord[1],
+					z = vData.voxelCoord[2],
+					v = 1;						//Add or Remove Voxel.
+
+				var addMode = e.altKey;	//If altKey, then we are adding voxels
+				
+				if(addMode){
+					if(vData.isHit){ //If we hit a voxel, not not the wall, get the coords of the last voxel before hit.
+						x += vData.hitNorm[0];
+						y += vData.hitNorm[1];
+						z += vData.hitNorm[2];
+					}
+				}else{//Remove Mode
+					if(!vData.isHit) return false; //Exit if not voxel was hit.
+					v = 0;
+				}
+
+				//Set voxel data and update mesh.
+				chunkData.set(x,y,z,v);
+				chunkRend.chunkUpdate();
+			}
+			var EPSILON = 1e-6;
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

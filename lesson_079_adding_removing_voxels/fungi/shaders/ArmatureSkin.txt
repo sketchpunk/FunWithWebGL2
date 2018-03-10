@@ -1,0 +1,118 @@
+<shader>
+{
+	"name":"ArmatureSkinShader",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uJoints","mat2x4"]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"ArmatureSkin", "useBlending":false }
+]
+</materials>
+	
+<vertex>
+#version 300 es
+layout(location=0) in vec4 a_position;
+layout(location=1) in vec3 a_norm;
+layout(location=2) in vec2 a_uv;
+
+layout(location=3) in vec4 a_jointIdx;
+layout(location=4) in vec4 a_jointWeight;
+
+uniform UBOTransform{
+	mat4 matProjection;
+	mat4 matCameraView;
+	vec3 posCamera;
+};
+
+uniform mat4 uModalMatrix;
+uniform mat3 uNormalMatrix;
+uniform mat2x4[76] uBones;
+
+out highp vec2 vUV;
+
+out vec3 vWorldPos;
+out vec3 vCameraPos;
+
+vec3 dqBoneTransform(){
+	float t = 1.0 / (a_jointWeight.x+a_jointWeight.y+a_jointWeight.z+a_jointWeight.w);
+	float bw0 = a_jointWeight[0] * t;
+	float bw1 = a_jointWeight[1] * t;
+	float bw2 = a_jointWeight[2] * t;
+	float bw3 = a_jointWeight[3] * t;
+
+	mat2x4 mBone =	uBones[int(a_jointIdx[0])] * bw0 +
+        			uBones[int(a_jointIdx[1])] * bw1 +
+        			uBones[int(a_jointIdx[2])] * bw2 +
+        			uBones[int(a_jointIdx[3])] * bw3;
+  	/*
+	mat2x4 mBone =	uBones[int(a_jointIdx[0])] * a_jointWeight[0] +
+        			uBones[int(a_jointIdx[1])] * a_jointWeight[1] +
+        			uBones[int(a_jointIdx[2])] * a_jointWeight[2] +
+        			uBones[int(a_jointIdx[3])] * a_jointWeight[3];
+	*/
+
+	vec3 v = a_position.xyz;
+	vec4 Qr = mBone[0].xyzw; //real (rot)
+	vec4 Qd = mBone[1].xyzw; //dual (trans)
+
+	vec3 pos = v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);			//Rotate Vector
+	vec3 tran = 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+	return pos + tran;
+}
+
+void main(void){
+	//gl_PointSize = 8.0;// + (5.0 * a_jointIdx.y);
+	vCameraPos	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz; //Need to pass Camera pos turned to WorldSpace avoid inverse 
+
+    vWorldPos = dqBoneTransform();
+
+    //vWorldPos = a_position.xyz; //dqBoneTransform();
+    gl_Position =  matProjection * matCameraView * uModalMatrix * vec4(vWorldPos, 1.0);
+
+	vUV = a_uv;
+}
+</vertex>
+<fragment>
+#version 300 es
+precision mediump float;
+in highp vec2 vUV;
+
+in vec3 vWorldPos;
+in vec3 vCameraPos;
+
+out vec4 outColor;
+
+const vec3 uLightPos			= vec3(4.0,2.0,1.0);
+const vec3 uBaseColor			= vec3(0.9,0.9,0.9);//vec3(1.0,0.5,0.5);
+const vec3 uLightColor			= vec3(1.0,1.0,1.0);
+
+const float uAmbientStrength	= 0.5;
+const float uDiffuseStrength	= 0.5;
+const float uSpecularStrength	= 0.2f;	//0.15
+const float uSpecularShininess	= 1.0f; //256.0
+
+void main(void){
+	vec3 pixelNorm = normalize( cross( dFdx(vWorldPos), dFdy(vWorldPos) ) ); //Calc the Normal of the Rasterizing Pixel
+
+	//Ambient Lighting
+	vec3 cAmbient		= uLightColor * uAmbientStrength;
+	
+	//Diffuse Lighting
+	vec3 lightVector	= normalize(uLightPos - vWorldPos); //light direction based on pixel world position
+	float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0); //Angle between Light Direction and Pixel Direction (1==90d)
+	vec3 cDiffuse		= uLightColor * diffuseAngle * uDiffuseStrength;
+
+	//Specular Lighting
+	vec3 camVector		= normalize(vCameraPos - vWorldPos); //Camera Direction based on pixel world position
+	vec3 reflectVector	= reflect(-lightVector, pixelNorm); //Reflective direction of line from pixel direction as pivot.
+	float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+	vec3 cSpecular		= uLightColor * specular * uSpecularStrength;
+
+	//Final Color
+	outColor = vec4( uBaseColor * (cAmbient + cDiffuse + cSpecular), 1.0);
+}
+</fragment>
