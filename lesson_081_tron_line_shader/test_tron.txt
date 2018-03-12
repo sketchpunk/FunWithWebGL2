@@ -1,0 +1,88 @@
+<shader>
+{
+	"name" : "TestShader",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : [ 
+
+	]
+}
+</shader>
+	
+<materials>[ 
+	{ "name":"MatTestShader", "useBlending":true, "useSampleAlphaCoverage":false, 
+		"uniforms":[
+		]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec3 v_position;
+	out vec2 v_uv;
+
+	void main(void){
+		//..........................
+		v_position	= a_position;
+		v_uv		= a_uv;
+
+		//..........................
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(a_position, 1.0);
+	}
+</vertex>
+
+https://www.gamedev.net/forums/topic/529926-terrain-contour-lines-using-pixel-shader/
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec3 v_position;
+	in vec2 v_uv;
+	out vec4 FragColor;
+
+	const vec3 u_color			= vec3(0.1,0.775,0.189);
+	const float u_edgeThickness	= 2.0;
+	const float u_edgeSharpness	= 30.0;
+	const float u_edgeSubtract	= 0.3;
+	const float u_glowStrength	= 10.0;
+
+	void main(void){
+		//vec2 uv	= v_uv;					//Start with a simple Gradient
+		//vec2 uv	= v_uv - 0.5;			//Shift gradiant downward by half, causing more black: -0.5 -> 0 -> 0.5
+		//vec2 uv	= abs(v_uv - 0.5);  	//Change Negative to positive to create a white->black->white gradient. 0.5 -> 0 -> 0.5
+		vec2 uv	= abs(v_uv - 0.5) * 2.0;	// x2 brings the gradient up to 1 -> 0 -> 1, can control edge thickness here.
+
+		//uv = pow(uv, vec2(5.0,5.0)); 		//Now we use a curve to expand the center and making the edges thinner.
+		uv = pow(uv, vec2(10.0,10.0)) - 0.3;
+
+		//FragColor = vec4( uv.x, uv.x, uv.x ,1.0);
+
+		//float c		= clamp( uv.x + uv.y, 0.0, 1.0 ); 		//Add X and Y together to form 4 edges and clamp it to 0 -> 1
+		float c		= clamp( uv.x + uv.y, 0.0, 1.0 ) * 2.0; 	//Can increase the strength of the glow
+		//FragColor	= vec4(c,c,c,1.0);
+		
+		FragColor	= vec4( u_color * c ,1.0); 					//With the mask complete, multiple color into it.
+
+
+		/*
+		vec2 uv		= abs(v_uv - 0.5) * u_edgeThickness;
+		uv			= pow(uv, vec2(u_edgeSharpness)) - u_edgeSubtract;
+		
+		float c		= clamp( uv.x + uv.y, 0.0, 1.0 ) * u_glowStrength;
+		
+		FragColor	= vec4( u_color * c ,1.0);
+		*/
+	}
+</fragment>
