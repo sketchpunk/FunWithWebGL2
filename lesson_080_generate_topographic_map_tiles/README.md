@@ -7,7 +7,7 @@ Breath of the wild has a very cool map system and I love the topographic look of
 https://www.gamedev.net/forums/topic/529926-terrain-contour-lines-using-pixel-shader/
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/UkvSUBZ-JbI)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 
 * [Twitter](https://twitter.com/SketchpunkLabs)
