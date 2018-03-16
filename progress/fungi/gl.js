@@ -49,11 +49,11 @@ function init(canvas,bgColor,wp,hp){
 
 /*
 const BLEND_ALPHA = 0;
-const BLEND_COLOR = 1;
 function blendMode(m){
 	switch(m){
-		case BLEND_ALPHA: ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA); break;
-		case BLEND_COLOR: ctx.blendFunc(ctx.ONE,ctx.ONE); break;
+		case BLEND_ALPHA: 			ctx.blendFunc(ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA); break;
+		case BLEND_ADDITIVE: 		ctx.blendFunc(ctx.ONE,ctx.ONE); break;
+		case BLEND_ALPHA_ADDITIVE:	ctx.blendFunc(ctx.SRC_ALPHA,ctx.ONE); break;
 	}
 }
 */
@@ -103,7 +103,7 @@ function setSize(w,h){
 }
 
 function setClearColor(hex){
-	var a = rgbArray(hex);
+	var a = (hex.length > 6)? rgbaArray(hex) : rgbArray(hex);
 	ctx.clearColor(a[0],a[1],a[2],1.0);
 	return this;
 }
@@ -245,8 +245,10 @@ function updateTexture(name,img,doYFlip,useMips){ //can be used to pass video fr
 		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.LINEAR_MIPMAP_NEAREST);	//Setup down scaling
 		ctx.generateMipmap(ctx.TEXTURE_2D);	//Precalc different sizes of texture for better quality rendering.
 	}else{
-		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER,	ctx.NEAREST);
-		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER,	ctx.NEAREST);
+		//ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER,	ctx.NEAREST);
+		//ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER,	ctx.NEAREST);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER,	ctx.LINEAR);
+		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER,	ctx.LINEAR);
 		//ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S,		ctx.CLAMP_TO_EDGE);
 		//ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T,		ctx.CLAMP_TO_EDGE);
 		ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S,		ctx.REPEAT); //TODO make this configurable on load.

@@ -9,7 +9,8 @@
 
 <materials>
 [
-	{ "name":"ColorGray","useBlending":false,"useSampleAlphaCoverage":true, "uniforms":["uColor", "acolor", "666666FF"] }
+	{ "name":"ColorGray","useBlending":false,"useSampleAlphaCoverage":true, "uniforms":["uColor", "acolor", "666666FF"] },
+	{ "name":"ColorGrayTrans","useBlending":true,"useSampleAlphaCoverage":false, "uniforms":["uColor", "acolor", "66666660"] }
 ]
 </materials>
 	

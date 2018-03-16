@@ -12,7 +12,9 @@
 	{ "name":"RedColor", "uniforms":[ "u_color", "acolor", "ff0000ff" ] },
 	{ "name":"GreenColor", "uniforms":[ "u_color", "acolor", "00FF00ff" ] },
 	{ "name":"GrayColor", "uniforms":[ "u_color", "acolor", "bbbbbbff" ] },
-	{ "name":"BlackColor", "uniforms":[ "u_color", "acolor", "000000ff" ] }
+	{ "name":"BlackColor", "uniforms":[ "u_color", "acolor", "000000ff" ] },
+	{ "name":"DGrayColor", "uniforms":[ "u_color", "acolor", "505050ff" ] }
+	
 ]
 </materials>
 	

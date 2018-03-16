@@ -183,14 +183,19 @@ class ShaderBuilder{
 			name;
 
 		for(var i=0; i < arguments.length; i+=2){
-			name = arguments[i];
+			name = arguments[i]; 
 			if(this._UniformList[name] === undefined){ console.log("uniform not found " + name); return this; }
+			
+
 
 			switch(this._UniformList[name].type){
 				case "float":	gl.ctx.uniform1f(this._UniformList[name].loc, arguments[i+1]); break;
+				case "afloat":	gl.ctx.uniform1fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec2":	gl.ctx.uniform2fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec3":	gl.ctx.uniform3fv(this._UniformList[name].loc, arguments[i+1]); break;
 				case "vec4":	gl.ctx.uniform4fv(this._UniformList[name].loc, arguments[i+1]); break;
+				case "int":		gl.ctx.uniform1i(this._UniformList[name].loc, arguments[i+1]); break;
+
 				case "mat4":	gl.ctx.uniformMatrix4fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "mat3":	gl.ctx.uniformMatrix3fv(this._UniformList[name].loc,false,arguments[i+1]); break;
 				case "mat2x4": 	gl.ctx.uniformMatrix2x4fv(this._UniformList[name].loc,false,arguments[i+1]); break;

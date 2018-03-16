@@ -1,0 +1,189 @@
+<shader>
+{
+	"name":"fastGaussianBlur",
+	"useModelMatrix":false,
+	"useUBOTransform":true,
+	"uniforms":[ "bufColor","sample2D", "u_dir","vec2", "u_factor", "float" ]
+}
+</shader>
+
+<materials>
+[ ]
+</materials>
+{ "name":"MatDeferredRender","useBlending":true, "uniforms":[] }
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	void main(void){
+		v_uv = vec2(a_uv.s,a_uv.t);
+		gl_Position	= vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	in highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform sampler2D bufColor;
+	uniform vec2 u_dir;
+	uniform float u_factor;
+
+	out vec4 outColor;
+
+
+	//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+	//https://github.com/Jam3/glsl-fast-gaussian-blur
+	vec4 blur5(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
+	  vec4 color = vec4(0.0);
+	  vec2 off1 = vec2(1.3333333333333333) * direction;
+	  color += texture(image, uv) * 0.29411764705882354;
+	  color += texture(image, uv + (off1 / resolution)) * 0.35294117647058826;
+	  color += texture(image, uv - (off1 / resolution)) * 0.35294117647058826;
+	  return color; 
+	}
+
+	vec4 blur13(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
+	  vec4 color = vec4(0.0);
+	  vec2 off1 = vec2(1.411764705882353) * direction;
+	  vec2 off2 = vec2(3.2941176470588234) * direction;
+	  vec2 off3 = vec2(5.176470588235294) * direction;
+	  color += texture(image, uv) * 0.1964825501511404;
+	  color += texture(image, uv + (off1 / resolution)) * 0.2969069646728344;
+	  color += texture(image, uv - (off1 / resolution)) * 0.2969069646728344;
+	  color += texture(image, uv + (off2 / resolution)) * 0.09447039785044732;
+	  color += texture(image, uv - (off2 / resolution)) * 0.09447039785044732;
+	  color += texture(image, uv + (off3 / resolution)) * 0.010381362401148057;
+	  color += texture(image, uv - (off3 / resolution)) * 0.010381362401148057;
+	  return color;
+	}
+
+	vec4 blur9(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
+	  vec4 color = vec4(0.0);
+	  vec2 off1 = vec2(1.3846153846) * direction;
+	  vec2 off2 = vec2(3.2307692308) * direction;
+	  color += texture(image, uv) * 0.2270270270;
+	  color += texture(image, uv + (off1 / resolution)) * 0.3162162162;
+	  color += texture(image, uv - (off1 / resolution)) * 0.3162162162;
+	  color += texture(image, uv + (off2 / resolution)) * 0.0702702703;
+	  color += texture(image, uv - (off2 / resolution)) * 0.0702702703;
+	  return color;
+	}
+	
+	//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+	//https://learnopengl.com/Advanced-Lighting/Bloom
+	//Notes - Changed Original to use Direction to simplify things
+	const float weight[5] = float[] (0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+	vec4 blur(sampler2D image,vec2 uv, vec2 direction){
+		vec2 tex_offset = 1.0 / vec2( textureSize(image, 0) );		// gets size of single texel
+	    vec3 result = texture(image, uv).rgb * weight[0];	// current fragment's contribution
+
+	   	vec2 tex;
+	    for(int i = 1; i < 5; ++i){
+	    	tex = direction * tex_offset * float(i);
+			result += texture(image, uv + tex).rgb * weight[i];
+			result += texture(image, uv - tex).rgb * weight[i];
+	    	//result += texture(image, TexCoords + vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+	        //result += texture(image, TexCoords - vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+	    }
+
+	    return vec4(result, 1.0);
+	}
+
+	//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+	// http://www.pyramidsoftwaresolutions.com/webgl-threejs-blur-tutorial.html
+	vec4 blurOther(sampler2D image, vec2 uv, vec2 dir, float h){
+		vec4 sum = vec4(0.0);
+		
+		sum += texture(image, uv - 3.2307 * h * dir) * 0.0702;
+		sum += texture(image, uv - 1.3846 * h * dir) * 0.3162;
+		sum += texture(image, uv) * 0.2270;
+		sum += texture(image, uv + 1.3846 * h * dir) * 0.3162;
+		sum += texture(image, uv + 3.2307 * h * dir) * 0.0702;
+
+		//sum += texture2D(image, vec2(uv.x - 3.2307 * h, vUv.y)) * 0.0702;
+		//sum += texture2D(image, vec2(uv.x - 1.3846 * h, vUv.y)) * 0.3162;
+		//sum += texture2D(image, vUv) * 0.2270;
+		//sum += texture2D(image, vec2(uv.x + 1.3846 * h, vUv.y)) * 0.3162;
+		//sum += texture2D(image, vec2(uv.x + 3.2307 * h, vUv.y)) * 0.0702;
+
+		return sum;
+	}
+
+
+	//http://jeromeetienne.github.io/threex.glowkeycolor/examples/vendor/three.js/examples/js/shaders/HorizontalBlurShader.js
+	//Node changes the original, using direction
+	vec4 blurOther2(sampler2D image, vec2 uv, vec2 dir, float v){
+		vec4 sum = vec4(0.0);
+
+		sum += texture( image, uv - 4.0 * v * dir) * 0.051;
+		sum += texture( image, uv - 3.0 * v * dir) * 0.0918;
+		sum += texture( image, uv - 2.0 * v * dir) * 0.12245;
+		sum += texture( image, uv - 1.0 * v * dir) * 0.1531;
+		sum += texture( image, uv) * 0.1633;
+		sum += texture( image, uv + 1.0 * v * dir) * 0.1531;
+		sum += texture( image, uv + 2.0 * v * dir) * 0.12245;
+		sum += texture( image, uv + 3.0 * v * dir) * 0.0918;
+		sum += texture( image, uv + 4.0 * v * dir) * 0.051;
+
+		return sum;
+	}
+
+	//http://dev.theomader.com/gaussian-kernel-calculator/
+	vec4 FungiBlur(sampler2D tex, vec2 uv, vec2 dir){
+		vec2 pxSize = 1.0 / vec2( textureSize(tex, 0) ) * dir; //Pixel Size
+		vec4 c = vec4(0.0);
+		
+		c += texture(tex, uv - pxSize * 5.5) * 0.00598;
+		c += texture(tex, uv - pxSize * 3.5) * 0.060626;
+		c += texture(tex, uv - pxSize * 1.5) * 0.241843;
+		c += texture(tex, uv) * 0.383103;
+		c += texture(tex, uv + pxSize * 1.5) * 0.241843;
+		c += texture(tex, uv + pxSize * 3.5) * 0.060626;
+		c += texture(tex, uv + pxSize * 5.5) * 0.00598;
+
+		return c;
+	}
+
+
+
+
+	//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+	void main(void){
+		//ivec2 fCoord = ivec2(gl_FragCoord.xy);		//Get the Int of the current Screen pixel X,Y
+		//vec4 color = texelFetch(bufColor, fCoord , 0);
+		//outColor = color;
+		//outColor = vec4(color.r, color.r, color.r, 1.0);
+
+		//outColor = blur13(bufColor, v_uv, screenRes, u_dir * u_factor);
+		//outColor = blur(bufColor,v_uv,u_dir);
+		//outColor = blurOther(bufColor, v_uv, u_dir, 1.0 / screenRes.x * u_factor);
+		float x = u_factor + 1.0;
+		outColor = FungiBlur(bufColor, v_uv, u_dir);
+	}
+</fragment>
+
+
+		

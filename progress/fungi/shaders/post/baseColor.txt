@@ -1,0 +1,36 @@
+<shader>
+{
+	"name":"baseColor",
+	"useModelMatrix":false,
+	"useUBOTransform":false,
+	"uniforms":["u_color","vec4"]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"DGrayColor", "uniforms":[ "u_color", "acolor", "505050ff" ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	void main(void){
+		gl_Position = vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	uniform vec4 u_color;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = u_color; }
+</fragment>
+
+
+		
