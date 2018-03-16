@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="cache-control" content="no-cache" /> 
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl, { FBO }	from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import Quad			from "./fungi/primitives/Quad.js";
+			import { Mat4 }		from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
+					{type:"shader",file:"fungi/shaders/deferred/DeferredRender.txt"},
+					{type:"shader",file:"fungi/shaders/post/baseColor.txt"},
+					{type:"shader",file:"fungi/shaders/post/fungiBlur.txt"},
+					{type:"shader",file:"fungi/shaders/post/brightFilter.txt"},
+					{type:"shader",file:"fungi/shaders/post/additiveBlend.txt"},
+					
+					{type:"shader",file:"test_tron.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var fboRender, postQuad;
+			var postShader, blurShader, baseShader, brightShader, blendShader;
+			var fboTemp = [];
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				gl.setClearColor("00000000"); // "505050"
+				Fungi.gridFloor.setMaterial("MatGridFloorDark");
+				Fungi.mainCamera.setPosition(0,0.5,4.1).setEulerDegrees(-30,45,0);
+
+				//Setup Events for Deferred Rendering.
+				Fungi.render.onPreRender	= onPreRender;
+				Fungi.render.onPostRender	= onPostRender;
+
+				//Save reference to some shaders
+				postShader		= gl.res.shaders["DeferredRender"];
+				blurShader		= gl.res.shaders["fungiBlur"];
+				//brightShader	= gl.res.shaders["brightFilter"];
+				blendShader		= gl.res.shaders["additiveBlend"];
+
+
+				//........................................
+				//Setup Main Framebuffer used to render the scene
+				var fbo = new FBO();
+				fboRender = fbo.create()
+					.texColorBuffer("bColor",0)
+					.texColorBuffer("bEmission",1)
+					.texDepthBuffer()
+					.finalize("fboRender");
+
+
+				//-------------------
+				// Setup frame buffers for post effect rendering (PingPoing Rendering)
+				var w = Math.floor(gl.width * 0.5),
+					h = Math.floor(gl.height * 0.5);
+				fboTemp[0] = fbo.create().texColorBuffer("bColor",0).finalize("fboTemp01");
+				fboTemp[1] = fbo.create().texColorBuffer("bColor",0).finalize("fboTemp02");
+
+
+				//........................................
+				//adding material for background rendering
+				postQuad = Quad(-1,-1,1,1,"DGrayColor","postQuad").setOptions(true,false);
+
+				Fungi.scene.push(FacedCube("MatTestShader").setPosition(0,0.5,0));
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+
+			function onRender(dt,ss){
+				Fungi.update().render(Fungi.scene);
+			}
+
+			function onPreRender(){
+				FBO.clear(fboRender,false); 
+
+				//Must Render Background color
+				Fungi.render.prepareNext(postQuad).draw(); 
+			}
+
+			//https://udk-legacy.unrealengine.com/udk/Three/Bloom.html
+			//https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/blendFunc
+			function onPostRender(){
+				FBO.deactivate();
+				gl.ctx.depthMask(false);//Disable Writing to Depth Buffer
+				gl.ctx.disable(gl.ctx.DEPTH_TEST);
+
+				//Draw Main Scene
+				postShader.activate().setUniforms("bufColor",fboRender.bColor.texture);
+				//brightShader.activate().setUniforms("bufColor",fboRender.bColor.texture);
+				postQuad.draw();
+
+
+				//-----------------------------------------------------
+				/* Start Boom Post Effect*/
+				blurShader.activate();
+				var dir = [  new Float32Array([1,0]), new Float32Array([0,1])  ]; //Vert/Hori Blur
+				var i=0, ii=1, tex;
+				
+				//If temp framebuffers are smaller then scene texture, then
+				//we need to change the view port before drawing.
+				gl.ctx.viewport(0, 0, fboTemp[0].frameWidth, fboTemp[0].frameHeight);
+
+				for(var x=0; x < 6; x++){
+					i	= x % 2;		//Current Index : Draw Into
+					ii	= (i+1) % 2;	//Next Index : Draw From
+
+					FBO.clear(fboTemp[i],false); //Switch to new Frame Buffer and clear it out.
+					tex = (x == 0)? fboRender.bEmission.texture : fboTemp[ii].bColor.texture;
+					//tex = (x == 0)? fboRender.bColor.texture : fboTemp[ii].bColor.texture;
+
+					blurShader.setUniforms(
+						"texBase", tex,
+						"u_dir", dir[i],
+						
+						//"u_kernelLen", 6,
+						//"u_kernel", new Float32Array([0.382925, 0.24173, 0.060598, 0.005977, 0.000229, 0.000003])
+
+						"u_kernelLen", 3,
+						"u_kernel", new Float32Array([0.38774, 0.24477, 0.06136])
+
+						//"u_kernelLen", 2,
+						//"u_kernel", new Float32Array([0.44198, 0.27901])
+					);
+					postQuad.draw();
+				}
+				gl.ctx.viewport(0,0,gl.width,gl.height); //Setting draw port back to original size.
+				 
+				
+				/* ORIGINAL CODE BEFORE CONVERTING TO LOOP APPROACH.
+				FBO.clear(fboTemp[0],false);
+				blurShader.setUniforms(
+					"bufColor",fboRender.bEmission.texture,
+					"u_dir", new Float32Array([1,0])
+				);
+				postQuad.draw();
+
+				FBO.clear(fboTemp[1],false);
+				blurShader.setUniforms(
+					"bufColor",fboTemp[0].bColor.texture,
+					"u_dir", new Float32Array([0,1])
+				);
+				postQuad.draw();
+				*/
+
+				FBO.deactivate();
+				/*-----------------------------------------------------
+				Draw Glow Map using Additive Blend Mode */
+				gl.ctx.blendFunc(gl.ctx.ONE,gl.ctx.ONE);
+				//gl.ctx.blendFunc(gl.ctx.SRC_ALPHA,gl.ctx.ONE);
+				postShader.activate().setUniforms( "bufColor",fboTemp[i].bColor.texture );
+				postQuad.draw(); 
+
+				/*-----------------------------------------------------
+				Use a shader to handle the blend of the scene texture and glow map. 
+				blendShader.activate()
+					.setUniforms( "texBase",fboRender.bColor.texture, "texOver",fboTemp[i].bColor.texture );
+				postQuad.draw();
+				*/
+
+
+				//-----------------------------------------------------
+				//CLEAN UP : 
+				gl.ctx.depthMask(true);				// Disable Writing to Depth Buffer
+				gl.ctx.enable(gl.ctx.DEPTH_TEST);	// Enable depth testing
+				gl.ctx.useProgram(null);			// Clear any shader that is bound
+				gl.ctx.blendFunc(gl.ctx.SRC_ALPHA, gl.ctx.ONE_MINUS_SRC_ALPHA); //Switch back incase we use additive
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

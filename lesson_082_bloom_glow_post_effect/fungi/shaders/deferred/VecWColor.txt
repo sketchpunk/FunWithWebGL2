@@ -1,0 +1,59 @@
+Desc: This shader uses a color array that ties to the W component of the vertex position vec4.
+This then means there is no need to setup a color buffer to handle the color per vertex and
+uses less data to. 1 float from 3 foats
+
+<shader>
+{
+	"name":"VecWColor",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uColorAry","vec3"]
+}
+</shader>,"bufDepth","sample2D"
+
+<materials>
+[
+	{ "name":"MatVecWColor", "uniforms":[ "uColorAry", "color", ["ff0000","00ff00","0000ff","555555","999999","dddddd","000000","ff7f7f"] ] },
+	{ "name":"MatGridFloor", "uniforms":[ "uColorAry", "color", ["e6e6e6","ff9999","66ff66"] ] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform vec3 uColorAry[20];
+
+	out vec3 oColor;
+
+	void main(void){
+		gl_PointSize = 10.0;
+		oColor = uColorAry[ int(a_position.w) ];
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	in lowp vec3 oColor;
+	out vec4 outColor;
+
+	//uniform sampler2D bufDepth;
+
+	void main(void){
+		//ivec2 fCoord = ivec2(gl_FragCoord.xy);
+		//float depth = texelFetch(bufDepth, fCoord , 0).x;
+
+
+		outColor = vec4(oColor,1.0); //vec4(depth,depth,depth,1.0); //
+
+	}
+</fragment>
