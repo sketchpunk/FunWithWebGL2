@@ -77,8 +77,8 @@
 				// Setup frame buffers for post effect rendering (PingPoing Rendering)
 				var w = Math.floor(gl.width * 0.5),
 					h = Math.floor(gl.height * 0.5);
-				fboTemp[0] = fbo.create().texColorBuffer("bColor",0).finalize("fboTemp01");
-				fboTemp[1] = fbo.create().texColorBuffer("bColor",0).finalize("fboTemp02");
+				fboTemp[0] = fbo.create(w,h).texColorBuffer("bColor",0).finalize("fboTemp01");
+				fboTemp[1] = fbo.create(w,h).texColorBuffer("bColor",0).finalize("fboTemp02");
 
 
 				//........................................

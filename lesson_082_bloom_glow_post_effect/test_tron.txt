@@ -43,7 +43,6 @@
 	}
 </vertex>
 
-https://www.gamedev.net/forums/topic/529926-terrain-contour-lines-using-pixel-shader/
 <fragment>
 	#version 300 es
 	precision mediump float;
