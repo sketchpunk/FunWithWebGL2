@@ -186,6 +186,17 @@ class Vec3 extends Float32Array{
 			out[2] = az + t * (b[2] - az);
 			return out;
 		}
+
+		static norm(v, out = null){
+			var mag = Math.sqrt( v[0]*v[0] + v[1]*v[1] + v[2]*v[2] );
+			if(mag == 0) return;
+			if(out == null) out = v;
+
+			mag = 1 / mag;
+			out[0] = v[0] * mag;
+			out[1] = v[1] * mag;
+			out[2] = v[2] * mag;
+		}
 	//endregion
 }
 
