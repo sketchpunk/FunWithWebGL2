@@ -1,0 +1,69 @@
+<shader>
+{
+	"name" : "TransFeedback_P1",
+	"useModelMatrix" : false,
+	"useUBOTransform" : true,
+	"uniforms" : ["u_time","float"],
+	"transFeedback" : [ "o_offset", "o_velocity", "o_age", "o_ageNorm" ]
+}
+</shader>,"o_ageNorm"
+
+<materials>[ { "name":"MatTransFeedback_P1" } ]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3	a_offset;
+	layout(location=1) in vec3	a_velocity;
+	layout(location=2) in float	a_age;
+	layout(location=3) in float	a_ageNorm;
+	layout(location=4) in float	a_life;
+	
+	out vec3 o_offset;
+	out vec3 o_velocity;
+	out float o_age;
+	out float o_ageNorm;
+
+	highp float random(vec2 co){
+		highp float a	= 12.9898;
+		highp float b	= 78.233;
+		highp float c	= 43758.5453;
+		highp float dt	= dot(co.xy ,vec2(a,b));
+		highp float sn	= mod(dt,3.14);
+		return fract(sin(sn) * c);
+	}
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform float u_time;
+
+	void main(void){
+		float age = u_time - a_age;
+		if(age > a_life){
+			//float r = random(vec2(gl_VertexID,u_time));
+			float r = random(vec2(1,u_time));
+
+			float ra = 6.283 * r; //PI*2*Rand
+			float rx = r * 2.0 * cos(ra);
+			float rz = r * 2.0 * sin(ra);
+
+			// Generate a new particle
+			o_offset	= vec3(0.0, 0.0, 0.0);
+			o_velocity	= vec3(rx,(6.0 * r) + 2.0,rz);
+			o_age		= u_time;
+			o_ageNorm	= 0.0;
+		}else{
+			o_velocity	= a_velocity;// - vec3(0.0,0.05,0.0); //Apply Gravity to Velocity
+			o_offset	= a_offset + 0.01 * o_velocity;
+			o_age		= a_age;
+			o_ageNorm 	= age / a_life;
+		}
+	}
+</vertex>
+<fragment>
+	#version 300 es
+	void main(void){ }
+</fragment>

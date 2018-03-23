@@ -1,0 +1,78 @@
+<shader>
+{
+	"name":"additiveBlend",
+	"useModelMatrix":false,
+	"useUBOTransform":true,
+	"uniforms":[ "texBase","sample2D", "texOver","sample2D" ]
+}
+</shader>
+
+<materials>
+[ ]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	void main(void){
+		v_uv = vec2(a_uv.s,a_uv.t);
+		gl_Position	= vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	in highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform sampler2D texBase;
+	uniform sampler2D texOver;
+
+	out vec4 oFragColor;
+
+	const float u_overStrength = 0.99;
+
+	void main(void){
+		vec3 cBase = texture(texBase, v_uv).rgb;
+		vec3 cOver = texture(texOver, v_uv).rgb;
+		
+		//oFragColor = vec4(cOver,1.0);
+		oFragColor = vec4(cBase + cOver * u_overStrength, 1.0);
+		
+
+		/*https://learnopengl.com/Advanced-Lighting/Bloom
+		float exposure = 1.0;
+		float gamma = 2.2;
+
+		vec3 blend = cBase + cOver * 1.0;
+    	blend = vec3(1.0) - exp(-blend * exposure); // tone mapping
+    	blend = pow(blend, vec3(1.0 / gamma)); // gamma correct
+
+		oFragColor = vec4(blend, 1.0);
+		*/
+	}
+</fragment>
+
+
+		
