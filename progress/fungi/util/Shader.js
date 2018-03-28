@@ -68,6 +68,32 @@ function loadShader(js){
 }
 
 
+function loadInlineShader(elmName){
+	var str = document.getElementById(elmName).innerText,
+		rtn = { shader:null, materials:null, vertex:null, fragment:null },
+		posA, posB, txt;
+
+	//Loop threw the rtn struct to find all the tag elements that should be in the text file
+	//THen parse out the text and save it to the object.
+	for(var itm in rtn){
+		posA	= str.indexOf("<" + itm + ">") + itm.length + 2;
+		posB	= str.indexOf("<\\" + itm + ">");
+		txt		= str.substring(posA,posB);
+
+		switch(itm){
+			case "shader": case "materials": //These are JSON elements, parse them so they're ready for use.
+				try{ rtn[itm] = JSON.parse(txt); }
+				catch(err){ finalize(false,itm.file +" : "+ err.message); return false; }
+
+				break;
+			default: rtn[itm] = txt.trim();
+		}
+	}
+
+	loadShader(rtn); //Call fungi to load shader to GPU
+}
+
+
 //------------------------------------------------------
 // Material
 //------------------------------------------------------
@@ -250,6 +276,7 @@ class ShaderBuilder{
 export default {
 	create:createShader,
 	load:loadShader,
+	loadInline:loadInlineShader,
 
 	Material:Material,
 	Builder:ShaderBuilder

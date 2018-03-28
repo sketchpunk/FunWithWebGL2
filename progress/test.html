@@ -18,6 +18,7 @@
 			import Quad			from "./fungi/primitives/Quad.js";
 			import Renderable	from "./fungi/entities/Renderable.js";
 			import { Vec3 }		from "./fungi/Maths.js";
+			import Shader		from "./fungi/util/Shader.js";
 
 
 			window.addEventListener("load",function(){
@@ -28,8 +29,8 @@
 				var dl = Downloader.start([
 					{type:"shader",file:"fungi/shaders/VecWColor.txt"},
 					{type:"shader",file:"fungi/shaders/LowPolyPhong.txt"},
-					{type:"shader",file:"fungi/shaders/TextureUV.txt"},
-					{type:"image",name:"tex01",file:"../shared/UV_Grid_Sm.jpg", yFlip:false, mips:true }
+					//{type:"shader",file:"fungi/shaders/TextureUV.txt"},
+					//{type:"image",name:"tex01",file:"../shared/UV_Grid_Sm.jpg", yFlip:false, mips:true }
 				]).catch(function(err){	console.log(err); });
 
 				//........................................
@@ -47,34 +48,40 @@
 				gl.setClearColor("505050");
 				Fungi.gridFloor.setMaterial("MatGridFloorDark");
 				Fungi.mainCamera.setPosition(0,0.9,6.0).setEulerDegrees(0,0,0);
+				Shader.loadInline("inline_shader");
 
 				//........................................
 				//Add extra items to the scenen
-				//var q1 = new Quad(-1,-1.6180,1,1.6180,"MatLowPolyPhong");
+				var q1 = new Quad(-1,-1.6180,1,1.6180,"MatLowPolyPhong");
 				//Fungi.scene.push(q1);
 				//Fungi.scene.push(q1.clone().setDegrees(90,"x").setDegrees(90,"y"));
 				//Fungi.scene.push(q1.clone().setDegrees(90,"x").setDegrees(90,"z"));
 
-
+				var tiles = [];
+				var faceCache = [];
 				var geo = new Geometry();
 				Icosahedron
 					.geometry(geo)
-					.subdivTriangle(geo,1)
-					.toSphere(geo,1)
-					.sphereUV(geo)
-					.fixWrappedUV(geo)
-					.fixUVPole(geo)
-					//.debugFaceNormal(geo, 0.4)
+					//.subdivTriangle(geo,1)
+					//.toSphere(geo,1)
+					//.findPentagons(geo,tiles,faceCache)
+					//.findHexagons(geo,tiles,faceCache)
+					//.debugHex(geo,tiles)
+					//.debugPent(geo,tiles)
+					//.flattenTiles(geo,tiles)
+					//.centerTileLen(geo,tiles,1.5)
+					//.centerTileUV(geo,tiles)
 				;
 
 				//var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray());
-				//var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, null, geo.faceArray());
-				var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, geo.uvArray(), geo.faceArray());
+				var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, null, geo.faceArray());
+				//var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, geo.uvArray(), geo.faceArray());
 				
-				var entity = new Renderable(vao, "MatTextureUV"); //MatLowPolyPhong MatVecWColor MatTextureUV
-				//entity.drawMode = gl.ctx.POINTS;
-				//entity.position.y = 1;
-				Fungi.scene.push(entity);
+				var entity = new Renderable(vao, "MatVecWColor"); //MatLowPolyPhong MatVecWColor MatTextureUV MatHexShader
+				//entity.useCulling = false;
+				entity.drawMode = gl.ctx.POINTS;
+				//entity.position.y = 2;
+				Fungi.scene.unshift(entity);
 
 
 				//........................................
@@ -127,9 +134,9 @@
 					}
 					return v;
 				}
+
+				//toString(){ return this[0]+","+this[1]+","+this[2]; }
 			}
-
-
 			class Geometry{
 				constructor(){
 					this.verts = new Array();
@@ -148,6 +155,13 @@
 						[ arguments[i], arguments[i+1], arguments[i+2] ]
 					);
 					return this;
+				}
+
+				getFace(f,v){ return this.faces[f]; }
+				getFaceVert(f,v){
+					var face = this.faces[f];
+					if(!face){ console.log("Face not found",f);  return null; }
+					return this.verts[ face[v] ];
 				}
 
 				cloneVert(idx,save=true){
@@ -209,12 +223,13 @@
 
 			//=============================================================
 			//=============================================================
-
+			//https://en.wikipedia.org/wiki/Geodesic_polyhedron
 			class Icosahedron{
 				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				//Setup the Initial Values of Verts and Faces to buuild an icosahedron
 				static geometry(geo){
-					var t = Math.sqrt(5) * 0.5 + 0.5; // 0.5 + Math.sqrt(5) / 2
+					//var t = Math.sqrt(5) * 0.5 + 0.5; // 0.5 + Math.sqrt(5) / 2
+					var t = 1.618033988749895;
 					geo.addVert(
 						-1,  t,  0, //Z Plane orthogonal rectangles (Vertical)
 	  					 1,  t,  0,
@@ -232,7 +247,7 @@
 						-t,  0,  1
 					).addFace(
 						0, 11, 5,	// 5 faces around point 0
-						0, 5, 1,
+						/*0, 5, 1,
 						0, 1, 7,
 						0, 7, 10,
 						0, 10, 11,
@@ -254,59 +269,129 @@
 						6, 2, 10,
 						8, 6, 7,
 						9, 8, 1
+					  */
 					);
-
 					return Icosahedron;
+				}
+
+
+				static subdivEdge(geo,a,b,div=1,cache){
+					var tDivInv	= 1 / (div + 1), //Alway plus one, Because divide one segment creates 2 segments
+						idx		= geo.verts.length,
+						rtn		= [a],
+						v0		= geo.verts[a], //Convert Index Value to actual Vector3
+						v1		= geo.verts[b],
+						tm1,	// T Minus 1
+						ckey,	// Cache Key
+						x, y, z, t;
+
+					//Linear Interpolation : (1 - t) * v0 + t * v1;
+					for(var i=1; i <= div; i++){
+						t		= i * tDivInv;
+						tm1		= 1 - t;
+
+						x		= v0[0] * tm1 + v1[0] * t;
+						y		= v0[1] * tm1 + v1[1] * t;
+						z		= v0[2] * tm1 + v1[2] * t;
+						ckey	= x + "," + y + "," + z;
+
+						if(cache[ckey] != undefined) rtn.push( cache[ckey] ); 
+						else{
+							geo.addVert(x, y, z);	
+							cache[ ckey ] = idx;
+							rtn.push(idx++); //add index then inc.
+						}
+					}
+
+					rtn.push(b); //Dont bother doing math on last point, just add index to it.
+					return rtn;
 				}
 
 				/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				Sub divide triangle faces in a Geometry Object
-					 A
-					|  \
-					|   \
-					|    \
-					ma    mc
-					|      \
-					|       \
-					B___mb___C
+						A       Row 0
+					   /__\     Row 1
+					  /\/\/\    Row 2
+					 /\/\/\/\   Row 3
+					B--------C
+
+					For each Row, Draw first and last triangles first but in the order in
+					which the main vertices (B,C) are set as the first vertex of a face
+					since each starting point is also the center for all pentagons. This makes 
+					it easier to find all the pentagons by checking all the faces and if the first
+					vertex's index is between 0 and 11
+
+					https://en.wikipedia.org/wiki/Geodesic_polyhedron
 				*/
 				static subdivTriangle(geo, div=1){
-					var ma, mb, mc,			//Mid Point Vertex Index
-						ta, tb, tc,			//Triangle Vertice Indexes
-						i, ii,				//loop indexes
-						f = geo.faces,		//face reference
-						midPointCache = {};	//Cache mid points for reuse
+					var f, faces = [];
+					var eLeft, eRight, topLine, botLine;
+					var cache = {};
+					/*					
+					for(var i=0; i < geo.faces.length; i++){
+						f = geo.faces[i];
+						
+						eLeft	= Icosahedron.subdivEdge(geo, f[0], f[1], 1, cache);
+						eRight	= Icosahedron.subdivEdge(geo, f[0], f[2], 1, cache);
 
-					for(var j=0; j < div; j++){
-						var faces = new Array(f.length * 4); //Every Subdivide will generate 4 times more faces
+						faces.push([ f[0], eLeft[1], eRight[1] ]); //Top Triangle
 
-						for(i=0; i < f.length; i++){
-							//Get Index of the 3 Points of the Triangle
-							ta = f[i][0];
-							tb = f[i][1];
-							tc = f[i][2];
+						topLine = [ eLeft[1], eRight[1] ];
+						botLine = Icosahedron.subdivEdge(geo, eLeft[2], eRight[2], 1, cache);
 
-							//Create or Get Mid Points of each edge of triangle
-							ma = Icosahedron.midPoint( ta, tb, geo, midPointCache);
-							mb = Icosahedron.midPoint( tb, tc, geo, midPointCache);
-							mc = Icosahedron.midPoint( tc, ta, geo, midPointCache);
+						faces.push([ botLine[0], botLine[1], topLine[0] ]); //Build First Tri
+						faces.push([ botLine[2], topLine[1], botLine[1] ]); //Build Last Tri
 
-							//Create new set of faces
-							ii = i * 4;
-							faces[ii]	= [ta, ma, mc]; 
-							faces[ii+1]	= [tb, mb, ma];
-							faces[ii+2]	= [tc, mc, mb];
-							faces[ii+3]	= [ma, mb, mc];
+
+						faces.push([ topLine[0], botLine[1], topLine[1] ]); //Build Middle Tri
+						//faces.push([ botLine[1], botLine[2], topLine[1] ]); //Build Next Middle Tri 
+
+
+						Fungi.debugPoint.addVecPoint( geo.verts[eLeft[1]] , 0 );
+						Fungi.debugPoint.addVecPoint( geo.verts[eRight[1]] , 2 );
+						Fungi.debugPoint.addVecPoint( geo.verts[botLine[1]] , 6 );
+					}
+					*/					
+
+					var tMax,	//Max Index for Top Line
+						bMax,	//Max Index for Bottom Line
+						d,j;
+
+					for(var i=0; i < geo.faces.length; i++){
+						f		= geo.faces[i];											//Face Array Reference
+						eLeft	= Icosahedron.subdivEdge(geo, f[0], f[1], div, cache);	//Divide Left Side of Tri
+						eRight	= Icosahedron.subdivEdge(geo, f[0], f[2], div, cache);	//Divide Right Side of Tri
+						topLine = [ eLeft[1], eRight[1] ];								//Starting Top Line
+						tMax	= topLine.length - 1;									//Max index of Top Line
+
+						faces.push([ f[0], eLeft[1], eRight[1] ]);						//Build Top Triangle First
+
+						for(d=1; d <= div; d++){
+							botLine	= Icosahedron.subdivEdge(geo, eLeft[d+1], eRight[d+1], d, cache);
+							bMax	= botLine.length-1;
+
+							faces.push([ botLine[0], botLine[1], topLine[0] ]);				//Build First Tri in Row
+ 							faces.push([ botLine[bMax], topLine[tMax], botLine[bMax-1] ]);	//Build Last Tri in Row
+							
+							for(j=0; j < tMax; j++){
+								faces.push([ topLine[j], botLine[j+1], topLine[j+1] ]); //Build Middle Tri
+
+								//Build Next Middle Tri, If the second bottom point is the last point
+								//then that belongs to the last tri which we already built.
+								if(j+2 < bMax) faces.push([ botLine[j+1], botLine[j+2], topLine[j+1] ]); 
+							}
+
+							topLine	= botLine; //Time to move to next row, Make Bottom now the Top.
+							tMax	= bMax;
 						}
-
-						f = faces; //Swap Face Array for next interaction.
 					}
 
-					geo.faces = f; //Save Final Face List back to Geometry
+					geo.faces = faces; //update faces
 
 					return Icosahedron;
 				}
 
+				/*
 				static midPoint(i, ii, geo, cache){
 					var key = (i < ii)? `k_${i}_${ii}`: `k_${ii}_${i}`; //Use Indexes as a key, use k_min_max
 
@@ -323,6 +408,26 @@
 					return idx;
 				}
 
+
+				static faceCentroid(geo,faceIdx){
+					var v, 
+						x = 0, y = 0, z = 0,
+						f = geo.faces[faceIdx];
+
+					for(var i=0; i < f.length; i++){
+						v	= geo.verts[ f[i] ];
+						x	+= v[0];
+						y	+= v[1];
+						z	+= v[2];
+					}
+
+					var invLen	= 1 / f.length,
+						idx	= geo.verts.length;		//Length will be the index when we add a new vert
+
+					geo.addVert( x * invLen, y * invLen, z * invLen );
+					return idx;
+				}
+				*/
 
 				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				//normalize the vertices so its becomes a sphere
@@ -341,6 +446,219 @@
 							v[i][2] *= radius;
 						}
 					}
+					return Icosahedron;
+				}
+
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				static findPentagons(geo,tiles,faceCache){
+					for(var i=0; i < 12; i++) tiles[i] = []; //Create Arrays
+
+					for(var i=0; i < geo.faces.length; i++) faceCache[i] = i;
+					//console.log("Start Cache", faceCache.length);
+
+
+					var f	= geo.faces;
+					var cnt = 0, idx;
+					for(var i=0; i < f.length; i++){
+						if(f[i][0] < 12){
+							cnt++;
+							idx = f[i][0];
+							tiles[idx].push(i); //Save Face Index to
+
+							faceCache.splice( faceCache.indexOf(i) ,1); //Remove the face from the cache.
+
+							//Fungi.debugPoint.addVecPoint(geo.verts[ idx ], 0);
+							//Fungi.debugPoint.addVecPoint(geo.verts[ f[i][1] ], 1);
+						}
+					}
+					//console.log(tiles);
+					//console.log("Pentagons Triangles Found: %d",cnt);
+					//console.log("End Cache", faceCache.length);
+					return Icosahedron;
+				}
+
+				static findHexagons(geo,tiles,cache){
+					var tile,
+						face,	// Face Pointer
+						fIdx,	// Face Index
+						cIdx, 	// Index of the Center of Title
+						aIdx,	// Index of Triangle Corner
+						bIdx,	// INdex of the other Corner
+						aPos,
+						bPos,
+						hex
+					;
+
+					var funcFaceFix = function(ary, pos){
+						var tmp = ary[pos];
+						if(pos == 1){ 		ary[1] = ary[2]; ary[2] = ary[0]; ary[0] = tmp; }
+						else if(pos == 2){ 	ary[2] = ary[1]; ary[1] = ary[0]; ary[0] = tmp; }
+					};
+
+					//-------------------------------------
+					//Loop through all the tiles to find neighboring hexagons
+					for(var t=0; t < tiles.length; t++){
+						tile = tiles[t];
+						//tile = tiles[9]; //DEBUG
+
+						//-------------------------------------
+						//Loop through all the faces that makes up a tile
+						for(var f=0; f < tile.length; f++){
+							fIdx = tile[f];
+							face = geo.faces[fIdx];
+							aIdx = face[1];
+							bIdx = face[2];
+
+							//DEBUG - See the face being used to search
+							//Fungi.debugPoint.addVecPoint(geo.verts[ face[0] ], 0);
+							//Fungi.debugPoint.addVecPoint(geo.verts[ aIdx ], 1);
+							//Fungi.debugPoint.addVecPoint(geo.verts[ bIdx ], 2);
+
+							//-------------------------------------
+							//Search the remaining faces for one that shares the same two corners
+							//of one of the faces of the tile.
+							for(var c=0; c < cache.length; c++){
+								face = geo.faces[ cache[c] ];
+
+								//Does the cached face share the same corners as the tile face.
+								if( (aPos = face.indexOf(aIdx)) > -1 && (bPos = face.indexOf(bIdx)) > -1){
+									//If any of the corners is in zero, fix face by putting the tile center point
+									//in the first position of the face
+									if(aPos == 0 || bPos == 0){
+										if( (aPos == 0 && bPos == 1) || (bPos == 0 && aPos == 1) ) funcFaceFix(face,2);
+										if( (aPos == 0 && bPos == 2) || (bPos == 0 && aPos == 2) ) funcFaceFix(face,1);
+									}
+
+									cIdx	= face[0];
+									hex		= [ cache[c] ]; //Start new Hex tile with this face index
+									cache.splice(c,1);		//Remove face from cache
+
+									//DEBUG See hex center point
+									//Fungi.debugPoint.addVecPoint(geo.verts[ face[0] ], 6);
+									//console.log("looking for", cIdx);
+
+									//-------------------------------------
+									//Search for the other faces of the hex,
+									//We go backwards because we want to remove faces as we go
+									for(var h = cache.length-1; h >= 0; h--){
+										face = geo.faces[ cache[h] ];	//Get Face reference
+										aPos = face.indexOf(cIdx);		//
+
+										if(aPos > -1){
+											hex.push( cache[h] );	//Save Face index to hex
+											cache.splice(h, 1);		//Remove face from cache
+
+											//Fix vertex of the face, Make center the first element
+											if(aPos != 0) funcFaceFix(face, aPos);
+											//console.log("Hex",h,face);
+
+											//If we found all the faces, save it as a tile then exit
+											if(hex.length == 6){ 
+												tiles.push( hex );
+												break;
+											} 
+										}
+									}
+
+									if(hex.length != 6){ console.log("error finding hex tile"); }
+									break; //Found a Neighboring Tile, Exit Loop
+								}
+							}
+
+							if(cache.length == 0) break;
+							//break; //DEBUG
+						}
+
+						if(cache.length == 0) break;
+						//break;
+					}
+					//console.log("End Cache", cache.length);
+
+					return Icosahedron;
+				}
+
+				static debugHex(geo,tiles){
+					for(var i=12; i < tiles.length; i++){
+						var t = tiles[i];
+						for(var j=0; j < t.length; j++){
+							Fungi.debugLine.addVecLine(
+								geo.getFaceVert( t[j], 1), 1,
+								geo.getFaceVert( t[j], 2), 1
+							);
+						}
+					}
+					return Icosahedron;
+				}
+
+				static debugPent(geo,tiles){
+					for(var i=0; i < 12; i++){
+						var t = tiles[i];
+						for(var j=0; j < t.length; j++){
+							Fungi.debugLine.addVecLine(
+								geo.getFaceVert( t[j], 1), 1,
+								geo.getFaceVert( t[j], 2), 1
+							);
+						}
+					}
+
+					return Icosahedron;
+				}
+
+				static flattenTiles(geo,tiles){
+					for(var i=0; i < tiles.length; i++){
+						var t = tiles[i];
+						var x=0, y = 0, z = 0;
+
+						for(var j=0; j < t.length; j++){
+							var v = geo.getFaceVert( t[j], 1);
+							x += v.x;
+							y += v.y;
+							z += v.z;
+
+							v = geo.getFaceVert( t[j], 2);
+							x += v.x;
+							y += v.y;
+							z += v.z;
+						}
+
+						v = geo.getFaceVert(t[0], 0);
+						var dom = 1 / (t.length * 2);
+						v.x = x * dom;
+						v.y = y * dom;
+						v.z = z * dom;
+					}
+
+					return Icosahedron;
+				}
+
+				static centerTileLen(geo,tiles, len = 1){
+					for(var i=0; i < tiles.length; i++){
+						var v = geo.getFaceVert(tiles[i][0], 0);
+						v.x = v.norm.x * len;
+						v.y = v.norm.y * len;
+						v.z = v.norm.z * len;
+					}
+
+					return Icosahedron;
+				}
+
+				static centerTileUV(geo,tiles){
+					var tile, v;
+					for(var i=0; i < tiles.length; i++){
+						tile = tiles[i];
+
+						//Set Center Point as 1
+						v = geo.getFaceVert(tile[0], 0);
+						v.uv[0] = v.uv[1] = 1;
+
+						//Sent Surrounding Points as 0
+						for(var j=0; j < tile.length; j++){
+							v = geo.getFaceVert(tile[j], 1);
+							v.uv[0] = v.uv[1] = 0;
+						}
+					}
+
 					return Icosahedron;
 				}
 
@@ -366,7 +684,6 @@
 					}
 					return Icosahedron;
 				}
-
 
 				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				//http://mft-dev.dk/uv-mapping-sphere/
@@ -505,28 +822,78 @@
 					}
 					return Icosahedron;
 				}
-			}
-
-
-
-			/*
-			References
-			https://medium.com/@peter_winslow/creating-procedural-planets-in-unity-part-1-df83ecb12e91
-			https://experilous.com/1/blog/post/procedural-planet-generation
-			http://donhavey.com/blog/tutorials/tutorial-3-the-icosahedron-sphere/
-			http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
-			http://kiwi.atmos.colostate.edu/BUGS/geodesic/text.html
-			http://vterrain.org/Textures/spherical.html
-			https://github.com/superwills/gtp/blob/master/gtp/geometry/Icosahedron.cpp
-			https://en.wikipedia.org/wiki/Icosahedron
-			http://mft-dev.dk/uv-mapping-sphere/
-			http://wiki.unity3d.com/index.php/CreateIcoSphere
-			https://stackoverflow.com/questions/47441844/how-do-i-detect-the-vertices-on-the-seam-of-a-procedurally-generated-icosphere/49410688#49410688
-			*/
+			}//cls
 		</script>
 	</head>
 <body>
 	<div><canvas id="FungiCanvas"></canvas></div>
 	<span id="lblFPS">0</div>
+
+
+	<script id="inline_shader" type="plain/text">
+		<shader>{
+			"name":"HexShader",
+			"useModelMatrix":true,
+			"useUBOTransform":true,
+			"uniforms":[  ]
+		}<\shader>
+
+		<materials>[
+			{ "name":"MatHexShader","useBlending":false, "uniforms":[] }
+		]<\materials>
+			
+		<vertex>
+			#version 300 es
+			layout(location=0) in vec3 a_position;
+			layout(location=2) in vec2 a_uv;
+			
+			out vec2 v_uv;
+
+			uniform UBOTransform{
+				mat4 matProjection;
+				mat4 matCameraView;
+				vec3 posCamera;
+				float fTime;
+				vec2 screenRes;
+			};
+
+			uniform mat4 uModalMatrix;
+
+			void main(void){
+				v_uv = a_uv;
+				gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position,1.0);
+			}
+		<\vertex>
+
+		<fragment>
+			#version 300 es
+			precision mediump float;
+
+			in vec2 v_uv;
+
+			out vec4 oFragColor;
+
+			float feather(float v, float start, float end, float fade){
+				if(v >= start && v <= end)			return 1.0;
+				if(v <= start && v >= start-fade)	return smoothstep(start-fade,start,v);
+				if(v >= end && v <= end+fade)		return smoothstep(end+fade,end,v);
+				return 0.0;
+			}
+
+			void main(void){
+				float c = 1.0;
+
+				float start = 0.03;
+				float thick = 0.15;
+				float fade = 0.02;
+				c = feather(v_uv.x, start, start+thick, fade);
+				c += feather(v_uv.x, 0.5, 0.55, fade);
+				c += feather(v_uv.x, 0.9, 0.91, fade);
+
+				vec3 color = vec3(1.0,1.0,1.0) * c;
+				oFragColor = vec4(color,1.0);
+			}
+		<\fragment>
+	</script>
 </body>
 </html>
