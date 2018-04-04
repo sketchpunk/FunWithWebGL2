@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="cache-control" content="no-cache" /> 
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl			from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import VisualDebugger	from "./fungi/entities/VisualDebugger.js";
+			import Quad			from "./fungi/primitives/Quad.js";
+			import { Vec3 } from "./fungi/Maths.js";
+			import Shader		from "./fungi/util/Shader.js";
+		
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var p0r, p0 = new Vec3(-2,0,0),
+				p1r, p1 = new Vec3(2,0,0),
+				pr,
+				dots,
+				quad;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				gl.setClearColor("505050");
+				Fungi.gridFloor.setMaterial("MatGridFloorDark");
+				Shader.loadInline("inline_shader");
+
+				//........................................
+				//Add extra items to the scenen
+				createCircle();
+				
+				Fungi.scene.push( pr = new VisualDebugger().drawPoints().addVecPoint([0,0,0],1) );
+
+				Fungi.scene.push( p0r = new VisualDebugger().drawPoints().addVecPoint([0,0,0],5) );
+				p0r.position.copy(p0);
+
+				Fungi.scene.push( p1r = p0r.clone() );
+				p1r.position.copy(p1);
+
+
+				Fungi.scene.push( quad = new Quad( -2,-2,2,2,"MatShader") );
+				quad.position.x = -2;
+				quad.rotation.ry(Math.PI / 2);
+
+				//Fungi.scene.push( dots = new VisualDebugger().drawPoints() );
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			const SECONDS = 4000;
+			const STEPS = 30;
+			const STEPSinv = 1 / STEPS;
+			const DELAY = 4.0;
+
+			var path = {
+				t0: 0,
+				t1: 0,
+				t:0,
+				origin:null,
+				destination:null,
+
+				update:function(){
+					this.t -= 0.01;
+
+					var p = pos0( this.t0 - DELAY * this.t);
+					var q = new Vec3();
+
+					p.lerp(this.origin, this.t, q);
+					pr.position.copy(q);
+				}
+			}
+
+			var impact = 0;
+
+			function onRender(dt,ss){
+				if(path.t <= 0){
+					if(path.destination != null){
+						impact = 0;
+						quad.material.setUniforms("u_hit",path.destination);
+					}
+
+					path.t0 = Math.random();
+					path.t1 = Math.random();
+					path.t = 1;
+
+					path.destination = pos0(path.t0);
+					path.origin = pos1(path.t1);
+
+					p0r.position.copy(path.destination);
+					p1r.position.copy(path.origin);
+				}
+				path.update();
+
+				if(path.destination != null && impact <= 1){
+					impact = Math.min(impact+0.08,1.0);
+					quad.material.setUniforms("u_life",impact);
+				}
+
+				//........................................
+				Fungi.update().render(Fungi.scene);
+			}
+
+			function pos0(t){
+				var v = p0.clone();
+				v.z += 0.5 * Math.cos( Math.PI * 2 * t );
+				v.y += 0.5 * Math.sin( Math.PI * 2 * t );
+				return v;
+			}
+
+			function pos1(t){
+				var v = p1.clone();
+				v.z += 0.5 * Math.cos( 2.0 * Math.PI * 2 * t );
+				v.y += 0.5 * Math.sin( 2.0 * Math.PI * 2 * t );
+				return v;
+			}
+
+			function createCircle(){
+				var circle	= new VisualDebugger().drawLineStrip(),
+					step	= 20,
+					rad		= Math.PI * 2 / step,
+					p		= new Vec3(0,0,-0.5);
+
+				for(var i=0; i <= step; i++){
+					circle.addVecPoint(p.rotate(rad,"x"),4);
+				}
+
+				Fungi.scene.push(circle.setPosition(-2,0,0));
+				Fungi.scene.push(circle.clone().setPosition(2,0,0));
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+	<script id="inline_shader" type="plain/text">
+		<shader>{
+			"name":"HexShader",
+			"useModelMatrix":true,
+			"useUBOTransform":true,
+			"uniforms":[ "u_hit","vec3", "u_life","float"  ]
+		}<\shader>
+
+		<materials>[
+			{ "name":"MatShader","useBlending":true, "uniforms":[
+				"u_hit","vec3",[0.0,0.2,0],
+				"u_life","float",0.5
+
+			] }
+		]<\materials>
+			
+		<vertex>
+			#version 300 es
+			layout(location=0) in vec3 a_position;
+			
+			out vec3 v_worldpos;
+
+			uniform UBOTransform{
+				mat4 matProjection;
+				mat4 matCameraView;
+				vec3 posCamera;
+				float fTime;
+				vec2 screenRes;
+			};
+
+			uniform mat4 uModalMatrix;
+
+			void main(void){
+				v_worldpos = (uModalMatrix * vec4(a_position,1.0)).xyz;
+				gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position,1.0);
+			}
+		<\vertex>
+
+		<fragment>
+			#version 300 es
+			precision mediump float;
+
+			in vec3 v_worldpos;
+
+			out vec4 oFragColor;
+
+			uniform vec3 u_hit;// = vec3(0.0,0.0,0.0);
+			uniform float u_life;// = 0.1;
+
+			const float dMin = 0.1;
+			const float dMax = 0.5;
+			const float thickness = 0.02;
+
+			void main(void){
+
+				float d = distance(v_worldpos, u_hit);
+
+				float dist = mix(dMin, dMax, u_life);
+
+				if(d >= dist && d <= dist + thickness ) oFragColor = vec4(0.0,1.0,0,1.0 - u_life);
+				else oFragColor = vec4(0.0,0,0,0.0);
+			}
+		<\fragment>
+	</script>
+
+
+</body>
+</html>

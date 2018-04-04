@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Canvas2D		from "./lib/Canvas2D.js";
+			import RenderLoop	from "./lib/RenderLoop.js";
+			import { Vec2, Maths }	from "./lib/Maths.js";
+			
+			//https://necessarydisorder.wordpress.com/2018/03/31/a-trick-to-get-looping-curves-with-lerp-and-delay/ 
+			//========================================================
+			var gCanvas, gLoop;
+
+			window.addEventListener("load",function(){
+				//----------------------------------
+				//Setup
+				gCanvas	= new Canvas2D("FungiCanvas").center().style("#00ff00").lineDash([5,10]);
+				gLoop	= new RenderLoop(onRender, 30);
+
+				//----------------------------------
+				//Finish Up
+				gLoop.start();
+				//onRender(0,789);
+			});
+
+
+			const SECONDS = 4000;
+			const STEPS = 40;
+			const STEPSinv = 1 / STEPS;
+			const DELAY = 1.0;
+
+			var p0 = new Vec2(-200,0),
+				p1 = new Vec2(200,0);
+
+			function onRender(dt,ss){
+				//----------------------------------
+				gCanvas.clear();
+
+				//----------------------------------
+				var tStep	= 0,
+					tTime	= (ss % SECONDS) / SECONDS, // T of Seconds
+					pA		= pos0(tTime),
+					pB		= pos1(tTime);
+
+				gCanvas.lineDash()
+					.vecCircle("stroke", 15, pA, pB )
+					.lineDash([5,5])
+					.vecCircle("stroke", 50, p0, p1 )
+					.vecLine("stroke", pA, pB);
+
+				var p = [0,0];
+				for(var i=0; i <= STEPS; i++){
+					tStep = i * STEPSinv;
+
+					pA = pos0( tTime - DELAY * tStep );
+					//pA = pos0( tTime - tStep );
+					//onsole.log(tTime,tStep,tTime - DELAY * tStep);
+					pA.lerp(pB, tStep, p);
+					gCanvas.vecCircle("fill", 2.5, p );
+				}
+			}
+
+			function pos0(t){
+				var v = p0.clone();
+				v.x += 50 * Math.cos( Maths.PI_2 * t );
+				v.y += 50 * Math.sin( Maths.PI_2 * t );
+				return v;
+			}
+
+			function pos1(t){
+				var v = p1.clone();
+				v.x += 50 * Math.cos( 2.0 * Maths.PI_2 * t );
+				v.y += 50 * Math.sin( 2.0 * Maths.PI_2 * t );
+				return v;
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+</body>
+</html>

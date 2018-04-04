@@ -1,0 +1,88 @@
+<shader>
+{
+	"name" : "Emote",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : ["uTex01","sample2D","uGridPos","vec2"]
+}
+</shader>
+	
+
+<materials>[ 
+	{ "name":"MatEmote","useBlending":true,"useSampleAlphaCoverage":false, 
+		"uniforms":[ "uTex01","tex","emoteAtlas" ]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+	
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+	};
+
+	uniform mat4 uModalMatrix;
+	uniform vec2 uGridPos;
+
+	out vec2 uvBack;
+	out vec2 uvFore;
+
+	const float gridSize  	= 4.0;
+	const float colSize		= 1.0 / gridSize;
+	const float colYOffset  = (gridSize - 1.0) / gridSize;  //Y is inverted, So start near the top, second last increment
+
+	vec2 gridCellUV(float c){
+		float cx = floor( mod(c, gridSize) ) * colSize;
+		float cy = colYOffset - floor( c * colSize ) * colSize;
+		return vec2( cx + (a_uv.x * colSize) , cy + (a_uv.y * colSize) );
+	}
+
+	void main(void){
+		vec3 pos = a_position;
+
+		//......................................
+		//Grid Atlas UV Position
+		//float 	c	= floor(16.0 * 0.0),
+		//		cx	= floor( mod(c, gridSize) ) * colSize,
+		//		cy	= colYOffset - floor( c * colSize ) * colSize;
+		//uvBack = vec2( cx + (a_uv.x * colSize) , cy + (a_uv.y * colSize) );
+
+		uvBack = gridCellUV(uGridPos.s);
+		uvFore = gridCellUV(uGridPos.t);
+
+		//......................................
+		//Spherical billboarding
+		vec3 right 	= vec3( matCameraView[0][0], matCameraView[1][0], matCameraView[2][0] ),
+			 up 	= vec3( matCameraView[0][1], matCameraView[1][1], matCameraView[2][1] );
+		pos = (right * pos.x) + (up * pos.y); //Rotate vertex toward camera
+
+
+		//......................................
+		//Finish up Position Valcs
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(pos, 1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec2 uvBack;
+	in vec2 uvFore;
+
+	uniform sampler2D uTex01;
+	out vec4 outColor;
+
+	void main(void){
+		vec4 texBack = texture(uTex01,uvBack);
+		vec4 texFore = texture(uTex01,uvFore);
+
+		//Take the Foreground inverted alpha to lower the background color.
+		//Then Add up the two Alphas
+		outColor = vec4(texBack.xyz * (1.0-texFore.a), texBack.a + texFore.a);
+	}
+</fragment>

@@ -1,0 +1,48 @@
+<shader>
+{
+	"name" : "TextureUV",
+	"useModelMatrix" : true,
+	"useUBOTransform" : true,
+	"uniforms" : ["u_tex01","sample2D"]
+}
+</shader>
+	
+
+<materials>[ 
+	{ "name":"MatTextureUV","useBlending":true,"useSampleAlphaCoverage":false, 
+		"uniforms":[ "u_tex01","tex","tex01" ]} 
+]</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+	
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	out vec2 v_uv;
+
+	void main(void){
+		v_uv = a_uv;
+		gl_Position = matProjection * matCameraView * uModalMatrix * vec4(a_position, 1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec2 v_uv;
+	uniform sampler2D u_tex01;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = texture( u_tex01, v_uv ); }
+</fragment>

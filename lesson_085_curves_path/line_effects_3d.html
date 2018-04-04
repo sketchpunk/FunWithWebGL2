@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="cache-control" content="no-cache" /> 
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl			from "./fungi/gl.js";
+			import Fungi 		from "./fungi/Fungi.js";
+			import Downloader	from "./fungi/util/Downloader.js";
+			import VisualDebugger	from "./fungi/entities/VisualDebugger.js";
+			import { Vec3 } from "./fungi/Maths.js";
+		
+
+			window.addEventListener("load",function(){
+				Fungi.init();	//Prepare Context and Canvas
+
+				//........................................
+				//Starting Loading data and Creating Threads to handle things
+				var dl = Downloader.start([
+					{type:"shader",file:"fungi/shaders/VecWColor.txt"}
+				]).catch(function(err){	console.log(err); });
+
+				//........................................
+				//Wait for all threads to be completed
+				Promise.all([dl]).then(values=>{ setTimeout(onInit,50); },reason =>{ console.log(reason); });
+			});
+
+
+			var p0r, p0 = new Vec3(-2,0,0),
+				p1r, p1 = new Vec3(2,0,0),
+				dots;
+
+			function onInit(){
+				//........................................
+				//Prepare the bare needed to get the scene running
+				Fungi.ready(onRender);
+				gl.setClearColor("505050");
+				Fungi.gridFloor.setMaterial("MatGridFloorDark");
+
+				//........................................
+				//Add extra items to the scenen
+				createCircle();
+				
+				Fungi.scene.push( p0r = new VisualDebugger().drawPoints().addVecPoint([0,0,0],5) );
+				p0r.position.copy(p0);
+
+				Fungi.scene.push( p1r = p0r.clone() );
+				p1r.position.copy(p1);
+
+				Fungi.scene.push( dots = new VisualDebugger().drawPoints() );
+
+
+				//........................................
+				//Begin rendering the scene
+				Fungi.renderLoop.start();
+			}
+
+			const SECONDS = 4000;
+			const STEPS = 30;
+			const STEPSinv = 1 / STEPS;
+			const DELAY = 2.0;
+
+			function onRender(dt,ss){
+				var tStep	= 0,
+					tTime	= (ss % SECONDS) / SECONDS, // T of Seconds
+					pA		= pos0(tTime),
+					pB		= pos1(tTime);
+
+				p0r.position.copy(pA);
+				p1r.position.copy(pB);
+
+				dots.reset();
+
+				var p = new Vec3();
+				for(var i=1; i < STEPS; i++){
+					tStep = i * STEPSinv;
+
+					pA = pos0( tTime - DELAY * tStep );
+					//pB = pos1( tTime - DELAY * tStep );
+					//pA = pos0( tTime - tStep );
+
+					pA.lerp(pB, tStep, p);
+					dots.addVecPoint(p,1);
+				}
+
+				//........................................
+				Fungi.update().render(Fungi.scene);
+			}
+
+			function pos0(t){
+				var v = p0.clone();
+				v.z += 0.5 * Math.cos( Math.PI * 2 * t );
+				v.y += 0.5 * Math.sin( Math.PI * 2 * t );
+				return v;
+			}
+
+			function pos1(t){
+				var v = p1.clone();
+				v.z += 0.5 * Math.cos( 2.0 * Math.PI * 2 * t );
+				v.y += 0.5 * Math.sin( 2.0 * Math.PI * 2 * t );
+				return v;
+			}
+
+
+			function createCircle(){
+				var circle	= new VisualDebugger().drawLineStrip(),
+					step	= 20,
+					rad		= Math.PI * 2 / step,
+					p		= new Vec3(0,0,-0.5);
+
+				for(var i=0; i <= step; i++){
+					circle.addVecPoint(p.rotate(rad,"x"),4);
+				}
+
+				Fungi.scene.push(circle.setPosition(-2,0,0));
+				Fungi.scene.push(circle.clone().setPosition(2,0,0));
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

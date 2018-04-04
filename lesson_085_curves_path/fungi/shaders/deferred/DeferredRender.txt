@@ -1,0 +1,58 @@
+<shader>
+{
+	"name":"DeferredRender",
+	"useModelMatrix":false,
+	"useUBOTransform":true,
+	"uniforms":[ "bufColor","sample2D" ]
+}
+</shader>,"bufDepth","sample2D"
+
+<materials>
+[
+	{ "name":"MatDeferredRender","useBlending":true, "uniforms":[] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	void main(void){
+		v_uv = vec2(a_uv.s,a_uv.t);
+		gl_Position	= vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	in highp vec2 v_uv;
+
+	uniform sampler2D bufColor;
+
+	out vec4 oFragColor;
+
+	void main(void){
+		//ivec2 fCoord = ivec2(gl_FragCoord.xy);		//Get the Int of the current Screen pixel X,Y
+	
+		//vec4 color = texelFetch(bufColor, fCoord , 0);
+		//oFragColor = color;  //vec4(color.r, color.r, color.r, 1.0);
+	
+		oFragColor = texture(bufColor, v_uv);
+	}
+</fragment>
+
+
+		

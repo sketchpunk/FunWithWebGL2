@@ -1,0 +1,68 @@
+<shader>
+{
+	"name":"brightFilter",
+	"useModelMatrix":false,
+	"useUBOTransform":true,
+	"uniforms":[ "bufColor","sample2D" ]
+}
+</shader>
+
+<materials>
+[ ]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	void main(void){
+		v_uv = vec2(a_uv.s,a_uv.t);
+		gl_Position	= vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision highp float;
+
+	in highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform sampler2D bufColor;
+
+	out vec4 oFragColor;
+
+	void main(void){
+		ivec2 fCoord = ivec2(gl_FragCoord.xy); //Get the Int of the current Screen pixel X,Y
+		vec4 c = texelFetch(bufColor, fCoord , 0);
+
+		//https://en.wikipedia.org/wiki/Grayscale#Luma_coding_in_video_systems
+		//float bright = (c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722);
+		//float bright = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+		float bright = dot(c.rgb, vec3(0.2627, 0.6780, 0.0593));
+		
+		//oFragColor = (bright > 0.5)? c : vec4(.0);
+		oFragColor = c * bright;
+	}
+</fragment>
+
+
+		
