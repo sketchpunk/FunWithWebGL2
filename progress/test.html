@@ -15,10 +15,11 @@
 			import gl,{ VAO }	from "./fungi/gl.js";
 			import Fungi 		from "./fungi/Fungi.js";
 			import Downloader	from "./fungi/util/Downloader.js";
-			import Quad			from "./fungi/primitives/Quad.js";
+			//import Quad			from "./fungi/primitives/Quad.js";
 			import Renderable	from "./fungi/entities/Renderable.js";
 			import { Vec3 }		from "./fungi/Maths.js";
 			import Shader		from "./fungi/util/Shader.js";
+			import { Geometry, Face, Vector3 }	from "./fungi/util/Geo.js";
 
 
 			window.addEventListener("load",function(){
@@ -40,7 +41,8 @@
 
 
 			var cube;
-
+			//https://gamedev.stackexchange.com/questions/125201/how-to-orient-a-hexagonal-tile-on-a-geodesic-sphere-goldberg-polyhedron
+			//https://en.wikipedia.org/wiki/Goldberg_polyhedron
 			function onInit(){
 				//........................................
 				//Prepare the bare needed to get the scene running
@@ -52,34 +54,42 @@
 
 				//........................................
 				//Add extra items to the scenen
-				var q1 = new Quad(-1,-1.6180,1,1.6180,"MatLowPolyPhong");
+				//var q1 = new Quad(-1,-1.6180,1,1.6180,"MatLowPolyPhong");
 				//Fungi.scene.push(q1);
 				//Fungi.scene.push(q1.clone().setDegrees(90,"x").setDegrees(90,"y"));
 				//Fungi.scene.push(q1.clone().setDegrees(90,"x").setDegrees(90,"z"));
 
 				var tiles = [];
 				var faceCache = [];
+				var vmap = [];
 				var geo = new Geometry();
+				var finalGeo = new Geometry();
 				Icosahedron
 					.geometry(geo)
+					.subdivTriangle2(geo,1)
+					.toSphere(geo,2)
+					.mapVertFace(geo,vmap)
+					.sortVertFace(geo,vmap)
+					.createFanTiles(geo,vmap,finalGeo,tiles)
+					//.createTiles(geo,vmap,finalGeo,tiles)
+					
 					//.subdivTriangle(geo,1)
-					//.toSphere(geo,1)
-					//.findPentagons(geo,tiles,faceCache)
-					//.findHexagons(geo,tiles,faceCache)
-					//.debugHex(geo,tiles)
-					//.debugPent(geo,tiles)
-					//.flattenTiles(geo,tiles)
-					//.centerTileLen(geo,tiles,1.5)
-					//.centerTileUV(geo,tiles)
+					//.toSphere(geo,2)
+
+					//.debugHex(finalGeo,tiles)
+					//.debugPent(finalGeo,tiles)
+					//.centerTileLen(finalGeo,tiles,2.2)
+					.centerTileUV(finalGeo,tiles)
 				;
 
 				//var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray());
-				var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, null, geo.faceArray());
-				//var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, geo.uvArray(), geo.faceArray());
+				//var vao = VAO.standardRenderable("Isosphere", 3, geo.vertexArray(), null, null, geo.faceArray());
+				//var vao = VAO.standardRenderable("Isosphere", 3, finalGeo.vertexArray(), null, null, finalGeo.faceArray());
+				var vao = VAO.standardRenderable("Isosphere", 3, finalGeo.vertexArray(), null, finalGeo.uvArray(), finalGeo.faceArray());
 				
-				var entity = new Renderable(vao, "MatVecWColor"); //MatLowPolyPhong MatVecWColor MatTextureUV MatHexShader
+				var entity = new Renderable(vao, "MatHexShader"); //MatLowPolyPhong MatVecWColor MatTextureUV MatHexShader
 				//entity.useCulling = false;
-				entity.drawMode = gl.ctx.POINTS;
+				//entity.drawMode = gl.ctx.POINTS;
 				//entity.position.y = 2;
 				Fungi.scene.unshift(entity);
 
@@ -96,128 +106,6 @@
 
 			//=============================================================
 			//=============================================================
-			class Vector2 extends Array{
-				constructor(){ super(2); this[0] = this[1] = 0; }
-				get x(){ return this[0]; }	set x(val){ this[0] = val; }
-				get y(){ return this[1]; }	set y(val){ this[1] = val; }
-			}
-			class Vector3 extends Array{
-				constructor(){ super(3); this[0] = this[1] = this[2] = 0; }
-				get x(){ return this[0]; }	set x(val){ this[0] = val; }
-				get y(){ return this[1]; }	set y(val){ this[1] = val; }
-				get z(){ return this[2]; }	set z(val){ this[2] = val; }
-			}
-			class Vertex extends Array{
-				constructor(ini){
-					super(3);
-					this.uv		= new Vector2();
-					this.norm	= new Vector3();
-
-					if(ini && ini.length == 3){
-						this[0] = ini[0]; this[1] = ini[1]; this[2] = ini[2];
-					}else if(arguments.length == 3){
-						this[0] = arguments[0]; this[1] = arguments[1]; this[2] = arguments[2];
-					}else{
-						this[0] = this[1] = this[2] = ini || 0;
-					}
-				}
-				get x(){ return this[0]; }	set x(val){ this[0] = val; }
-				get y(){ return this[1]; }	set y(val){ this[1] = val; }
-				get z(){ return this[2]; }	set z(val){ this[2] = val; }
-
-				clone(){
-					var v = new Vertex();
-					for(var i=0; i < 3; i++){
-						v[i]		= this[i];
-						v.norm[i]	= this.norm[i];
-						if(i < 2) v.uv[i] = this.uv[i];
-					}
-					return v;
-				}
-
-				//toString(){ return this[0]+","+this[1]+","+this[2]; }
-			}
-			class Geometry{
-				constructor(){
-					this.verts = new Array();
-					this.faces = new Array();
-				}
-
-				addVert(x,y,z){
-					for(var i=0; i < arguments.length; i+= 3) this.verts.push( 
-						new Vertex( arguments[i], arguments[i+1], arguments[i+2] )
-					);
-					return this;
-				}
-
-				addFace(a,b,c){
-					for(var i=0; i < arguments.length; i+= 3) this.faces.push( 
-						[ arguments[i], arguments[i+1], arguments[i+2] ]
-					);
-					return this;
-				}
-
-				getFace(f,v){ return this.faces[f]; }
-				getFaceVert(f,v){
-					var face = this.faces[f];
-					if(!face){ console.log("Face not found",f);  return null; }
-					return this.verts[ face[v] ];
-				}
-
-				cloneVert(idx,save=true){
-					var v = this.verts[idx].clone();
-					if(save) this.verts.push(v);
-					return v;
-				}
-
-				vertexArray(){	return this.compileArray(this.verts, Float32Array, 3); }
-				faceArray(){	return this.compileArray(this.faces, Uint16Array, 3); }
-				uvArray(){		return this.compileArray(this.verts, Float32Array, 2, "uv"); }
-				normArray(){	return this.compileArray(this.verts, Float32Array, 3, "norm"); }
-				compileArray(ary,AryType,size,sub=null){
-					var aLen	= ary.length * size,
-						out		= new AryType(aLen),
-						itm, ii, j;
-
-					for(var i=0; i < ary.length; i++){
-						ii	= i * size;
-						itm	= (!sub)? ary[i] : ary[i][sub];
-
-						for(j=0; j < size; j++) out[ii + j] = itm[j];
-					}
-					return out;
-				}
-			}
-
-			function geoFaceCentroid(geo,idx,out){
-				out[0] = out[1] = out[2] = 0;
-
-				var v, f = geo.faces[idx];
-				for(var i=0; i < f.length; i++){
-					v		= geo.verts[ f[i] ];
-					out[0]	+= v[0];
-					out[1]	+= v[1];
-					out[2]	+= v[2];
-				}
-
-				var invLen = 1 / f.length;
-				out[0] *= invLen;
-				out[1] *= invLen;
-				out[2] *= invLen;
-			}
-
-			function geoFaceNormal(geo,idx,out){
-				out[0] = 0; out[1] = 0; out[2] = 0;
-				var f	= geo.faces[idx],								//Face Ref
-					a	= geo.verts[ f[0] ],							//Face Verts
-					b	= geo.verts[ f[1] ],
-					c	= geo.verts[ f[2] ],
-					ab	= [ b[0] - a[0], b[1] - a[1], b[2] - a[2] ],	//Vector length of A to B and C
-					ac	= [ c[0] - a[0], c[1] - a[1], c[2] - a[2] ];
-
-				Vec3.cross(ab,ac,out);
-				Vec3.norm(out);
-			}
 
 
 
@@ -247,7 +135,7 @@
 						-t,  0,  1
 					).addFace(
 						0, 11, 5,	// 5 faces around point 0
-						/*0, 5, 1,
+						0, 5, 1,
 						0, 1, 7,
 						0, 7, 10,
 						0, 10, 11,
@@ -269,11 +157,171 @@
 						6, 2, 10,
 						8, 6, 7,
 						9, 8, 1
-					  */
+					  /**/
 					);
 					return Icosahedron;
 				}
 
+				static mapVertFace(geo, vmap){
+					var i,f,pos;
+					for(i=0; i < geo.verts.length; i++) vmap[i] = new Array();
+
+					//For every vert, save which face it belongs to.
+					//Sort the Verts for each face, so the center point is
+					//the first element.
+					for(var face of geo.faces){
+
+						for(var i=0; i < 3; i++){
+							f	= face.clone();					//Clone face since we want to modify it
+							pos	= f.indexOf( face[i] );			//Get where in the array the point exists in the face
+							
+							if(pos != 0) f.moveToStart(pos);	//Reorange face so point is at index zero
+							vmap[ face[i] ].push(f);			//Save face to a list of that specific point
+						}
+
+					}
+					return Icosahedron;
+				}
+
+				static sortVertFace(geo, vmap){
+					var oList,	// New Ordered List
+						list,	// Old List
+						a,b,	// Vert Index looking for
+						face,	// Reference Face that the look is checking
+						i,		// Loop Index
+						p;		// New list array position		
+
+					for(var m=0; m < vmap.length; m++){
+						list 		= vmap[m];					// Ref
+						oList		= new Array(list.length);	// New Sorted Face List
+						oList[0]	= list[0];					// Use the first face from the original list
+						a 			= list[0][0];				// Grab the Side Points
+						b 			= list[0][1];
+						p			= 1;						// Forward Index for oList, p for Point
+						i			= 0;						// Index for List, gets reset every time we find a triangle
+						list.splice(0,1);						// Remove the first face the old list.
+
+						//console.log("look for",a,b);
+						//console.log(list);
+
+						while(list.length > 0 && i < list.length){
+							face = list[i]; //Get Reference to face
+
+							if(face.indexOf(a) != -1 && face.indexOf(b) != -1){
+								list.splice(i,1);		//Remove face from original list
+								oList[p++]	= face;		//Save face to ordered list
+								a 			= face[0];	//Set the indexes for the next search
+								b			= face[1];
+								i			= 0;		//Reset index to start from the beginning of list
+								continue;				//Reset loop to beginning
+							}
+
+							i++; //If neighbor not found, move on to next triangle on the list.
+						}
+
+						// Save Sorted Faces back to Map;
+						vmap[m] = oList;
+					}
+					return Icosahedron;
+				}
+
+				static createFanTiles(geo, vmap, geoOut, tiles){
+					var fcPnt = [0,0,0],		//Centroid of Triangle Face
+						key = "",				//Cache Key
+						cache = new Map(),		//Keep Track of Vertex to not repeat them.
+						ip,						//Index of current point
+						i,						//Index
+						cp,						//Index of Center Point of Tile
+						vCnt = 0,				//Current Vertex Count in geoOut
+						vArg = new Vector3(),	//Calc Centroid of tile
+						edge = [];				//Vertex Index Array for tile
+
+					for(var face of vmap){
+						geoOut.addVert( face[0].vert(0) );	//Add Center of tile to new geo
+						cp = vCnt++;						//Incement Vertex Count
+
+						edge.splice(0);						//Clear out Array
+						vArg.set(0,0,0);					//Reset Tile Centroid Averge
+
+						var tile = new Array();
+						
+						//Fungi.debugPoint.addVecPoint( face[0].vert(0) , 1 );
+
+						for(i=0; i < face.length; i++){
+							face[i].centroid(fcPnt);
+							key = fcPnt[0].toFixed(3) + "_" + fcPnt[1].toFixed(3) + "_" + fcPnt[2].toFixed(3);
+							
+							//Has the centroid been added to geometry already
+							if(cache.has(key)){ ip = cache.get(key); }//Get its index;
+							else{ //Create new Vertex
+								ip = vCnt++;
+								cache.set(key,ip);
+								geoOut.addVert(fcPnt);
+							}
+
+							edge[i] = ip;		//Add Vertex Index of Edge list
+							vArg.add( fcPnt );	//Add up the points to calc centroid
+							//Fungi.debugPoint.addVecPoint( fcPnt , 0 );
+							
+							//Create face when we have at least 2 edge points
+							if(i > 0){
+								tile.push( geoOut.faces.length );
+								geoOut.addFace(cp, edge[i], edge[i-1]);
+							}
+						}
+
+						tile.push( geoOut.faces.length );		//Add Face to tile
+						geoOut.addFace(cp, edge[0], edge[i-1]);	//Create file face in the title
+						vArg.avg(face.length, geoOut.verts[cp]);			//Averge the center point, save results to Vertex
+						
+						tiles.push(tile);						//Save file to tile list
+						//break;
+					}
+					return Icosahedron;
+				}
+
+				static createTiles(geo, vmap, geoOut, tiles){
+					var fcPnt = [0,0,0],		//Centroid of Triangle Face
+						key = "",				//Cache Key
+						cache = new Map(),		//Keep Track of Vertex to not repeat them.
+						ip,						//Index of current point
+						i,						//Index
+						vCnt = 0,				//Current Vertex Count in geoOut
+						edge = [];				//Vertex Index Array for tile
+
+					for(var face of vmap){
+						edge.splice(0);			//Clear out Array
+						//Fungi.debugPoint.addVecPoint( face[0].vert(0) , 1 );
+
+						var tile = new Array();
+
+						for(i=0; i < face.length; i++){
+							face[i].centroid(fcPnt);
+							key = fcPnt[0].toFixed(3) + "_" + fcPnt[1].toFixed(3) + "_" + fcPnt[2].toFixed(3);
+							
+							//Has the centroid been added to geometry already
+							if(cache.has(key)){ ip = cache.get(key); }//Get its index;
+							else{ //Create new Vertex
+								ip = vCnt++;
+								cache.set(key,ip);
+								geoOut.addVert(fcPnt);
+							}
+
+							edge[i] = ip;		//Add Vertex Index of Edge list
+							//Fungi.debugPoint.addVecPoint( fcPnt , 0 );
+							
+							//Create face when we have at least 2 edge points
+							if(i > 1){
+								tile.push( geoOut.faces.length );
+								geoOut.addFace(edge[0], edge[i], edge[i-1]);
+							}
+						}
+
+						tiles.push(tile); //Save file to tile list
+						//break;
+					}
+					return Icosahedron;
+				}
 
 				static subdivEdge(geo,a,b,div=1,cache){
 					var tDivInv	= 1 / (div + 1), //Alway plus one, Because divide one segment creates 2 segments
@@ -293,7 +341,7 @@
 						x		= v0[0] * tm1 + v1[0] * t;
 						y		= v0[1] * tm1 + v1[1] * t;
 						z		= v0[2] * tm1 + v1[2] * t;
-						ckey	= x + "," + y + "," + z;
+						ckey	= x.toFixed(3) + "," + y.toFixed(3) + "," + z.toFixed(3); //Fix the values because of floating point errors
 
 						if(cache[ckey] != undefined) rtn.push( cache[ckey] ); 
 						else{
@@ -308,7 +356,60 @@
 				}
 
 				/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				Sub divide triangle faces in a Geometry Object
+					Sub divide triangle faces in a Geometry Object
+						A       Row 0
+					   /__\     Row 1
+					  /\/\/\    Row 2
+					 /\/\/\/\   Row 3
+					B--------C
+
+				 	Subdivide the sides A-B, A-C, then loop threw each point to create
+				 	new points between AB[1] to AC[1] for example. Create a row between each
+				 	points on the sides, after row 0, start sub dividing it by its row number.
+					https://en.wikipedia.org/wiki/Geodesic_polyhedron
+				*/
+				static subdivTriangle2(geo, div=1){
+					var faces = [],
+						cache = {},
+						eLeft, eRight,
+						topLine, botLine,
+						d,t,tMax;
+
+					for(var face of geo.faces){
+						eLeft	= Icosahedron.subdivEdge(geo, face[0], face[1], div, cache); //Divixde Left Side
+						eRight	= Icosahedron.subdivEdge(geo, face[0], face[2], div, cache); //Divide Right Side
+						topLine = [ eLeft[1], eRight[1] ];	//Starting Top Line for Triangle Row
+
+						faces.push( new Face(geo, face[0], eLeft[1], eRight[1] ) ); //Create First Triangle
+
+						//Create triangles one row at a time
+						for(d=1; d <= div; d++){
+							//Determine the bottom verts for the row
+							botLine	= Icosahedron.subdivEdge(geo, eLeft[d+1], eRight[d+1], d, cache);
+							tMax	= topLine.length - 1;
+
+							//Using the top line as the interator to connect to the bottom line.
+							//Build two triangles at a time, as long as there is enough verts for the second one.
+							for(t=0; t <= tMax; t++){
+								faces.push( new Face(geo, topLine[t], botLine[t], botLine[t+1] ) );	
+								if(t < tMax) faces.push( new Face(geo, topLine[t], botLine[t+1], topLine[t+1] ) );
+							}
+
+							topLine	= botLine; //Setup to triangulate the next row
+						}
+
+						//Fungi.debugPoint.addVecPoint(face.vert(0),0);
+						//Fungi.debugPoint.addVecPoint(face.vert(1),2);
+						//Fungi.debugPoint.addVecPoint(face.vert(2),6);
+						//break;
+					}
+					geo.faces = faces; //Replace geo with the new faces.
+
+					return Icosahedron;
+				}
+
+				/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					Sub divide triangle faces in a Geometry Object
 						A       Row 0
 					   /__\     Row 1
 					  /\/\/\    Row 2
@@ -326,32 +427,7 @@
 				static subdivTriangle(geo, div=1){
 					var f, faces = [];
 					var eLeft, eRight, topLine, botLine;
-					var cache = {};
-					/*					
-					for(var i=0; i < geo.faces.length; i++){
-						f = geo.faces[i];
-						
-						eLeft	= Icosahedron.subdivEdge(geo, f[0], f[1], 1, cache);
-						eRight	= Icosahedron.subdivEdge(geo, f[0], f[2], 1, cache);
-
-						faces.push([ f[0], eLeft[1], eRight[1] ]); //Top Triangle
-
-						topLine = [ eLeft[1], eRight[1] ];
-						botLine = Icosahedron.subdivEdge(geo, eLeft[2], eRight[2], 1, cache);
-
-						faces.push([ botLine[0], botLine[1], topLine[0] ]); //Build First Tri
-						faces.push([ botLine[2], topLine[1], botLine[1] ]); //Build Last Tri
-
-
-						faces.push([ topLine[0], botLine[1], topLine[1] ]); //Build Middle Tri
-						//faces.push([ botLine[1], botLine[2], topLine[1] ]); //Build Next Middle Tri 
-
-
-						Fungi.debugPoint.addVecPoint( geo.verts[eLeft[1]] , 0 );
-						Fungi.debugPoint.addVecPoint( geo.verts[eRight[1]] , 2 );
-						Fungi.debugPoint.addVecPoint( geo.verts[botLine[1]] , 6 );
-					}
-					*/					
+					var cache = {};				
 
 					var tMax,	//Max Index for Top Line
 						bMax,	//Max Index for Bottom Line
@@ -391,44 +467,6 @@
 					return Icosahedron;
 				}
 
-				/*
-				static midPoint(i, ii, geo, cache){
-					var key = (i < ii)? `k_${i}_${ii}`: `k_${ii}_${i}`; //Use Indexes as a key, use k_min_max
-
-					if(cache[key]) return cache[key];
-					
-					var idx = geo.verts.length;		//Length will be the index when we add a new vert
-					geo.addVert(					//Save Mid point as a new vert in geo
-						( geo.verts[i][0] + geo.verts[ii][0] ) * 0.5,
-						( geo.verts[i][1] + geo.verts[ii][1] ) * 0.5,
-						( geo.verts[i][2] + geo.verts[ii][2] ) * 0.5
-					);
-
-					cache[key] = idx;
-					return idx;
-				}
-
-
-				static faceCentroid(geo,faceIdx){
-					var v, 
-						x = 0, y = 0, z = 0,
-						f = geo.faces[faceIdx];
-
-					for(var i=0; i < f.length; i++){
-						v	= geo.verts[ f[i] ];
-						x	+= v[0];
-						y	+= v[1];
-						z	+= v[2];
-					}
-
-					var invLen	= 1 / f.length,
-						idx	= geo.verts.length;		//Length will be the index when we add a new vert
-
-					geo.addVert( x * invLen, y * invLen, z * invLen );
-					return idx;
-				}
-				*/
-
 				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				//normalize the vertices so its becomes a sphere
 				static toSphere(geo, radius = 1){
@@ -436,14 +474,14 @@
 					for(var i=0; i < v.length; i++){
 						d = 1 / Math.sqrt( v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2] ); // Vector Length
 
-						v[i].norm[0] = v[i][0] *= d; //Normalize Vertex, Also Save it as Normal Vector
-						v[i].norm[1] = v[i][1] *= d;
-						v[i].norm[2] = v[i][2] *= d;
+						v[i].norm[0] = v[i].x *= d; //Normalize Vertex, Also Save it as Normal Vector
+						v[i].norm[1] = v[i].y *= d;
+						v[i].norm[2] = v[i].z *= d;
 
 						if(radius != 1){
-							v[i][0] *= radius;
-							v[i][1] *= radius;
-							v[i][2] *= radius;
+							v[i].x *= radius;
+							v[i].y *= radius;
+							v[i].z *= radius;
 						}
 					}
 					return Icosahedron;
@@ -451,140 +489,13 @@
 
 
 				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				static findPentagons(geo,tiles,faceCache){
-					for(var i=0; i < 12; i++) tiles[i] = []; //Create Arrays
-
-					for(var i=0; i < geo.faces.length; i++) faceCache[i] = i;
-					//console.log("Start Cache", faceCache.length);
-
-
-					var f	= geo.faces;
-					var cnt = 0, idx;
-					for(var i=0; i < f.length; i++){
-						if(f[i][0] < 12){
-							cnt++;
-							idx = f[i][0];
-							tiles[idx].push(i); //Save Face Index to
-
-							faceCache.splice( faceCache.indexOf(i) ,1); //Remove the face from the cache.
-
-							//Fungi.debugPoint.addVecPoint(geo.verts[ idx ], 0);
-							//Fungi.debugPoint.addVecPoint(geo.verts[ f[i][1] ], 1);
-						}
-					}
-					//console.log(tiles);
-					//console.log("Pentagons Triangles Found: %d",cnt);
-					//console.log("End Cache", faceCache.length);
-					return Icosahedron;
-				}
-
-				static findHexagons(geo,tiles,cache){
-					var tile,
-						face,	// Face Pointer
-						fIdx,	// Face Index
-						cIdx, 	// Index of the Center of Title
-						aIdx,	// Index of Triangle Corner
-						bIdx,	// INdex of the other Corner
-						aPos,
-						bPos,
-						hex
-					;
-
-					var funcFaceFix = function(ary, pos){
-						var tmp = ary[pos];
-						if(pos == 1){ 		ary[1] = ary[2]; ary[2] = ary[0]; ary[0] = tmp; }
-						else if(pos == 2){ 	ary[2] = ary[1]; ary[1] = ary[0]; ary[0] = tmp; }
-					};
-
-					//-------------------------------------
-					//Loop through all the tiles to find neighboring hexagons
-					for(var t=0; t < tiles.length; t++){
-						tile = tiles[t];
-						//tile = tiles[9]; //DEBUG
-
-						//-------------------------------------
-						//Loop through all the faces that makes up a tile
-						for(var f=0; f < tile.length; f++){
-							fIdx = tile[f];
-							face = geo.faces[fIdx];
-							aIdx = face[1];
-							bIdx = face[2];
-
-							//DEBUG - See the face being used to search
-							//Fungi.debugPoint.addVecPoint(geo.verts[ face[0] ], 0);
-							//Fungi.debugPoint.addVecPoint(geo.verts[ aIdx ], 1);
-							//Fungi.debugPoint.addVecPoint(geo.verts[ bIdx ], 2);
-
-							//-------------------------------------
-							//Search the remaining faces for one that shares the same two corners
-							//of one of the faces of the tile.
-							for(var c=0; c < cache.length; c++){
-								face = geo.faces[ cache[c] ];
-
-								//Does the cached face share the same corners as the tile face.
-								if( (aPos = face.indexOf(aIdx)) > -1 && (bPos = face.indexOf(bIdx)) > -1){
-									//If any of the corners is in zero, fix face by putting the tile center point
-									//in the first position of the face
-									if(aPos == 0 || bPos == 0){
-										if( (aPos == 0 && bPos == 1) || (bPos == 0 && aPos == 1) ) funcFaceFix(face,2);
-										if( (aPos == 0 && bPos == 2) || (bPos == 0 && aPos == 2) ) funcFaceFix(face,1);
-									}
-
-									cIdx	= face[0];
-									hex		= [ cache[c] ]; //Start new Hex tile with this face index
-									cache.splice(c,1);		//Remove face from cache
-
-									//DEBUG See hex center point
-									//Fungi.debugPoint.addVecPoint(geo.verts[ face[0] ], 6);
-									//console.log("looking for", cIdx);
-
-									//-------------------------------------
-									//Search for the other faces of the hex,
-									//We go backwards because we want to remove faces as we go
-									for(var h = cache.length-1; h >= 0; h--){
-										face = geo.faces[ cache[h] ];	//Get Face reference
-										aPos = face.indexOf(cIdx);		//
-
-										if(aPos > -1){
-											hex.push( cache[h] );	//Save Face index to hex
-											cache.splice(h, 1);		//Remove face from cache
-
-											//Fix vertex of the face, Make center the first element
-											if(aPos != 0) funcFaceFix(face, aPos);
-											//console.log("Hex",h,face);
-
-											//If we found all the faces, save it as a tile then exit
-											if(hex.length == 6){ 
-												tiles.push( hex );
-												break;
-											} 
-										}
-									}
-
-									if(hex.length != 6){ console.log("error finding hex tile"); }
-									break; //Found a Neighboring Tile, Exit Loop
-								}
-							}
-
-							if(cache.length == 0) break;
-							//break; //DEBUG
-						}
-
-						if(cache.length == 0) break;
-						//break;
-					}
-					//console.log("End Cache", cache.length);
-
-					return Icosahedron;
-				}
-
 				static debugHex(geo,tiles){
-					for(var i=12; i < tiles.length; i++){
-						var t = tiles[i];
-						for(var j=0; j < t.length; j++){
+					for(var ary of tiles){
+						if(ary.length < 6) continue;
+						for(var i=0; i < ary.length; i++){
 							Fungi.debugLine.addVecLine(
-								geo.getFaceVert( t[j], 1), 1,
-								geo.getFaceVert( t[j], 2), 1
+								geo.faceVert(ary[i],1), 1,
+								geo.faceVert(ary[i],2), 1
 							);
 						}
 					}
@@ -592,233 +503,34 @@
 				}
 
 				static debugPent(geo,tiles){
-					for(var i=0; i < 12; i++){
-						var t = tiles[i];
-						for(var j=0; j < t.length; j++){
+					for(var ary of tiles){
+						if(ary.length != 5) continue;
+						for(var i=0; i < ary.length; i++){
 							Fungi.debugLine.addVecLine(
-								geo.getFaceVert( t[j], 1), 1,
-								geo.getFaceVert( t[j], 2), 1
+								geo.faceVert(ary[i],1), 1,
+								geo.faceVert(ary[i],2), 1
 							);
 						}
 					}
-
-					return Icosahedron;
-				}
-
-				static flattenTiles(geo,tiles){
-					for(var i=0; i < tiles.length; i++){
-						var t = tiles[i];
-						var x=0, y = 0, z = 0;
-
-						for(var j=0; j < t.length; j++){
-							var v = geo.getFaceVert( t[j], 1);
-							x += v.x;
-							y += v.y;
-							z += v.z;
-
-							v = geo.getFaceVert( t[j], 2);
-							x += v.x;
-							y += v.y;
-							z += v.z;
-						}
-
-						v = geo.getFaceVert(t[0], 0);
-						var dom = 1 / (t.length * 2);
-						v.x = x * dom;
-						v.y = y * dom;
-						v.z = z * dom;
-					}
-
 					return Icosahedron;
 				}
 
 				static centerTileLen(geo,tiles, len = 1){
 					for(var i=0; i < tiles.length; i++){
-						var v = geo.getFaceVert(tiles[i][0], 0);
-						v.x = v.norm.x * len;
-						v.y = v.norm.y * len;
-						v.z = v.norm.z * len;
+						var v = geo.faceVert(tiles[i][0], 0);
+						v.normalize(v.norm).scale(len,v);
+						//v.x = v.norm.x * len;
+						//v.y = v.norm.y * len;
+						//v.z = v.norm.z * len;
 					}
-
 					return Icosahedron;
 				}
 
 				static centerTileUV(geo,tiles){
-					var tile, v;
-					for(var i=0; i < tiles.length; i++){
-						tile = tiles[i];
-
-						//Set Center Point as 1
-						v = geo.getFaceVert(tile[0], 0);
-						v.uv[0] = v.uv[1] = 1;
-
-						//Sent Surrounding Points as 0
-						for(var j=0; j < tile.length; j++){
-							v = geo.getFaceVert(tile[j], 1);
-							v.uv[0] = v.uv[1] = 0;
-						}
-					}
-
-					return Icosahedron;
-				}
-
-
-				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				// Calculate the UV Value for each vertex for the sphere
-				static sphereUV(geo){ //Need normals setup for sphere
-					var vLen		= geo.verts.length,
-						invHalfPI	= 1 / Math.PI * 0.5,
-						invPI		= 1 / Math.PI,
-						n;
-
-					for(var i=0; i < vLen; i++){
-						n = geo.verts[i].norm;
-
-						//http://wiki.unity3d.com/index.php/CreateIcoSphere
-						//Only Unity's Math Worked Perfectly, Other online samples had issues even the wikipedia page :/
-						//geo.verts[i].uv[0] = (Math.atan2(n[0], n[2]) + Math.PI) / Math.PI / 2;
-						//geo.verts[i].uv[1] = (Math.acos(n[1]) + Math.PI) / Math.PI - 1;
-
-						geo.verts[i].uv[0] = (Math.atan2(n[0], n[2]) + Math.PI) * invHalfPI;  //Simple optimizations
-						geo.verts[i].uv[1] = (Math.acos(n[1]) + Math.PI) * invPI - 1;
-					}
-					return Icosahedron;
-				}
-
-				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				//http://mft-dev.dk/uv-mapping-sphere/
-				static fixWrappedUV(geo){
-					var i0, i1, i2, ii,
-						f,
-						v = geo.verts,
-						vIdx,
-						ca = [0,0,0],
-						cb = [0,0,0],
-						cp = [0,0,0];
-
-					var used = new Map();
-					var idx = geo.verts.length - 1;
-
-					for(var i=0; i < geo.faces.length; i++){
-						//Get the index of the vertices for the face.
-						f	= geo.faces[i];
-						i0 	= f[0];
-						i1 	= f[1];
-						i2 	= f[2];
-
-						//-----------------------------
-						// FIND TRIANGLE SEAM
-						//	Calc UV Normal by doing the Cross Product of UV values of 2 legs of the triangle
-						//	The idea from mft-dev is that if the UV normal direction i wrong, then its one
-						//	of the triangles that form the seam of the sphere, where the UV values are
-						//	a bit messed up. So when CP.Z < 0, then its the correct one BUT... the only
-						//  UV math that worked was from unity, So needed to change to CP.Z > 0. Lucky Guess
-						//  on my part but it works.
-
-						cb[2] = ca[2] = 0;		//UV is a vec2, but cross prod need a vec3, make z = 0;
-						ca[0] = v[i1].uv[0] - v[i0].uv[0];	// B - A
-						ca[1] = v[i1].uv[1] - v[i0].uv[1];
-
-						cb[0] = v[i2].uv[0] - v[i0].uv[0];	// C - A
-						cb[1] = v[i2].uv[1] - v[i0].uv[1];
-						Vec3.cross(ca,cb,cp);		// B-A x C-A
-						/* 
-						if(cp[2] > 0){ //Using Unity's UV math, its > not < like in the blog pos
-							console.log("Texture Flipped %d", i);
-							Fungi.debugPoint.addVecPoint(v[ i0 ],0);
-							Fungi.debugPoint.addVecPoint(v[ i1 ],1);
-							Fungi.debugPoint.addVecPoint(v[ i2 ],2);
-						}
-						*/
-						if(cp[2] <= 0) continue; // Not a triangle Seam
-
-						//-----------------------------
-						// Check if any UV.x value is less then 0.25, if so, check if the current vert as 
-						// been cloned. If not, clone it then have its UV.x += 1. In the end, update the face
-						// vertex with the cloned one with the modified UV. Based on mft-dev, you can fix most
-						// of the seam by cloning the vert and change its UV value over 1, but texture must be
-						// loaded in to wrap to allow this trick to work.
-						for(var j=0; j < f.length; j++){
-							ii = f[j];								// Vertex Index
-
-							if( v[ii].uv[0] < 0.25 ){	
-								if( !used.has(ii) ){				// Has this Vert been cloned?
-									geo.cloneVert(ii).uv[0] += 1; 	// Clone it and update uv.x
-									used.set(ii,++idx);				// Save reference of Old Index with its new One.
-									f[j] = idx;						// Update the face with index of the cloned vert
-
-								}else f[j] = used.get(ii);			// If cloned, reuse it
-							}
-						}
-					}
-
-					return Icosahedron;
-				}
-
-				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				static findAndFixPoles(geo){
-					//-----------------------------------
-					//Find the North and South Poles of the sphere.
-					//They should have the smallest / greates y value.
-					var iMin = 0, iMax = 0, yMin = 100, yMax = -100, v = geo.verts;
-					for(var i=0; i < v.length; i++){
-						if(v[i][1] > yMax){ yMax = v[i][1]; iMax = i; }
-						if(v[i][1] < yMin){ yMin = v[i][1]; iMin = i; }
-					}
-					/*
-					Fungi.debugPoint.addVecPoint(v[ iMin ],5);
-					Fungi.debugPoint.addVecPoint(v[ iMax ],5);
-					*/
-					//-----------------------------------
-					//Rearrange the faces to have the pole vertex at the zero position for the face.
-					var f = geo.faces;
-					for(var i=0; i < f.length; i++){
-						if(f[i][1] == iMax){	f[i][1] = f[i][2];		f[i][2] = f[i][0];		f[i][0] = iMax; }
-						if(f[i][1] == iMin){	f[i][1] = f[i][2];		f[i][2] = f[i][0];		f[i][0] = iMin; }
-						if(f[i][2] == iMax){	f[i][2] = f[i][1];		f[i][1] = f[i][0];		f[i][0] = iMax; }
-						if(f[i][2] == iMin){	f[i][2] = f[i][1];		f[i][1] = f[i][0];		f[i][0] = iMin; }
-					}
-					return [iMin,iMax];
-				}
-
-				//http://mft-dev.dk/uv-mapping-sphere/
-				static fixUVPole(geo){
-					var pole	= Icosahedron.findAndFixPoles(geo),
-						f		= geo.faces,
-						v		= geo.verts,
-						idx		= geo.verts.length - 1,
-						i0, i1, i2, vec;
-
-					for(var i=0; i < f.length; i++){
-						if( !(f[i][0] == pole[0] || f[i][0] == pole[1]) ) continue; //If not a triangle at the pole
-
-						i0 			= f[i][0];				//Get index of verts
-						i1 			= f[i][1];
-						i2 			= f[i][2];
-						vec			= geo.cloneVert(i0);	//Clone the pole vert
-
-						vec.uv[0]	= (v[i1].uv[0] + v[i2].uv[0]) * 0.5; //Avg out the other vert uvs, save to new pole vert.
-						f[i][0]		= ++idx;	//Update face with new pole vert.
-					}
-
-					return Icosahedron;
-				}
-
-				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				static debugFaceNormal(geo, len = 1){
-					var f	= geo.faces,
-						c	= [0,0,0],
-						n	= [0,0,0],
-						np	= [0,0,0];
-
-					for(var i=0; i < f.length; i++){
-						geoFaceCentroid(geo,i,c);
-						geoFaceNormal(geo,i,n);
-
-						np[0] = c[0] + n[0] * len;
-						np[1] = c[1] + n[1] * len;
-						np[2] = c[2] + n[2] * len;
-						Fungi.debugLine.addVecLine(c,1,np,1);
+					var v;
+					for(var tile of tiles){
+						geo.faceVert(tile[0], 0).uv.set(1,1);
+						for(var i=0; i < tile.length; i++) geo.faceVert(tile[i], 1).uv.set(0,0);
 					}
 					return Icosahedron;
 				}
@@ -883,12 +595,17 @@
 			void main(void){
 				float c = 1.0;
 
+				/**/
 				float start = 0.03;
 				float thick = 0.15;
 				float fade = 0.02;
 				c = feather(v_uv.x, start, start+thick, fade);
 				c += feather(v_uv.x, 0.5, 0.55, fade);
 				c += feather(v_uv.x, 0.9, 0.91, fade);
+				
+
+				//c = feather(v_uv.x, 0.05, 1.0, 0.02);
+
 
 				vec3 color = vec3(1.0,1.0,1.0) * c;
 				oFragColor = vec4(color,1.0);
