@@ -1,0 +1,49 @@
+<shader>
+{
+	"name":"BaseColor",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["u_color","vec4"]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"RedColor", "uniforms":[ "u_color", "acolor", "ff0000ff" ] },
+	{ "name":"GreenColor", "uniforms":[ "u_color", "acolor", "00FF00ff" ] },
+	{ "name":"GrayColor", "uniforms":[ "u_color", "acolor", "bbbbbbff" ] },
+	{ "name":"BlackColor", "uniforms":[ "u_color", "acolor", "000000ff" ] },
+	{ "name":"DGrayColor", "uniforms":[ "u_color", "acolor", "505050ff" ] }
+	
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+		float fTime;
+		vec2 screenRes;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	void main(void){
+		gl_PointSize = 10.0;
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	uniform vec4 u_color;
+	out vec4 FragColor;
+
+	void main(void){ FragColor = u_color; }
+</fragment>

@@ -1,0 +1,43 @@
+<shader>
+{
+	"name":"SingleColor",
+	"useModelMatrix":true,
+	"useUBOTransform":true,
+	"uniforms":["uColor","vec4"]
+}
+</shader>
+
+<materials>
+[
+	{ "name":"ColorGray","useBlending":false,"useSampleAlphaCoverage":true, "uniforms":["uColor", "acolor", "666666FF"] },
+	{ "name":"ColorGrayTrans","useBlending":true,"useSampleAlphaCoverage":false, "uniforms":["uColor", "acolor", "66666660"] }
+]
+</materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	uniform UBOTransform{
+		mat4 matProjection;
+		mat4 matCameraView;
+		vec3 posCamera;
+	};
+
+	uniform mat4 uModalMatrix;
+
+	void main(void){
+		gl_PointSize = 10.0;
+		gl_Position	= matProjection * matCameraView * uModalMatrix * vec4(a_position.xyz,1.0);
+	}
+</vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	uniform vec4 uColor;
+	out vec4 outColor;
+
+	void main(void){ outColor = uColor; }
+</fragment>
