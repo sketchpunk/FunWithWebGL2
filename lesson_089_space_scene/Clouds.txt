@@ -1,0 +1,123 @@
+<shader>{
+	"name":"Clouds",
+	"ubo":[ "UBOTransform" ],
+	"options": { "modelMatrix":true, "normalMatrix":true },
+	"uniforms":[
+		{ "name":"u_colorTex", "type":"sample2D" },
+
+		{ "name":"u_lightPos", "type":"vec3" },
+		{ "name":"u_lightColor", "type":"vec3" },
+
+		{ "name":"u_diffuseStength", "type":"float" },
+		{ "name":"u_ambientStrength", "type":"float" },
+		{ "name":"u_specularStrength", "type":"float" },
+		{ "name":"u_specularShininess", "type":"float" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"Clouds",
+		"options" : { "blend":true, "depthTest":true },
+		"uniforms":[ 
+			{ "name":"u_colorTex", "type":"tex", "value":"earthCloud" },
+
+			{ "name":"u_lightPos", "value":[5,1,0] },
+			{ "name":"u_lightColor", "type":"rgb", "value":"#ffffff"},
+			
+			{ "name":"u_diffuseStength", "value":1.0 },
+			{ "name":"u_ambientStrength", "value":0.0 },
+			{ "name":"u_specularStrength", "value":0.2 },
+			{ "name":"u_specularShininess", "value":2.0 }
+		]
+	}
+]<\materials>
+				
+			
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	
+	uniform mat4 u_modelMatrix;
+	uniform mat3 u_normalMatrix;
+	uniform vec3 u_lightPos;
+	
+	out vec2 v_uv;
+	out vec3 v_normal;
+	out vec3 v_worldPos;
+	out vec3 v_vertToLight;
+	out vec3 v_vertToCamera;
+
+	void main(void){
+		vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+		
+		//.............................		
+		v_uv			= a_uv;
+		v_worldPos		= worldPosition.xyz;
+		v_normal		= u_normalMatrix * a_normal;
+		v_vertToLight	= normalize( u_lightPos - worldPosition.xyz ); //Get light dir in vert instead in frag
+		v_vertToCamera	= normalize( cameraPos - worldPosition.xyz );
+
+		//.............................
+		gl_Position	= projViewMatrix * worldPosition;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+		in vec2 v_uv;
+		in vec3 v_normal;
+		in vec3 v_worldPos;
+		in vec3 v_vertToLight;
+		in vec3 v_vertToCamera;
+
+		uniform sampler2D	u_colorTex;
+
+		//uniform vec3 		u_lightPos;
+		uniform vec3		u_lightColor;
+		uniform float		u_ambientStrength;
+		uniform float		u_diffuseStength;
+		uniform float		u_specularStrength;
+		uniform float		u_specularShininess;
+
+		out vec4 oFragColor;
+
+	void main(void){
+		vec4 baseColor		= texture( u_colorTex, v_uv );
+		vec3 fragNormal		= normalize(v_normal);
+		vec3 fragToLight 	= normalize(v_vertToLight);
+		vec3 fragToCamera	= normalize(v_vertToCamera);
+
+		//....................................
+		//Diffuse Lighting
+		/*
+		float fragToLightAngle	= clamp(dot( fragNormal, fragToLight), 0.0, 1.0);
+		float diffuse			= fragToLightAngle * u_diffuseStength;
+		float diffuseBump 		= diffuse;
+		*/
+		float fragToLightAngle	= dot( fragNormal, fragToLight ) * 0.5 + 0.5; //Remake -1 > 1 to 0 > 1
+		float diffuse			= smoothstep(0.1, 0.5, fragToLightAngle * u_diffuseStength);  //Want more light spread on the planet
+
+		//....................................
+		//Specular Lighting
+		vec3 vecReflect	= reflect(-fragToLight, fragNormal); //Reflective direction of light using frag normal as pivot.
+		float specular 	= pow( clamp( dot(vecReflect, fragToCamera ), 0.0, 1.0 ), u_specularShininess ) * u_specularStrength;
+		//float specular = 0.0;
+
+		//....................................
+		//Setup Final Color
+		oFragColor = vec4(baseColor.rgb * u_lightColor * (u_ambientStrength + diffuse + specular), baseColor.a * 0.7);
+	}
+	
+<\fragment>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			#FungiDiv{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi			from "./fungi/Fungi.js";
+			import System			from "./fungi/System.js";
+			import UVSphere			from "./fungi/primitives/UVSphere.js";
+			import Points			from "./fungi/primitives/Points.js";
+			import Lines			from "./fungi/primitives/Lines.js";
+			import Maths, { Vec3 }	from "./fungi/Maths.js";
+			import Bezier			from "./lib/Bezier3D.js";
+			import {Easing}			from "./lib/Tween.js";
+			import Overlay 			from "./lib/Overlay/Overlay.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"fungi/shaders/LowPolyPhong.txt" },
+				])	.then( async()=>{ 
+						await System.startUp(onRender);
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+
+			let sphere, dPoints, dLines, rocket;
+			
+			//knots 0, 3, 6
+			let spline = [ new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),  new Vec3(), new Vec3() ];
+			let radius = 1;
+
+			let aLong = 0, 	aLat = 90,
+				cLong = 90,	cLat = -90;
+
+			let minMidScale = 0.035,
+				maxMidScale = 1.0;
+
+			/*
+			dot 1, midScale 1, endScale 0.1
+			dot 0.5, midScale 0.5, endScale 0.1
+			d06 0.0024, midScale 0.035, endScale 1.0
+			*/
+			function onInit(){
+				//........................				
+				Fungi.camera.setPosition(0,0.3,3.5);//.setDegrees(-20,"x");
+
+				//----------------------------------
+				Overlay.init()
+					.title("Point Green")
+					.range("Long", 0, 0, 360, 5, function(e){ aLong		= parseFloat(this.value); resetPoints(); })
+					.range("Lat", 90, -90, 90, 1, function(e){ aLat		= parseFloat(this.value); resetPoints(); })
+					.title("Point Red")
+					.range("Long", 90, 0, 360, 5, function(e){ cLong	= parseFloat(this.value); resetPoints(); })
+					.range("Lat", -90, -90, 90, 1, function(e){ cLat	= parseFloat(this.value); resetPoints(); })
+				;
+
+				//........................
+				Fungi.scene.add( rocket		= new Points("rocket").addRaw(0,0,0,8).update() );
+				Fungi.scene.add( dPoints	= new Points("points",2) );
+				Fungi.scene.add( dLines		= new Lines("lines",2).lineStrip() ); 
+				Fungi.scene.add( sphere		= UVSphere("LowPolyPhong").setScale(2) );
+
+				//........................
+				resetPoints();
+				Fungi.loop.start();
+			}
+
+			const SECONDS		= 6;
+			const SECONDS_INV	= 1 / SECONDS;
+
+			function onRender(dt, ss){
+				let t = ss % SECONDS * SECONDS_INV;
+				rocket.position = Bezier.splineAt(spline, Easing.circ_In(t) );
+
+				//..............................
+				System.update();
+			}
+
+			function resetPoints(){
+				//..........................................
+				//Figure out Starting and Ending Positions of the Spline
+				Maths.polarToCartesian(aLong, aLat, radius, spline[0]); //Start
+				Maths.polarToCartesian(cLong, cLat, radius, spline[6]); //End
+
+				var a			= spline[0].normalize(new Vec3()),
+					c			= spline[6].normalize(new Vec3()),
+					dot			= 1 - (Maths.nearZero( Vec3.dot(a,c) ) * 0.5 + 0.5),
+					pathScale	= Maths.norm(0.0024, 1.0, dot); //Scale Path Based on Angle of the Spline End Points
+
+
+				//..........................................
+				//Mid Point of Spline
+				spline[0].lerp(spline[6], 0.5, spline[3]);
+				spline[3].normalize().scale(radius+0.3);
+
+
+				//..........................................
+				//Mid Control Points
+				var n 			= new Vec3(),
+					midScale	= Maths.lerp(minMidScale, maxMidScale, pathScale );
+				
+				spline[6].sub( spline[0], n ).normalize().scale(midScale); //Slope of the End Points of the Spline
+
+				spline[3].sub( n, spline[2] );	//Move Control Points to Proper Location On Parallel Line
+				spline[3].add( n, spline[4] );
+
+
+				//..........................................
+				//End Control Points
+				//var endScale = Maths.lerp(minEndScale, maxEndScale, pathScale ); // 10;
+				var endScale = 0.1;
+				spline[0].normalize(n).scale(endScale).add( spline[0], spline[1] );
+				spline[6].normalize(n).scale(endScale).add( spline[6], spline[5] );
+
+				dPoints.reset()
+					.addVec(spline[0], 1)
+					.addVec(spline[1], 1)
+
+					.addVec(spline[5], 0)
+					.addVec(spline[6], 0)
+					
+					.addVec(spline[2], 1)
+					.addVec(spline[3], 2)
+					.addVec(spline[4], 0)
+				;
+
+				//..................................
+				//Draw Path
+				var cnt	= 20, p = new Vec3();
+				dLines.reset();
+				for(var i=0; i <= cnt; i++){
+					dLines.addPoint( Bezier.splineAt(spline, i/cnt, p) ,4);
+				}
+
+				dPoints.update();
+				dLines.update();
+			}
+		</script>
+	</head>
+<body>
+	<div id="FungiDiv"><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

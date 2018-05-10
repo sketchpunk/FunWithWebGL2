@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			#FungiDiv{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi			from "./fungi/Fungi.js";
+			import System			from "./fungi/System.js";
+			import UVSphere			from "./fungi/primitives/UVSphere.js";
+			import { LoadInlineShader } from "./fungi/Shader.js";
+			import Maths, { Vec3 }	from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"fungi/shaders/VecWColor.txt" },
+				])	.then( async()=>{ 
+						await System.startUp(onRender);
+						//System.darkScene();
+						LoadInlineShader("inline_shader");
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+
+			let sphere;
+			function onInit(){
+				//........................				
+				Fungi.camera.setPosition(0,0.3,3.5);//.setDegrees(-20,"x");
+
+				//........................
+				Fungi.scene.add( sphere = UVSphere("TestShader").setScale(2) );
+				sphere.options.cullFace = false;
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			var tCounter = 0;
+			var ary = [];
+			function onRender(dt, ss){
+				if((tCounter += dt) >= 2){
+					tCounter = 0;
+					var v = new Vec3(Maths.rnd(-1,1), Maths.rnd(-1,1), Maths.rnd(-1,1)).normalize();
+					ary.push(v.x,v.y,v.z);
+
+					var mat = Fungi.getMaterial("TestShader");
+					mat.updateUniform("u_spots", ary);
+					mat.updateUniform("u_spotCount", ary.length / 3);
+
+					//console.log("hit", mat.uniforms.get("u_spots"));
+				}
+
+				System.update();
+			}
+		</script>
+	</head>
+<body>
+	<div id="FungiDiv"><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+<script id="inline_shader" type="plain/text">
+<shader>{
+	"name"		: "TestShader",
+	"ubo"		: [ "UBOTransform" ],
+	"options"	: { "modelMatrix":true, "normalMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_fade", "type":"float" },
+		{ "name":"u_size", "type":"float" },
+		{ "name":"u_spotCount", "type":"int" },
+		{ "name":"u_spots", "type":"vec3" }
+	]
+}<\shader>
+	
+<materials>[{ 
+	"name"		: "TestShader", 
+	"options"	: { "blend":true, "sampleAlphaCoverage":true, "depthTest":true },
+	"uniforms"	: [
+		{ "name":"u_fade", "value":0.0001 },
+		{ "name":"u_size", "value":0.994 },
+		{ "name":"u_spotCount", "value":3 },
+		{ "name":"u_spots", "value":[0,0,1,  0,1,0,  1,0,0] }
+	]
+}]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+	
+	uniform mat4 u_modelMatrix;
+	
+	out vec2 v_uv;
+	out vec3 v_worldPos;
+
+	void main(void){
+		vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+		
+		//.............................		
+		v_uv			= a_uv;
+		v_worldPos		= worldPosition.xyz;
+
+		//.............................
+		gl_Position	= projViewMatrix * worldPosition;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in vec2 v_uv;
+	//in vec3 v_normal;
+	in vec3 v_worldPos;
+
+	uniform float u_fade;
+	uniform float u_size;
+	uniform int u_spotCount;
+	uniform vec3[200] u_spots;
+
+	out vec4 oFragColor;
+
+	void main(void){;
+		vec3 fragDir = normalize(v_worldPos);
+
+		oFragColor.rgb = vec3( .0 );
+		for(int i=0; i < u_spotCount; i++){
+			oFragColor.a += 1.0 - smoothstep(u_size, u_size-u_fade, dot(fragDir, u_spots[i]) );
+		}
+	}	
+<\fragment>
+</script>
+
+</body>
+</html>

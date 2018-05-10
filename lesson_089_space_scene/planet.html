@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+			import UVSphere		from "./fungi/primitives/UVSphere.js";
+
+			import Transform		from "./fungi/data/Transform.js";
+
+			import Points			from "./fungi/primitives/Points.js";
+			import Lines			from "./fungi/primitives/Lines.js";
+			import Maths, { Vec3 }	from "./fungi/Maths.js";
+			import Bezier			from "./lib/Bezier3D.js";
+			import { Easing }		from "./lib/Tween.js";
+
+			//http://learningthreejs.com/blog/2013/09/16/how-to-make-the-earth-in-webgl/
+			//http://planetpixelemporium.com/planets.html
+			//https://svs.gsfc.nasa.gov/3572
+			//https://svs.gsfc.nasa.gov/3895
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"Planet.txt" },
+					{ type:"shader", file:"Clouds.txt" },
+					{ type:"shader", file:"SphereSpots.txt" },
+					{ type:"shader", file:"Starmap.txt" },
+					{ type:"shader", file:"fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"fungi/shaders/PointCircle.txt" },
+
+					{ type:"image", name:"earthColor", file:"earth_color.jpg", doYFlip:true, useMips:false },
+					{ type:"image", name:"earthBump", file:"earth_bump.jpg", doYFlip:true, useMips:false },
+					{ type:"image", name:"earthNight", file:"earth_lights.jpg", doYFlip:true, useMips:false },
+					{ type:"image", name:"earthCloud", file:"earth_clouds.png", doYFlip:true, useMips:false },
+
+					{ type:"image", name:"starMap", file:"starmap_g4k_print.jpg", doYFlip:true, useMips:false },
+				])	.then( async()=>{ 
+						await System.startUp(onRender, 2);
+						System.darkScene();
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+
+			let earth, clouds, spots, dLine, dPoint, container, skymap;
+			let rLogic = rocketLogic();
+
+			function onRender(dt, ss){ System.update(); }
+			function onInit(){
+				//........................				
+				Fungi.camera.setPosition(0,1,4.5);//.setDegrees(-20,"x");
+
+				//........................
+				Fungi.scene.add( container = new Transform().setPosition(0,1,0) );
+
+				container.addChild( earth 	= UVSphere("Planet").setScale(2) );
+				container.addChild( spots	= earth.clone(true).setScale(2.01).setMaterial("SphereSpots") );
+				container.addChild( clouds	= earth.clone(true).setScale(2.025).setMaterial("Clouds") );
+				container.addChild( dLine	= new Lines("lines", 2).lineStrip() );
+				container.addChild( dPoint	= new Points("points", 1, "PointCircle").addRaw(0,0,0,0) );
+
+				container.update	= function(dt,ss){ this.setDegrees(-10 * dt); }
+				clouds.update		= function(dt,ss){ this.setDegrees(-2 * dt); }
+
+				rLogic.resetPoints();
+
+				Fungi.scene.add( skymap = earth.clone().setScale(100).setMaterial("Starmap") );
+				skymap.options.cullFace = false;
+
+				//........................
+				Fungi.scene.prepareItems();
+				Fungi.scene.updateItems.push(rLogic);
+
+				Fungi.loop.start();
+			}
+
+
+			function rocketLogic(){
+				//knots 0, 3, 6
+				let spline = [ new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),  new Vec3(), new Vec3() ];
+				let radius = 1;
+
+				let aLong = 0, 	aLat = 90,	//Staring Longitude and latitude for stand and end points
+					cLong = 90,	cLat = -90;
+
+				let minMidScale = 0.035,	//How 5to scale the Mid control points based on angle
+					maxMidScale = 1.0;
+
+				//.......................................
+				let resetPoints = ()=>{
+					//---------------------------
+					//Pick random Two points
+					aLong	= Maths.rnd(0,360);		//start point
+					aLat	= Maths.rnd(-90,90);
+					cLong	= Maths.rnd(0,360);		//end point
+					cLat	= Maths.rnd(-90,90);
+
+					//---------------------------
+					//Figure out Starting and Ending Positions of the Spline
+					Maths.polarToCartesian(aLong, aLat, radius, spline[0]); //Start
+					Maths.polarToCartesian(cLong, cLat, radius, spline[6]); //End
+
+					var a			= spline[0].normalize(new Vec3()),	//Get Unit Vectors of Start and End
+						c			= spline[6].normalize(new Vec3()),
+						dot			= 1 - (Maths.nearZero( Vec3.dot(a,c) ) * 0.5 + 0.5), //Get Angle between two points
+						pathScale	= Maths.norm(0.0024, 1.0, dot); //Scale Path Based on Angle of the Spline End Points
+
+					//---------------------------
+					//Mid Point of Spline
+					spline[0].lerp(spline[6], 0.5, spline[3]); 	//Get middle point
+					spline[3].normalize().scale(radius+0.3);	//Make it a unit vector then scale it into position.
+
+
+					//---------------------------
+					//Mid Control Points
+					var n 			= new Vec3(),
+						midScale	= Maths.lerp(minMidScale, maxMidScale, pathScale ); //How far to move the control points from midpoint
+					
+					spline[6].sub( spline[0], n ).normalize().scale(midScale); //Slope of the End Points of the Spline
+
+					spline[3].sub( n, spline[2] );	//Move Control Points to Proper Location On Parallel Line
+					spline[3].add( n, spline[4] );
+
+
+					//---------------------------
+					//End Control Points
+					var endScale = 0.1;
+					spline[0].normalize(n).scale(endScale).add( spline[0], spline[1] );
+					spline[6].normalize(n).scale(endScale).add( spline[6], spline[5] );
+
+
+					//---------------------------
+					//Draw Path
+					var cnt	= 230, p = new Vec3();
+					dLine.reset();
+					for(var i=0; i <= cnt; i++){
+						dLine.addPoint( Bezier.splineAt(spline, i/cnt, p) ,4);
+					}
+					dLine.update();
+				}
+
+				//.......................................
+				let arySpots	= [],
+					rocketTime	= 0,
+					second		= 5,
+					update		= (dt, ss)=>{
+						if( (rocketTime += Fungi.deltaTime) > second ){
+							rocketTime = 0;
+
+							var v = spline[6].normalize(new Vec3());
+							arySpots.push(v.x, v.y, v.z);
+
+							var mat = Fungi.getMaterial("SphereSpots");
+							mat.updateUniform("u_spots", arySpots);
+							mat.updateUniform("u_spotCount", arySpots.length / 3);
+
+							resetPoints();
+						}
+
+						var t = Math.min(1.0, rocketTime / second);
+						dPoint.position = Bezier.splineAt( spline, Easing.circ_In(t) );
+					};
+
+				//.......................................
+				return { resetPoints, spline, update };
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+</body>
+</html>

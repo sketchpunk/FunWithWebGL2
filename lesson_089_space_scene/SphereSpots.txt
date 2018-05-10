@@ -1,0 +1,76 @@
+<shader>{
+	"name"		: "SphereSpots",
+	"ubo"		: [ "UBOTransform" ],
+	"options"	: { "modelMatrix":true, "normalMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_fade",		"type":"float" },
+		{ "name":"u_size",		"type":"float" },
+		{ "name":"u_spotCount",	"type":"int" },
+		{ "name":"u_spots",		"type":"vec3" }
+	]
+}<\shader>
+	
+<materials>[{ 
+	"name"		: "SphereSpots", 
+	"options"	: { "blend":true, "sampleAlphaCoverage":true, "depthTest":true },
+	"uniforms"	: [
+		{ "name":"u_fade",		"value":0.0001 },
+		{ "name":"u_size",		"value":0.98 },
+		{ "name":"u_spotCount",	"value":0 },
+		{ "name":"u_spots",		"value":[] }
+	]
+}]<\materials>}
+			
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+	
+	uniform mat4 u_modelMatrix;
+
+	out vec2 v_uv;
+	out vec3 v_worldPos;
+
+	void main(void){
+		vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+		
+		//.............................		
+		v_uv			= a_uv;
+		//v_worldPos		= worldPosition.xyz;
+		v_worldPos		= a_position;
+
+		//.............................
+		gl_Position	= projViewMatrix * worldPosition;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in vec2 v_uv;
+	in vec3 v_worldPos;
+
+	uniform float		u_fade;
+	uniform float		u_size;
+	uniform int			u_spotCount;
+	uniform vec3[200]	u_spots;
+
+	out vec4 oFragColor;
+
+	void main(void){;
+		vec3 fragDir = normalize(v_worldPos);
+
+		oFragColor.rgb = vec3( .0 );
+		for(int i=0; i < u_spotCount; i++){
+			oFragColor.a += 1.0 - smoothstep(u_size, u_size-u_fade, dot(fragDir, u_spots[i]) );
+		}
+	}	
+<\fragment>

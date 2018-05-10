@@ -1,0 +1,61 @@
+<shader>{
+	"name":"Starmap",
+	"ubo":[ "UBOTransform" ],
+	"options": { "modelMatrix":true, "normalMatrix":false },
+	"uniforms":[
+		{ "name":"u_colorTex",	"type":"sample2D" }
+	]
+}<\shader>
+	,
+		{ "name":"u_gridTex",	"type":"sample2D" }
+<materials>[
+	{ "name":"Starmap",
+		"uniforms":[ 
+			{ "name":"u_colorTex",	"value":"starMap",		"type":"tex" }
+		]
+	}
+]<\materials>
+,
+			{ "name":"u_gridTex",	"value":"starGrid",	"type":"tex" }
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform mat4 u_modelMatrix;
+
+	out vec2 v_uv;
+
+	void main(void){
+		v_uv = a_uv;
+		gl_Position	= projViewMatrix * u_modelMatrix * vec4(a_position, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in vec2 v_uv;
+
+	uniform sampler2D	u_colorTex;
+	//uniform sampler2D	u_gridTex;
+
+	out vec4 oFragColor;
+
+	void main(void){
+		vec3 baseColor = texture( u_colorTex, v_uv ).rgb;
+		//vec3 gridColor = texture( u_gridTex, v_uv ).rgb;
+
+		oFragColor = vec4(baseColor, 1.0);
+		//oFragColor = vec4(baseColor + gridColor * 0.4, 1.0);
+	}
+<\fragment>

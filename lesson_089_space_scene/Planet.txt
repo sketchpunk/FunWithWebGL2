@@ -1,0 +1,176 @@
+<shader>{
+	"name":"Planet",
+	"ubo":[ "UBOTransform" ],
+	"options": { "modelMatrix":true, "normalMatrix":true },
+	"uniforms":[
+		{ "name":"u_colorTex", "type":"sample2D" },
+		{ "name":"u_bumpTex", "type":"sample2D" },
+		{ "name":"u_nightTex", "type":"sample2D" },
+
+		{ "name":"u_lightPos", "type":"vec3" },
+		{ "name":"u_lightColor", "type":"vec3" },
+
+		{ "name":"u_diffuseStength", "type":"float" },
+		{ "name":"u_ambientStrength", "type":"float" },
+		{ "name":"u_specularStrength", "type":"float" },
+		{ "name":"u_specularShininess", "type":"float" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"Planet",
+		"uniforms":[ 
+			{ "name":"u_colorTex", "type":"tex", "value":"earthColor" },
+			{ "name":"u_bumpTex", "type":"tex", "value":"earthBump" },
+			{ "name":"u_nightTex", "type":"tex", "value":"earthNight" },
+
+			{ "name":"u_lightPos", "value":[5,1,0] },
+			{ "name":"u_lightColor", "type":"rgb", "value":"#ffffff"},
+			
+			{ "name":"u_diffuseStength", "value":1.0 },
+			{ "name":"u_ambientStrength", "value":0.0 },
+			{ "name":"u_specularStrength", "value":0.2 },
+			{ "name":"u_specularShininess", "value":2.0 }
+		]
+	}
+]<\materials>
+				
+			
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	
+	uniform mat4 u_modelMatrix;
+	uniform mat3 u_normalMatrix;
+	uniform vec3 u_lightPos;
+	
+	out vec2 v_uv;
+	out vec3 v_normal;
+	out vec3 v_worldPos;
+	out vec3 v_vertToLight;
+	out vec3 v_vertToCamera;
+
+	void main(void){
+		vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+		
+		//.............................		
+		v_uv			= a_uv;
+		v_worldPos		= worldPosition.xyz;
+		v_normal		= u_normalMatrix * a_normal;
+		v_vertToLight	= normalize( u_lightPos - worldPosition.xyz ); //Get light dir in vert instead in frag
+		v_vertToCamera	= normalize( cameraPos - worldPosition.xyz );
+
+		//.............................
+		gl_Position	= projViewMatrix * worldPosition;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+		in vec2 v_uv;
+		in vec3 v_normal;
+		in vec3 v_worldPos;
+		in vec3 v_vertToLight;
+		in vec3 v_vertToCamera;
+
+		uniform sampler2D	u_colorTex;
+		uniform sampler2D	u_bumpTex;
+		uniform sampler2D	u_nightTex;
+
+		//uniform vec3 		u_lightPos;
+		uniform vec3		u_lightColor;
+		uniform float		u_ambientStrength;
+		uniform float		u_diffuseStength;
+		uniform float		u_specularStrength;
+		uniform float		u_specularShininess;
+
+		out vec4 oFragColor;
+
+	//Bump Mapping Unparametrized Surfaces on the GPU by Morten S. Mikkelsen
+	// http://api.unrealengine.com/attachments/Engine/Rendering/LightingAndShadows/BumpMappingWithoutTangentSpace/mm_sfgrad_bump.pdf
+	// https://github.com/mrdoob/three.js/blob/dev/src/renderers/shaders/ShaderChunk/bumpmap_pars_fragment.glsl
+	vec2 dHdxy_fwd( sampler2D bumpMap, vec2 uv, float bumpScale ){
+		vec2 dSTdx	= dFdx( uv );
+		vec2 dSTdy	= dFdy( uv );
+		float Hll	= bumpScale * texture( bumpMap, uv ).x;
+		float dBx	= bumpScale * texture( bumpMap, uv + dSTdx ).x - Hll;
+		float dBy	= bumpScale * texture( bumpMap, uv + dSTdy ).x - Hll;
+		return vec2( dBx, dBy );
+	}
+
+	vec3 perturbNormalArb( vec3 surf_pos, vec3 surf_norm, vec2 dHdxy ){
+		// Workaround for Adreno 3XX dFd*( vec3 ) bug. See #9988
+		vec3 vSigmaX = vec3( dFdx( surf_pos.x ), dFdx( surf_pos.y ), dFdx( surf_pos.z ) );
+		vec3 vSigmaY = vec3( dFdy( surf_pos.x ), dFdy( surf_pos.y ), dFdy( surf_pos.z ) );
+		vec3 vN = surf_norm;		// normalized
+		vec3 R1 = cross( vSigmaY, vN );
+		vec3 R2 = cross( vN, vSigmaX );
+
+		float fDet = dot( vSigmaX, R1 );
+		fDet *= ( float( gl_FrontFacing ) * 2.0 - 1.0 );
+
+		vec3 vGrad = sign( fDet ) * ( dHdxy.x * R1 + dHdxy.y * R2 );
+		return normalize( abs( fDet ) * surf_norm - vGrad );
+	}
+
+	const float u_bumpScale = 0.05;
+
+	void main(void){
+		vec3 baseColor		= texture( u_colorTex, v_uv ).rgb;
+		vec3 fragNormal		= normalize(v_normal);
+		vec3 fragToLight 	= normalize(v_vertToLight);
+		vec3 fragToCamera	= normalize(v_vertToCamera);
+
+		//....................................
+		//Calc New Fragment Normal based on Bump Map.
+		vec2 dHdxy		= dHdxy_fwd(u_bumpTex, v_uv, u_bumpScale);
+		vec3 bumpNorm 	= perturbNormalArb(v_worldPos, fragNormal, dHdxy); //values between -1 > 1
+
+		//....................................
+		//Diffuse Lighting
+		/*
+		float fragToLightAngle	= clamp(dot( fragNormal, fragToLight), 0.0, 1.0);
+		float diffuse			= fragToLightAngle * u_diffuseStength;
+		float diffuseBump 		= diffuse;
+		*/
+		float fragToLightAngle	= dot( fragNormal, fragToLight ) * 0.5 + 0.5; //Remake -1 > 1 to 0 > 1
+		float diffuse			= smoothstep(0.1, 0.5, fragToLightAngle * u_diffuseStength);  //Want more light spread on the planet
+		float diffuseBump 		= min( diffuse + dot(bumpNorm, fragToLight), 1.1); //Add Bump Mapping to Diffuse, Put hard limit to not over do it with the light.
+		
+
+		//....................................
+		//Specular Lighting
+		vec3 vecReflect	= reflect(-fragToLight, fragNormal); //Reflective direction of light using frag normal as pivot.
+		float specular 	= pow( clamp( dot(vecReflect, fragToCamera ), 0.0, 1.0 ), u_specularShininess ) * u_specularStrength;
+		//float specular = 0.0;
+
+		//....................................
+		//Setup Final Color
+		oFragColor = vec4(baseColor * u_lightColor * (u_ambientStrength + diffuseBump + specular), 1.0);
+
+		//....................................
+		//Mix Night Time Texture with Final Color based on the angle of the
+		vec4 nightColor = texture(u_nightTex, v_uv) ;
+		oFragColor 		= mix(nightColor, oFragColor, diffuse);
+
+		//....................................
+		vec3 u_rimColor = vec3(0.0, 0.57, 0.79); //https://openglcolor.mpeters.me/ 0192c9
+		float fragToCameraAngle = (1.0 - dot(fragToCamera, fragNormal));
+			  fragToCameraAngle = pow(fragToCameraAngle, 3.0); //Curve the change, Make the fresnel thinner
+
+		oFragColor.rgb += (u_rimColor * fragToCameraAngle * smoothstep(0.0, 0.5, fragToLightAngle)) ;
+	}
+	
+<\fragment>
