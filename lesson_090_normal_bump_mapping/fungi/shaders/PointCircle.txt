@@ -1,0 +1,59 @@
+<shader>{
+	"name":"PointCircle",
+	"ubo":[ "UBOTransform" ],
+	"options": { "modelMatrix":true },
+	"uniforms":[
+		{ "name":"u_color",		"type":"vec4" },
+		{ "name":"u_psize",		"type":"float" },
+		{ "name":"u_rangeA",	"type":"float" },
+		{ "name":"u_rangeB",	"type":"float" }
+	]
+}<\shader>
+	
+<materials>[
+	{	"name":"PointCircle",	
+		"options" : { "blend":true, "depthTest":true },
+		"uniforms":[
+			{ "name":"u_color",		"value": "00ff00ff", "type":"rgba" },
+			{ "name":"u_psize",		"value": 20 },
+			{ "name":"u_rangeA",	"value": 0.0 },
+			{ "name":"u_rangeB",	"value": 0.5 }
+		]
+	}
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+
+	uniform UBOTransform{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform mat4	u_modelMatrix;
+	uniform float	u_psize;
+
+	void main(void){
+		gl_PointSize 	= u_psize;
+		gl_Position 	= projViewMatrix * u_modelMatrix * vec4(a_position, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform vec4	u_color;
+	uniform float	u_rangeA;
+	uniform float	u_rangeB;
+
+	out vec4 oFragColor;
+
+	void main(void){ 
+		oFragColor		= u_color;
+		oFragColor.a	*= 1.0 - smoothstep(u_rangeA, u_rangeB, length( gl_PointCoord - 0.5 ));
+	}
+<\fragment>	

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			#FungiDiv{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi			from "./fungi/Fungi.js";
+			import System			from "./fungi/System.js";
+			import Quad				from "./fungi/primitives/Quad.js";
+			import Maths, { Vec3 }	from "./fungi/Maths.js";
+			import Vec2 			from "./fungi/maths/Vec2.js";
+			import Vao 				from "./fungi/Vao.js";
+			import Renderable 		from "./fungi/rendering/Renderable.js";
+			import Points 			from "./fungi/primitives/Points.js";
+			import { LoadInlineShader } from "./fungi/Shader.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"image", name:"normalMap", file:"./normal_test.jpg", doYFlip:true, useMips:false },
+				])	.then( async()=>{ 
+						await System.startUp(onRender);
+						//System.darkScene();
+						LoadInlineShader("inline_shader");
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+
+			let quad, point, mat;
+			function onInit(){
+				//........................				
+				Fungi.camera.setPosition(0,0.3,3.5);//.setDegrees(-20,"x");
+
+				var qData = Quad.vertData();
+				var vao = Vao.standardRenderable("quad", 3, qData.vertices,
+					[0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], qData.uv, qData.index
+				);
+
+				quad = new Renderable("quad", vao, "TestShader");
+
+				//........................
+				//Fungi.scene.add( quad = Quad("VecWColor").setPosition(0,1,0) );
+				Fungi.scene.add( quad.setPosition(0,1,0) );
+				quad.options.cullFace = false;
+
+				Fungi.scene.add( point = new Points(1).addRaw(0,0,0,0).setPosition(0,1,1).update() );
+
+				mat = Fungi.getMaterial("TestShader");
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			function onRender(dt, ss){
+				point._isModified = true;
+
+				/* Rotate Around 
+				point._position[0] = Math.cos(ss * 0.9) * 1.5;
+				point._position[1] = Math.sin(ss * 0.9) * 1.5 + 1;
+				*/
+
+				/* Zoom In Test 
+				point._position[2] = Math.abs( Math.sin(ss * 0.7) * 3 ); 
+				*/
+
+				/* Up Down
+				point._position[1] = Math.abs( Math.sin(ss * 0.7) * 2 ); 
+				*/
+
+
+				/* Moving  Quad */
+				quad._isModified = true;
+				quad._rotation.setAxisAngle([0,1,0], Math.sin(ss * 0.7) * 0.9 );
+				//quad._position[0] = Math.sin(ss * 0.7) * 0.9;
+
+				mat.updateUniform("u_lightPos", point._position);
+				
+				System.update();
+			}
+
+		</script>
+	</head>
+<body>
+	<div id="FungiDiv"><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+<script id="inline_shader" type="plain/text">
+<shader>{
+	"name"		: "TestShader",
+	"ubo"		: [ "UBOTransform" ],
+	"options"	: { "modelMatrix":true, "normalMatrix":true },
+	"uniforms"	: [
+		{ "name":"u_normTex",	"type":"sample2D" },
+		{ "name":"u_lightPos",	"type":"vec3" }
+	]
+}<\shader>
+	
+<materials>[{ 
+	"name"		: "TestShader", 
+	"options"	: { "blend":true, "sampleAlphaCoverage":true, "depthTest":true },
+	"uniforms"	: [
+		{ "name":"u_normTex",	"value":"normalMap", "type":"tex" },
+		{ "name":"u_lightPos",	"value":[0,0,1] }
+	]
+}]<\materials>
+			
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+	
+	uniform mat4 u_modelMatrix;
+	uniform mat3 u_normalMatrix;
+	
+	out vec2 v_uv;
+	out vec3 v_normal;
+	out vec3 v_worldPos;
+	out vec3 v_vertToLight;
+	out vec3 v_vertToCamera;
+
+	uniform vec3 u_lightPos;// = vec3(0.9,0.0,2.0);
+
+
+	void main(void){
+		vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+		
+		//.............................
+		v_uv			= a_uv;
+		v_normal		= u_normalMatrix * a_normal;
+		v_worldPos		= worldPosition.xyz;
+		v_vertToLight	= normalize( u_lightPos - worldPosition.xyz ); //Get light dir in vert instead in frag
+		v_vertToCamera	= normalize( cameraPos - worldPosition.xyz );
+
+		//.............................
+		gl_Position	= projViewMatrix * worldPosition;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in vec2 v_uv;
+	in vec3 v_normal;
+	in vec3 v_worldPos;
+	in vec3 v_vertToLight;
+	in vec3 v_vertToCamera;
+
+	uniform sampler2D u_normTex;
+
+	out vec4 oFragColor;
+
+	//http://www.thetenthplanet.de/archives/1180
+	/*
+	mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv){
+		vec2 duv1	= dFdx( uv ),
+			duv2	= dFdy( uv );
+
+		vec3 dp1	= dFdx( p ), 		// get edge vectors of the pixel triangle
+			dp2 	= dFdy( p ),
+			dp2perp	= cross( dp2, N ),	// solve the linear system
+			dp1perp	= cross( N, dp1 ),
+			T		= dp2perp * duv1.x + dp1perp * duv2.x,
+			B		= dp2perp * duv1.y + dp1perp * duv2.y;
+
+		// construct a scale-invariant frame 
+		float invmax = inversesqrt( max( dot(T,T), dot(B,B) ) );
+		return mat3( T * invmax, B * invmax, N );
+	}
+
+	vec3 perturb_normal(vec3 N, vec3 V, vec2 texcoord, sampler2D tex){
+		// assume N, the interpolated vertex normal and 
+		// V, the view vector (vertex to eye)
+		vec3 map = texture( tex, texcoord ).rgb;
+		
+		map = map * 255.0/127.0 - 128.0/127.0; //ifdef WITH_NORMALMAP_UNSIGNED
+		//map.z = sqrt( 1. - dot( map.xy, map.xy ) ); //ifdef WITH_NORMALMAP_2CHANNEL
+		//map.y = -map.y; //ifdef WITH_NORMALMAP_GREEN_UP
+		
+		mat3 TBN = cotangent_frame( N, -V, texcoord );
+		return normalize( TBN * map );
+	}
+	*/
+
+	//http://pocket.gl/normal-maps/
+	vec3 perturbNormal( vec3 eye_pos, vec3 surf_norm, vec2 uv_coords, sampler2D tex){
+		vec3 pNorm	= texture( tex, uv_coords ).rgb * 2.0 - 1.0;
+
+		vec2 st0	= dFdx( uv_coords.st ),
+			 st1	= dFdy( uv_coords.st );
+		vec3 q0		= dFdx( eye_pos.xyz ),
+			 q1		= dFdy( eye_pos.xyz ),
+			 S		= normalize(  q0 * st1.t - q1 * st0.t ),
+			 T		= normalize( -q0 * st1.s + q1 * st0.s ),
+			 N		= normalize( surf_norm );
+
+		return normalize( mat3( S, T, N ) * pNorm );
+	}
+
+	void main(void){
+		//vec3 fragToCamera	= normalize(v_vertToCamera);
+		vec3 fragToLight 	= normalize(v_vertToLight);
+		vec3 fragNormal		= normalize(v_normal);
+		//vec3 bumpNormal		= perturb_normal(fragNormal, -v_worldPos, v_uv, u_normTex);
+		vec3 bumpNormal		= perturbNormal(v_worldPos, fragNormal, v_uv, u_normTex);
+
+		float fragToLightAngle	= clamp(dot( bumpNormal, fragToLight), 0.0, 1.0);
+		float diffuse			= fragToLightAngle * 1.0;
+
+		oFragColor = vec4(vec3(0.5) * diffuse, 1.0);		
+	}	
+<\fragment>
+</script>
+
+</body>
+</html>

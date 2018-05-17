@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			#FungiDiv{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi			from "./fungi/Fungi.js";
+			import System			from "./fungi/System.js";
+			import Quad				from "./fungi/primitives/Quad.js";
+			import Maths, { Vec3 }	from "./fungi/Maths.js";
+			import Vec2 			from "./fungi/maths/Vec2.js";
+			import Mat3 			from "./fungi/maths/Mat3.js";
+			import Quat 			from "./fungi/maths/Quat.js";
+			import Vao 				from "./fungi/Vao.js";
+			import Renderable 		from "./fungi/rendering/Renderable.js";
+			import Points 			from "./fungi/primitives/Points.js";
+			import Shader, { LoadInlineShader } from "./fungi/Shader.js";
+
+
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"image", name:"normalMap", file:"./normal_test.jpg", doYFlip:true, useMips:false },
+				])	.then( async()=>{ 
+						await System.startUp(onRender);
+						//System.darkScene();
+						LoadInlineShader("inline_shader");
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+
+			let quad, point, mat;
+			function onInit(){
+				//........................				
+				Fungi.camera.setPosition(0,0.3,3.5);//.setDegrees(-20,"x");
+
+
+				var qData = Quad.vertData();
+				NormalMapping.calculateTBN( qData );
+
+				var vao = standardRenderable("quad", 3, qData.vertices,
+					null, qData.uv, qData.index, 
+					null, null,
+					qData.quatTBN
+				);
+
+				quad = new Renderable("quad", vao, "TestShader");
+
+				//........................
+				//Fungi.scene.add( quad = Quad("VecWColor").setPosition(0,1,0) );
+				Fungi.scene.add( quad.setPosition(0,1,0) );
+				quad.options.cullFace = false;
+
+				Fungi.scene.add( point = new Points(1).addRaw(0,0,0,0).setPosition(0,1,1).update() );
+
+				mat = Fungi.getMaterial("TestShader");
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			function onRender(dt, ss){
+				point._isModified = true;
+
+				/* Rotate Around
+				point._position[0] = Math.cos(ss * 0.9) * 1.5;
+				point._position[1] = Math.sin(ss * 0.9) * 1.5 + 1;
+				*/
+
+				/* Zoom In Test 
+				point._position[2] = Math.abs( Math.sin(ss * 0.7) * 3 ); 
+				*/
+
+				/* Up Down
+				point._position[1] = Math.abs( Math.sin(ss * 0.7) * 2 ); 
+				*/
+
+
+				/* Moving  Quad */
+				quad._isModified = true;
+				quad._rotation.setAxisAngle([0,1,0], Math.sin(ss * 0.7) * 0.9 );
+				//quad._position[0] = Math.sin(ss * 0.7) * 0.9;
+
+				mat.updateUniform("u_lightPos", point._position);
+				
+				System.update();
+			}
+
+const ATTRIB_TBNQUATERNION_LOC = 5;
+function standardRenderable(name, vertCompLen, aryVert, aryNorm=null, aryUV=null, aryInd=null, aryTan=null, aryBi=null, aryTBNQ = null){
+	var o = new Vao().create()
+		.floatBuffer("bVertices", aryVert, Shader.ATTRIB_POSITION_LOC, vertCompLen);
+
+	if(aryNorm)	o.floatBuffer("bNormal", aryNorm, Shader.ATTRIB_NORMAL_LOC, 3);
+	if(aryUV)	o.floatBuffer("bUV", aryUV, Shader.ATTRIB_UV_LOC, 2);
+	if(aryInd)	o.indexBuffer("bIndex", aryInd)
+
+	if(aryTan)	o.floatBuffer("bTangent", aryTan, Shader.ATTRIB_TANGENT_LOC, 3);
+	if(aryBi)	o.floatBuffer("bBitangent", aryBi, Shader.ATTRIB_BITANGENT_LOC, 3);
+
+	if(aryTBNQ)	o.floatBuffer("bQuatTbn", aryTBNQ, ATTRIB_TBNQUATERNION_LOC, 4);
+				
+	var vao = o.finalize(name);
+	o.cleanup();
+
+	return vao;
+}
+
+
+class NormalMapping{
+	static calculateTBN(itm){
+		var vertPtr	= itm.vertices,
+			uvPtr	= itm.uv,
+			tri 	= [ new Vec3(), new Vec3(), new Vec3() ], //Process Triangle Verts
+			uv		= [ new Vec2(), new Vec2(), new Vec2() ], //Process Triange UVs
+
+			edge1	= new Vec3(),	//Length of an edge of the triangle
+			edge2	= new Vec3(),
+			edgeUV1	= new Vec2(),	//Edge UV Difference
+			edgeUV2	= new Vec2(),
+
+			T		= new Vec3(),	// Final Vector of Tangent
+			B		= new Vec3(),	// Bitangent
+			N		= new Vec3(),	// Normal
+
+			tempA	= new Vec3(),	//Temparary Vectors
+			tempB	= new Vec3(),
+
+			vertLen = itm.vertices.length,	//How many vertices
+			vertCnt = vertLen / 3,			//How many floats to make up all verts
+		
+			avgCnt	= new Array(vertCnt).fill(0),	//How many times the vector data been added up, used to avg later
+			tAry	= new Array(vertLen).fill(0),	//Final Flat Tangent Data - Left/Right
+			bAry	= new Array(vertLen).fill(0),	//Final Flat Bitangent Data - Up
+			nAry	= new Array(vertLen).fill(0);	//Final Flat Normal Data - Forward
+
+		var x, y, r, i, ii; //Reusable vars
+		for(x=0; x < itm.index.length; x+=3){
+			//-----------------------------------
+			//Get The 3 Points of a Triangle
+			for(y=0; y < 3; y++){
+				i	= itm.index[x+y] * 3;	//Index to flat vertex array
+				ii	= itm.index[x+y] * 2;	//Index to flat uv array
+
+				tri[y].set( vertPtr[i], vertPtr[i+1], vertPtr[i+2] );
+				uv[y].set( uvPtr[ii], uvPtr[ii+1] );
+			}
+
+			//-----------------------------------
+			//Prepare Differences between two endges of the triangle
+			//edge1 = diffUV1.x * T + diffUV1.y * B
+			//edge2 = diffUV2.x * T + diffUV2.y * B
+			tri[1].sub( tri[0], edge1); // Length Vector of two edges of the triangle
+			tri[2].sub( tri[0], edge2);
+
+			uv[1].sub( uv[0], edgeUV1); // Length of the UV Coord
+			uv[2].sub( uv[0], edgeUV2);
+
+			r = 1.0 / (edgeUV1.x * edgeUV2.y - edgeUV1.y * edgeUV2.x); //denom for Tangent and Bitangent
+
+			//-----------------------------------
+			//tangent = (edge1 * diffUV2.y - edge2 * diffUV1.y) * r;
+			edge1.scale( edgeUV2.y, tempA );	
+			edge2.scale( edgeUV1.y, tempB );
+			tempA.sub( tempB, T ).scale( r );
+
+			//-----------------------------------
+			//bitangent = (edge2 * diffUV1.x - edge1 * diffUV2.x) * r;
+			edge2.scale( edgeUV1.x, tempA );
+			edge1.scale( edgeUV2.x, tempB );
+			tempA.sub( tempB, B ).scale( r );
+
+			//-----------------------------------
+			//normal = cross(edge1, edge2)
+			Vec3.cross(edge1, edge2, N);
+			//Vec3.cross(B, N, T);
+			//Vec3.cross(T, N, B);
+
+			//-----------------------------------
+			//Save Data to Flat Array
+			//  Verts are shared between triangles, So add up all the data and any verts that are shared
+			//  Have the data averaged later.
+			for(y = 0; y < 3; y++){
+				ii = itm.index[x+y];	//Vertex Index
+				i = ii * 3;				//Vertex Flat Array Index
+
+				avgCnt[ii]++;	//Add up how many times this vertex data has been added
+				tAry[i]	+= T.x;		tAry[i+1]	+= T.y;		tAry[i+2]	+= T.z;	// Tangent
+				bAry[i]	+= B.x;		bAry[i+1]	+= B.y;		bAry[i+2]	+= B.z;	// Bitangent
+				nAry[i]	+= N.x;		nAry[i+1]	+= N.y;		nAry[i+2]	+= N.z; // Normal
+			}
+		}
+
+		//Smooth out the vectors by averaging the vertices that have more then one set of data.
+		NormalMapping.handleAverage(avgCnt, tAry, bAry, nAry);
+
+		//Normalize the Data so the shader doesn't need to.
+		NormalMapping.handleNormalize(tAry, bAry, nAry);
+
+		//Orthogonalize the Tangent, this allows to use transpose on the mat3 in the shader instead of inverse.
+		//Also check if handedness, incase UVs are pointing the wrong way, this fixes tangent.
+		NormalMapping.orthogonalHandedness(tAry, bAry, nAry);
+
+
+		itm.quatTBN = NormalMapping.createTBNQuaternion(tAry, bAry, nAry);
+
+		//Save data back to the item for ue in VAO.
+		itm.tangent		= tAry;
+		itm.bitangent	= bAry;
+		itm.normal		= nAry;
+	}
+
+	static orthogonalHandedness(tAry, bAry, nAry){
+		//orthogonalize any matrix is the Gram–Schmidt process:
+		// t = t - n * dot( t, n ); // orthonormalization ot the tangent vectors
+		// b = b - n * dot( b, n ); // orthonormalization of the binormal vectors to the normal vector 
+		// b = b - t * dot( b, t ); // orthonormalization of the binormal vectors to the tangent vector
+		//mat3 tbn = mat3( normalize(t), normalize(b), n );
+
+		var vertCnt	= tAry.length / 3,
+			tt		= new Vec3(), // Tangent
+			bb		= new Vec3(), // Bitangent
+			nn		= new Vec3(), // Normal
+			vv		= new Vec3(), // tmp vec
+			d, ii;
+
+		for(var i=0; i < vertCnt; i++){
+			ii	= i * 3;
+			tt.set( tAry[0+ii], tAry[1+ii], tAry[2+ii] );
+			bb.set( bAry[0+ii], bAry[1+ii], bAry[2+ii] );
+			nn.set( nAry[0+ii], nAry[1+ii], nAry[2+ii] );
+
+			//............................
+			// t = glm::normalize(t - n * glm::dot(n, t));
+			d = Vec3.dot(nn, tt);
+			tt.sub( nn.scale(d, vv) ).normalize();
+
+			//............................
+			//Check / Fix Handedness
+			// if(dot( cross(n, t), b) < 0.0f ) t = t * -1.0f;
+			d = Vec3.dot( Vec3.cross(nn, tt, vv), bb );
+			if(d < 0) tt.scale(-1);
+
+			//............................
+			//Save T back to array
+			tAry[0+ii]	= tt[0];
+			tAry[1+ii]	= tt[1];
+			tAry[2+ii]	= tt[2];
+		}
+	}
+
+	static handleAverage(avgCnt, tAry, bAry, nAry = null){
+		let x, ii, scale = 0, vertCnt = tAry.length / 3;
+
+		for(var i=0; i < vertCnt; i++){
+			ii = i * 3;
+
+			if(avgCnt[i] > 1){
+				scale = 1 / avgCnt[i];
+				for(x=0; x < 3; x++){
+					tAry[ii+x] *= scale;
+					bAry[ii+x] *= scale;
+					if(nAry) nAry[ii+x] *= scale;
+				}
+			}
+		}
+	}
+
+	static handleNormalize(tAry, bAry, nAry = null){
+		var ii, vertCnt = tAry.length / 3;
+		for(var i=0; i < vertCnt; i++){
+			ii = i * 3;
+			NormalMapping.normVec(tAry, ii);
+			NormalMapping.normVec(bAry, ii);
+			if(nAry) NormalMapping.normVec(nAry, ii);
+		}
+	}
+
+	static createTBNQuaternion(tAry, bAry, nAry){
+		var vertCnt	= tAry.length / 3,
+			m3		= new Mat3(),
+			q		= new Quat(),
+			rtn		= [],
+			ii;
+
+		for(var i=0; i < vertCnt; i++){
+			ii = i * 3;
+			
+			m3[0] = tAry[ii+0];
+			m3[1] = tAry[ii+1];
+			m3[2] = tAry[ii+2];
+
+			m3[3] = bAry[ii+0];
+			m3[4] = bAry[ii+1];
+			m3[5] = bAry[ii+2];
+
+			m3[6] = nAry[ii+0];
+			m3[7] = nAry[ii+1];
+			m3[8] = nAry[ii+2];
+
+			//Mat3.transpose(m3, m3);
+			Quat.fromMat3(m3, q);
+
+			rtn.push( q[0], q[1], q[2], q[3] );
+		}
+
+		return rtn;
+	}
+
+	static normVec(ary, i){
+		var ii	= i+1, 
+			iii	= i+2,
+			mag	= ary[i]*ary[i] + ary[ii]*ary[ii] + ary[iii]*ary[iii];
+
+		mag			= 1 / Math.sqrt(mag);
+		ary[i]		*= mag;
+		ary[ii]		*= mag;
+		ary[iii]	*= mag;
+	}
+}//cls
+
+		</script>
+	</head>
+<body>
+	<div id="FungiDiv"><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+<script id="inline_shader" type="plain/text">
+<shader>{
+	"name"		: "TestShader",
+	"ubo"		: [ "UBOTransform" ],
+	"options"	: { "modelMatrix":true, "normalMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_normTex",	"type":"sample2D" },
+		{ "name":"u_lightPos",	"type":"vec3" }
+	]
+}<\shader>
+	
+<materials>[{ 
+	"name"		: "TestShader", 
+	"options"	: { "blend":true, "sampleAlphaCoverage":true, "depthTest":true },
+	"uniforms"	: [
+		{ "name":"u_normTex",	"value":"normalMap", "type":"tex" },
+		{ "name":"u_lightPos",	"value":[0,0,1] }
+	]
+}]<\materials>
+			
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	//layout(location=1) in vec3 a_normal;
+	layout(location=2) in vec2 a_uv;
+	//layout(location=3) in vec3 a_tangent;
+	//layout(location=4) in vec3 a_bitangent;
+	layout(location=5) in vec4 a_quattbn;
+
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+	
+	uniform mat4 u_modelMatrix;
+	//uniform mat3 u_normalMatrix;
+	
+	out vec2 v_uv;
+	out vec3 v_worldPos;
+
+	out vec3 v_tbn_cameraPos;
+	out vec3 v_tbn_lightPos;
+	out vec3 v_tbn_worldPos;
+
+	uniform vec3 u_lightPos;// = vec3(0.9,0.0,2.0);
+
+
+	vec4 qmul(vec4 q1, vec4 q2){
+		return vec4(
+			q2.xyz * q1.w + q1.xyz * q2.w + cross(q1.xyz, q2.xyz),
+			q1.w * q2.w - dot(q1.xyz, q2.xyz)
+		);
+	}
+
+	vec4 qinverse(vec4 q){ return vec4(-q.xyz, q.w) / length(q); }
+
+	vec3 qvector(vec4 r, vec3 v){
+		vec4 r_c = r * vec4(-1, -1, -1, 1);
+		return qmul(r, qmul(vec4(v, 0), r_c)).xyz;
+	}
+
+	vec4 mat3ToQuat(mat3 m){  
+		float t = m[0][0] + (m[1][1] + m[2][2]);
+		vec4 r;
+		if(t > 2.9999999){
+			r = vec4(0.0, 0.0, 0.0, 1.0);
+		}else if(t > 0.0000001){
+			float s = sqrt(1.0 + t) * 2.0;
+			r = vec4(vec3(m[1][2] - m[2][1], m[2][0] - m[0][2], m[0][1] - m[1][0]) / s, s * 0.25);
+		}else if((m[0][0] > m[1][1]) && (m[0][0] > m[2][2])){
+			float s = sqrt(1.0 + (m[0][0] - (m[1][1] + m[2][2]))) * 2.0;
+			r = vec4(s * 0.25, vec3(m[1][0] - m[0][1], m[2][0] - m[0][2], m[0][2] - m[2][1]) / s);
+		}else if(m[1][1] > m[2][2]){
+			float s = sqrt(1.0 + (m[1][1] - (m[0][0] + m[2][2]))) * 2.0;
+			r = vec4(vec3(m[1][0] + m[0][1], m[2][1] + m[1][2], m[2][0] - m[0][2]) / s, s * 0.25).xwyz;     
+		}else{
+			float s = sqrt(1.0 + (m[2][2] - (m[0][0] + m[1][1]))) * 2.0;
+			r = vec4(vec3(m[2][0] + m[0][2], m[2][1] + m[1][2], m[0][1] - m[1][0]) / s, s * 0.25).xywz;     
+		}
+		return normalize(r); 
+	}
+
+	void main(void){
+		vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+
+		//..........................................
+		//Convert camera, lighting and camera positon to tangent space
+		//Todo, make a uniform that brings in a Modal World Rotation Quaternion, so to skip this step in shader
+		vec4 qModel = mat3ToQuat( mat3(u_modelMatrix) );	// Turn Model matrix into a quaternion
+		vec4 qTang	= qinverse( qmul(qModel, a_quattbn) );	// Combind Model rotation to Tangent2World rotation, Invert it to make it World2Tangent
+
+		v_tbn_cameraPos	= qvector(qTang, cameraPos);		// Move Camera, light and Vertex positions to tangent space
+		v_tbn_lightPos	= qvector(qTang, u_lightPos);
+		v_tbn_worldPos	= qvector(qTang, worldPosition.xyz);
+		
+		//.............................
+		v_uv			= a_uv;
+		v_worldPos		= worldPosition.xyz;
+
+		//.............................
+		gl_Position	= projViewMatrix * worldPosition;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in vec2 v_uv;
+	in vec3 v_worldPos;
+
+	in vec3 v_tbn_cameraPos;
+	in vec3 v_tbn_lightPos;
+	in vec3 v_tbn_worldPos;
+
+	uniform sampler2D u_normTex;
+
+	out vec4 oFragColor;
+
+	void main(void){
+		vec3 normTex			= normalize( texture(u_normTex, v_uv).rgb * 2.0 - 1.0 );
+		vec3 fragLightDir		= normalize( v_tbn_lightPos - v_tbn_worldPos );
+
+		float fragToLightAngle	= clamp(dot( normTex, fragLightDir), 0.0, 1.0);
+		float diffuse			= fragToLightAngle * 1.0;
+
+		oFragColor = vec4(vec3(0.5) * diffuse, 1.0);
+	}	
+<\fragment>
+</script>
+
+</body>
+</html>
