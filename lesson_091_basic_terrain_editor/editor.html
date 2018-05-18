@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl			from "./fungi/gl.js";
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+			import Fbo			from "./fungi/Fbo.js";
+			import Quad 		from "./fungi/primitives/Quad.js";
+			import Terrain		from "./fungi.mod/terrain/Terrain_IsoGrid.js";
+
+			import Canvas2D		from "./lib/Canvas2D.js";
+			
+			let fboScene,		// Custom Frame Buffer needed by the editor
+				quadScene,		// Quad to render scene in post
+				hpCanvas,		// 2D Canvas object, used as a HeightMap Texture
+				hpTexture,
+				rTerrain,
+				matTerrain,
+				brushRadius = 10,
+				terrainSize = 4,
+				worldMouse = new Float32Array([0,0]);
+
+
+			//http://codeflow.org/entries/2011/nov/10/webgl-gpu-landscaping-and-erosion/
+			window.addEventListener("load",function(){
+				//...............................................
+				//Setup the 2D Canvas to draw the Heightmap Texture.
+				hpCanvas = new Canvas2D("HeightMap", 256, 256)
+					.clearWithColor("#808080")
+					.mouseEvents(onHP_MouseDown);
+
+				//...............................................
+				// Start Loading things up for Fungi
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"HeightmapEditor.txt" },
+					{ type:"shader", file:"./fungi.mod/postEffects/shaders/PostBasic.txt" },
+				])	.then( async()=>{ 
+						await System.startUp(onRender);
+						System.darkScene();
+						gl.setClearColor("00000000");
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			function onRender(dt, ss){
+				//.....................
+				//Render Scene
+				System.update();
+
+				//.....................
+				//Post Render
+				Fungi.render
+					.setFrameBuffer()					//Reset FrameBuffer to Display
+					.loadMaterial(quadScene.material)	//Load Material & Shader, Apply Uniform
+					.drawRenderable(quadScene);			//Draw Quad with scene as a Texture.
+			}
+
+			function onInit(){
+				//........................				
+				Fungi.camera.setPosition(1.5,3.5,5.5).setDegrees(-50,"x");
+				Fungi.controller.onMouseStart = onCtrl_MouseStart;
+				gl.ctx.canvas.addEventListener("mousemove", onMouseMove);
+
+
+				//........................
+				// Create custom frame buffer, Extra color buffer to hold UV values from terrain
+				// which allows the use of "Picking" for quick info on where on the terrain the 
+				// user clicked on.
+				let fbo = new Fbo();
+				fboScene = fbo.create()
+					.texColorBuffer()
+					.texColorBuffer("bUV",1)
+					.depthBuffer()
+					.finalize();
+				fbo.cleanUp();
+				Fungi.render.useCustomBuffer( fboScene );
+
+
+				//........................
+				// Setup quad for post rendering the scene.
+				quadScene = Quad("PostBasic");
+				quadScene.material.addUniform("u_TexColor", "tex", fboScene.bColor.id); // bColor
+				//quadScene.material.addUniform("u_TexColor", "tex", fboScene.bUV.id); // bColor
+
+				
+				//........................
+				// Create Terrain Data... then a renderable
+				let geo = Terrain.createFlatGeo(terrainSize,20);
+				rTerrain = Terrain.geoRenderable(geo, "terrain", "HeightmapEditor").setPosition(0,0.0,0);
+				Fungi.scene.add(rTerrain);
+
+
+				//........................
+				// Create gl texture and set it on the material for rendering the terrain
+				hpTexture 	= gl.loadTexture("hightMap", hpCanvas.canvas, true);
+				matTerrain 	= Fungi.getMaterial("HeightmapEditor").addUniform("u_tex01", "tex", hpTexture);
+				matTerrain 	= matTerrain.updateUniform("u_worldMouse", worldMouse);
+
+				//........................
+				//Fungi.scene.prepareItems();
+				Fungi.loop.start();
+			}
+
+			
+			//When clicking on the 3D Terrain, Need to hold SHIFT and CTRL down
+			function onCtrl_MouseStart(e, ctrl, c){
+				if(e.shiftKey && e.ctrlKey){
+					let px = getMouseOverUV(c.x, c.y);
+					if(px == null || px[3] == 0) return true;
+
+					let pos = [	hpCanvas.width * px[0], 
+								hpCanvas.height - hpCanvas.height * px[1] ];
+
+					drawAt(pos, (e.which==1));
+					return true;
+				}
+				return false;
+			}
+
+			//Mark on the terrain where the mouse is pointing to.
+			function onMouseMove(e){
+				if(e.ctrlKey && e.shiftKey){
+					var x	= e.pageX - Fungi.controller.offsetX,
+						y	= e.pageY - Fungi.controller.offsetY,
+						uv	= getMouseOverUV(x,y);
+				
+					if(uv == null) return;
+
+					worldMouse[0] = terrainSize * uv[0] + rTerrain._position[0];
+					worldMouse[1] = terrainSize * (1-uv[1]) + rTerrain._position[2];
+					return;
+				}
+
+				worldMouse[0] = 0;
+				worldMouse[1] = 0;
+			}
+
+			//Get the mesh UV based on where the user clicked on the screeen
+			const INV255 = 0.00392156862; // 1 / 255
+			function getMouseOverUV(x,y){
+				y = gl.height - y; //Need to flip Y to read pixels correctly from FrameBuffer
+				
+				let px = Fbo.readPixel(fboScene, x, y, 1);
+				if(px[3] == 0) return null; //W will not be 0 if a UV Value exists
+
+				return [ px[0] * INV255, px[1] * INV255 ];
+			}
+
+			//Handle mouse down on the 2D Canvas
+			function onHP_MouseDown(e,x,y){ drawAt([x,y], (e.which==1)); }
+
+
+			//Draw on the 2D Canvas
+			function drawAt(pos, isAdd = true){
+				hpCanvas
+					.fill( (isAdd)?"#ffffff50":"#00000050" )
+					.vecEllipse(pos, brushRadius, brushRadius, "fill");
+
+				gl.updateTexture("hightMap", hpCanvas.canvas, true, false, 1);
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</span>
+
+	<canvas id="HeightMap" style="position:fixed; left:0px; top:0px;"></canvas>
+</body>
+</html>
