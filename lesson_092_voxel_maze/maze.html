@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html><head>
+	<style>
+		html,body{margin:0px; padding:0px; width:100%; height:100%;}
+		body{background-color:#404040;}
+		canvas{border:0px solid green;}
+		div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+			background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+	</style>
+
+	<script type="module">
+		import Fungi	from "./fungi/Fungi.js";
+		import System	from "./fungi/System.js";
+		import Quad		from "./fungi/primitives/Quad.js";
+
+		import Maths	from "./fungi/Maths.js";
+		import Vec2		from "./fungi/maths/Vec2.js";
+
+		import VoxelChunk		from "./fungi.mod/voxel/VoxelChunk.js";
+		import VoxelRenderable	from "./fungi.mod/voxel/VoxelRenderable.js";
+
+		window.addEventListener("load",function(){
+			System.beginWithResources([
+				{ type:"shader", file:"fungi/shaders/VecWColor.txt" },
+				{ type:"shader", file:"fungi/shaders/LowPolyPhong.txt" },
+			]).then( async()=>{ 
+				await System.startUp(onRender); 
+				onInit();
+			}).catch( err=>console.log("Catch",err) );
+			
+		});
+
+		function onRender(dt, ss){ System.update(); }
+		function onInit(){
+			Fungi.camera.setPosition(0,4,3).setDegrees(-60,"x");
+
+			//............................................
+			var size	= 10,
+				vc		= new VoxelChunk(size,1,size, 1);
+
+			Maze.voxelChunk(vc);
+
+			Fungi.scene.add( new VoxelRenderable("vox", vc, "LowPolyPhong") );
+
+			//............................................
+			Fungi.loop.start();
+		}
+
+		//http://amietia.com/slashmaze.html
+		//https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+		class Maze{
+			//GLSL : float rand(vec2 n){ return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453); }
+			static rand(n){ return Maths.fract( Math.sin( Vec2.dot(n, Maze.randVec) ) * 43758.5453); }
+
+			/*GLSL: float noise(vec2 n) {
+				const vec2 d = vec2(0.0, 1.0);
+				vec2 b = floor(n), f = smoothstep(vec2(0.0), vec2(1.0), fract(n));
+				return mix(
+					mix( rand(b),  rand(b + d.yx), f.x ), 
+					mix( rand(b + d.xy), rand(b + d.yy), f.x), 
+					f.y);
+			}*/
+			static noise(n){
+				let t	= new Vec2(),
+					b	= Vec2.floor(n), 	// b = floor(n),
+					fn	= Vec2.fract(n),
+					f	= new Vec2( 		// f = smoothstep(vec2(0.0), vec2(1.0), fract(n));
+						Maths.smoothStep(0.0, 1.0, fn[0]),
+						Maths.smoothStep(0.0, 1.0, fn[1])
+					);
+
+				let aa, bb, ma, mb;
+				//mix( rand(b),  rand(b + d.yx), f.x )
+				aa	= Maze.rand( b );
+				bb	= Maze.rand( Vec2.add(b, Maze.dYX) );
+				ma	= Maths.lerp(aa, bb, f[0]);
+
+				//mix(  rand(b + d.xy),  rand(b + d.yy), f.x)
+				aa	= Maze.rand( Vec2.add(b, Maze.dXY) );
+				bb	= Maze.rand( Vec2.add(b, Maze.dYY) );
+				mb	= Maths.lerp(aa, bb, f[0]);
+
+				return Maths.lerp(ma, mb, f[1]); // mix(a,b, f.y);
+			}
+
+			//Main Maze function, pass in scaled UV coord
+			static getAt(p){
+				let p2	= Vec2.sub(p,Maze.uvHalf).rotate(Maths.PI_H).scale( Maze.sqrt2 ), //vec2 p2 = (p - .5) * mat2(1, 1, 1, -1);
+					c	= Vec2.floor(p2),							// vec2 c = floor(p2),
+					f 	= Vec2.fract(p),							// f = fract(p);
+					n 	= Maths.step(0.5, Maze.noise(c)),			// float n = step(.5, noise(c));
+					m 	= Maths.lerp(f[0] - 0.5, f[1] - 0.5, n); 	// mix(f.x - .5, f.y - .5, n)
+				return Maths.step( Math.abs(m), 0.25 );				// step( abs( m ), 0.25);
+			}
+
+
+			//Get the Voxel State based on a 2D grid that will then map down to a
+			//diagonal grid half the size that the maze shader
+			static cell(uv, size = 10){
+				//GLSL
+				//vec2 fsuv	= floor( v_uv * uvScale * 2.0 );
+				//vec2 uv	= fsuv / (uvScale * 2.0);
+				//float n	= maze(uv * uvScale, 0.25);
+				let ss = (size * 0.5) * (1 / size);
+				var n = Vec2.scale(uv,size).floor().scale(ss);
+				return Maze.getAt(n);
+			}
+
+			//Fill in Voxel Chunk with Data from Maze Shader
+			static voxelChunk(vc){
+				let size	= vc.xLen,						// Width and Height of the grid
+					isize	= 1 / size,						// Size inverted, avoiding division
+					ssize 	= (size * 0.5) * (1 / size),	// Scale down version to use with Maze.GetAt
+					uv		= new Vec2(),					// Calc UV value of the voxel
+					uvs		= new Vec2(),					// Scaled UV value for Maze Shader algorithm
+					n, x, z;
+
+				let str = "";
+				for(z=0; z < size; z++){
+					uv.y = z * isize;		//UV Y Value
+
+					for(x=0; x < size; x++){
+						uv.x = x * isize;	//UV X Value
+
+						uv.scale(size, uvs).floor().scale(ssize); //Scale to voxel grid, then map it down to UV coord
+						n = Maze.getAt(uvs);
+						//str += (n)?"  ":"X ";
+
+						vc.set(x, 0, z, n)
+					}
+					//str += "\n";
+				}
+				//console.log(str);
+			}
+		}
+
+		//Constants - Initialize Once
+		Maze.randVec	= [ 12.9898, 4.1414 ];
+		Maze.uvHalf		= [ 0.5, 0.5 ];
+		Maze.dXY		= [ 0.0, 1.0 ];
+		Maze.dYX		= [ 1.0, 0.0 ];
+		Maze.dYY		= [ 1.0, 1.0 ];
+		Maze.sqrt2		= Math.sqrt(2);
+	</script>
+</head><body>
+
+<div><canvas id="FungiCanvas"></canvas></div>
+<span id="lblFPS">0</div>
+
+</body></html>

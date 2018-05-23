@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html><head>
+	<style>
+		html,body{margin:0px; padding:0px; width:100%; height:100%;}
+		body{background-color:#404040;}
+		canvas{border:0px solid green;}
+		div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+		#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+			background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+	</style>
+
+	<script type="module">
+		import Fungi		from "./fungi/Fungi.js";
+		import System		from "./fungi/System.js";
+		import Quad			from "./fungi/primitives/Quad.js";
+		import { LoadInlineShader } from "./fungi/Shader.js";
+
+		window.addEventListener("load",function(){
+			System.beginWithResources([
+				{ type:"shader", file:"fungi/shaders/VecWColor.txt" }
+			]).then( async()=>{ 
+				await System.startUp(onRender); 
+				LoadInlineShader("inline_shader");
+				onInit();
+			}).catch( err=>console.log("Catch",err) );
+		});
+
+		function onRender(dt, ss){ System.update(); }
+		function onInit(){
+			Fungi.camera.setPosition(0,1,1.9).setDegrees(-0,"x");
+			var quad = Quad("MatShader").setPosition(0,1,0);//.setDegrees(45,"z");
+			Fungi.scene.add( quad );
+			Fungi.loop.start();
+		}
+
+		//http://amietia.com/slashmaze.html
+		//https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+	</script>
+</head><body>
+
+<div><canvas id="FungiCanvas"></canvas></div>
+<span id="lblFPS">0</div>
+
+
+
+<script id="inline_shader" type="plain/text">
+	<shader>{ 
+		"name"		: "Shader",
+		"options"	: { "modelMatrix":true, "normalMatrix":false },
+		"ubo"		: [ "UBOTransform" ],
+		"uniforms"	: []
+	}<\shader>
+	/*
+		{ "name":"u_", "type":"sample2D" },
+		{ "name":"u_", "type":"vec3" },
+		{ "name":"u_", "type":"float" },
+	*/
+	<materials> [ { 
+		"name"		: "MatShader",
+		"options"	: { "blend":false,"sampleAlphaCoverage":false, "depthTest":true },
+		"uniforms"	: [ ]
+	} ] <\materials>
+	/*
+		{ "name":"u_", "type":"tex", "value":"tex01"},
+		{ "name":"u_", "value":[5,1,0] },
+		{ "name":"u_", "type":"rgb", "value":"#ffffff"},
+	*/		
+	<vertex>
+		#version 300 es
+		layout(location=0) in vec3 a_position;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 	projViewMatrix;
+			vec3	cameraPos;
+			float	globalTime;
+			vec2	screenSize;
+		};
+
+		uniform mat4 u_modelMatrix;
+
+		out vec2 v_uv;
+
+		void main(void){
+			v_uv = a_uv;
+			//v_uv.y += globalTime * 0.2;
+
+			gl_Position	= projViewMatrix * u_modelMatrix * vec4(a_position,1.0);
+		}
+	<\vertex>
+
+	<fragment>
+		#version 300 es
+		precision mediump float;
+
+		in vec2 v_uv;
+		out vec4 oFragColor;
+
+		float rand(vec2 n){ return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453); }
+		float noise(vec2 n) {
+			const vec2 d = vec2(0.0, 1.0);
+			vec2 b = floor(n), f = smoothstep(vec2(0.0), vec2(1.0), fract(n));
+			return mix(mix(rand(b), rand(b + d.yx), f.x), mix(rand(b + d.xy), rand(b + d.yy), f.x), f.y);
+		}
+
+		float maze(vec2 p, float size){
+			vec2 p2 = (p - .5) * mat2(1, 1, 1, -1),	// Shift point to center, then rotate 45d and scale by sqrt(2)
+				c = floor(p2), 						// Floor Diagonal Grid
+				f = fract(p);						// Grid cell coord
+			float n = step(.5, noise(c));			// Make noice value as either 0 or 1
+
+			return step( abs( mix(f.x - .5, f.y - .5, n) ), size);
+		}
+
+
+		const vec4 cRed = vec4(0.8, 0.0, 0.0, 1.0);
+		const vec4 cGreen = vec4(0.0, 0.46, 0.0, 1.0);
+		const vec4 cBlue = vec4(0.0, 0.0, 1.0, 1.0);
+
+		const float uvScale = 10.0;
+
+		void main(void){
+			/**/
+			//....................................
+			//Original Maze Shader
+			float n = maze(v_uv * uvScale, .05);
+			oFragColor = vec4(n, n, n, 1.0);
+
+			//Original un rotated grid
+			vec2 buv = fract(v_uv * uvScale - .5);
+			//if(buv.x < 0.03 || buv.y < 0.03) oFragColor = cRed;
+
+
+			//....................................
+			//Calc Voxel Grid
+			vec2 uuv = v_uv * uvScale * 2.0 + 0.5;
+			vec2 ffuv = floor(uuv);
+
+			//....................................
+			//Fill Cell
+			vec2 nuv = ffuv / (uvScale * 2.0);
+			n = maze(nuv * uvScale, 0.25);
+			//oFragColor = vec4(n, n, n, 1.0);
+
+			//....................................
+			//Voxel Red Grid
+			vec2 fuv = fract(uuv);
+			//if(fuv.x < 0.05 || fuv.y < 0.05) oFragColor = cRed;
+
+			//....................................
+			//45 Degree Green Grid
+			vec2 ruv = (v_uv * uvScale - .5) * mat2(1, 1, 1, -1);
+			vec2 fruv = fract(ruv);
+			//if( fruv.x <= 0.03 || fruv.y <= 0.03 ) oFragColor = cGreen;
+			
+
+			/*Final Version
+			vec2 	fsuv	= floor( v_uv * uvScale * 2.0 ),
+					uv		= fsuv / (uvScale * 2.0);
+			float 	n		= maze(uv * uvScale, 0.25);
+			oFragColor = vec4(n, n, n, 1.0);
+			*/
+		}
+	<\fragment>
+</script>
+</body></html>
