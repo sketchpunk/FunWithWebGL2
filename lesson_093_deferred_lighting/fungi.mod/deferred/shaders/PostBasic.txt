@@ -1,0 +1,59 @@
+<shader>{
+	"name"		: "PostBasic",
+	"ubo"		: [ "UBOTransform" ],
+	"options"	: { "modelMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_colorTex", "type":"sample2D" },
+		{ "name":"u_depthTex", "type":"sample2D" }
+	]
+}<\shader>
+	
+<materials>[
+	{ 	"name"		: "PostBasic", 
+		"options"	: { "blend":true, "depthTest":false },
+		"uniforms"	: [ { "name":"u_colorTex", "value":null } ] 
+	}
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	void main(void){
+		v_uv = a_uv;
+		gl_Position	= vec4(a_position.xyz,1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in highp vec2 v_uv;
+	uniform sampler2D u_colorTex;
+	uniform sampler2D u_depthTex;
+
+	out vec4 oFragColor;
+
+	void main(void){
+		//Full Screen rendering, Can use texelFetch and current X,Y position
+			//ivec2 fCoord = ivec2(gl_FragCoord.xy);		//Get the Int of the current Screen pixel X,Y
+			//vec4 color = texelFetch(u_colorTex, fCoord , 0);
+
+		//How to Render Depth Buffer
+			//vec4 c = texture(u_colorTex, v_uv);
+			//oFragColor = vec4(c.r,c.r,c.r,1.0);
+
+		oFragColor = texture(u_colorTex, v_uv);
+	}
+<\fragment>

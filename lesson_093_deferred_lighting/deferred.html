@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import System	from "./fungi/System.js";
+			import Cone		from "./fungi/primitives/Cone.js";
+
+			import DeferredRendering	from "./fungi.mod/deferred/DeferredRendering.js";
+			import PostEffect_Blur		from "./fungi.mod/deferred/PostEffect_Blur.js";
+
+			import gl from "./fungi/gl.js";
+			import Fbo from "./fungi/Fbo.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/LowPolyColor.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/PhongLighting.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/FungiBlur.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/PostBasic.txt" },
+				])	.then( async()=>{ 
+						await System.startUp(onRender,3); 
+						System.darkScene();
+						gl.setClearColor("00000000"); 
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			var gDeferred, gPostEffect_Blur, gMatPostBasic, gFboPreRender;
+
+			var cone00, cone01;
+
+			function onInit(){
+				//........................
+				Fungi.camera.setPosition(0,1,2).setDegrees(-20,"x");
+				
+				//........................
+				gDeferred			= new DeferredRendering("PhongLighting");
+				gPostEffect_Blur	= new PostEffect_Blur(0.5, Fungi.getShader("FungiBlur") );
+				gMatPostBasic		= Fungi.getMaterial("PostBasic");
+
+				gFboPreRender 		= Fbo.basicTextureFrameBuffer(); //Optional, only for depth forward rendering
+
+				//........................
+				cone00 = Cone("LowPolyRed",12 ,0.5 , 0.7, true);
+				cone01 = cone00.clone().setMaterial( "LowPolyGreen" ).setPosition(0.3, 0, -1.5 );
+				Fungi.scene.add( cone00 ); //, cone01
+
+				//........................
+				Fungi.loop.start();
+			}
+
+			var ary = new Float32Array( [8.0, 4.0, 1.0 ] );
+
+			function onRender(dt, ss){
+				System.update();
+
+				/* --------------------------------------------------
+				Moving Light Source */
+				ary[0] = Math.sin(ss * 0.8) * 8.0;
+				System.UBOLighting.bind().updateItem("lightPosition",ary).unbind();
+				
+
+				/* --------------------------------------------------
+				//Regular Deferred Lighting */
+				gDeferred.activate();	// Bind G Buffer
+				System.renderScene();	// Render scene to G Buffer
+				gDeferred.render();		// Switch to screen buffer and render scene with lighting
+				
+				/* --------------------------------------------------
+				//How to handle Deferred Lighting, Copy Depth to new FBO to continue with forward rendering 
+				gDeferred.activate();	
+				System.renderScene();
+				gDeferred.render( gFboPreRender.id ); //Render Lighting to custom framebuffer.
+
+				//Switching to forward rendering
+				Fbo.blitDepth( gDeferred.fbo, gFboPreRender );
+				Fungi.render.drawItem(cone01, cone01.material, gFboPreRender.id );
+
+				//Finally draw to the screen buffer
+				gMatPostBasic.updateUniform("u_colorTex", gFboPreRender.bColor.id );
+				Fungi.render.drawItem(gDeferred.quad, gMatPostBasic, null);
+				*/
+
+				/* --------------------------------------------------
+				Emission Bloom Post Effect 
+				gPostEffect_Blur.render( gDeferred.fbo.bEmission.id, gDeferred.quad );				
+				gMatPostBasic.updateUniform("u_colorTex", gPostEffect_Blur.finalTexture );
+
+				gl.blendMode(gl.BLEND_ADDITIVE);
+				Fungi.render
+					.loadMaterial(gMatPostBasic)		// Load Material & Shader, Apply Uniform
+					.drawRenderable(gDeferred.quad);	// Draw Quad with scene as a Texture.
+				gl.blendMode(gl.BLEND_ALPHA);
+
+				*/
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
