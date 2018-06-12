@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import System	from "./fungi/System.js";
+			import Cone		from "./fungi/primitives/Cone.js";
+			import Quad		from "./fungi/primitives/Quad.js";
+			import Points	from "./fungi/primitives/Points.js";
+			import Lines	from "./fungi/primitives/Lines.js";
+			import Camera_Ortho	from "./fungi/data/Camera_Ortho.js";
+
+			import DeferredRendering	from "./fungi.mod/deferred/DeferredRendering.js";
+			import ShadowMap			from "./fungi.mod/deferred/ShadowMap.js";
+			
+			import gl from "./fungi/gl.js";
+			import {Vec3, Mat4, Quat} from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/LowPolyColor.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/PhongLightingShadow.txt" },
+					//{ type:"shader", file:"/fungi.mod/deferred/shaders/PostBasic.txt" },
+				])	.then( async()=>{ 
+						await System.startUp(onRender,2); 
+						System.darkScene();
+						gl.setClearColor("00000000"); 
+					})
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			var gDeferred, gDirLight, gLightCam, gShadow;
+			var dPoint, dLine, cone00, floor;
+
+			function onInit(){
+				//........................
+				Fungi.camera
+					//.setPosition(-5.526770114898682, 2.4355881214141846, -1.9522678852081299)
+					//.setAxisAngle([-0.13707312411707417,-0.9714191689517949,-0.19379312326728904], 1.9375598850631666);
+					.setPosition(0,2.4,5.5).setDegrees(-20,"x");
+
+				Fungi.camera.updateMatrix();
+				dPoint	= new Points();
+				dLine	= new Lines();
+
+				//........................
+				//Setup Lighting
+				gDirLight = new DirectionLight();
+				gDirLight._position.setLength(2.5);
+
+				//See Light Source and Direction
+				//dPoint.addVec(gDirLight._position, 9);
+				//dLine.addVec(gDirLight._position, Vec3.scale(gDirLight._direction,5).add(gDirLight._position), 9);
+
+				var ubo = Fungi.getUBO("UBOLighting");
+				ubo.bind()
+					.updateItem("lightPosition", gDirLight._position)
+					.updateItem("lightDirection", gDirLight._direction)
+					.unbind();
+
+
+				//........................
+				//Shadow Map with Deferred Rendering
+				gLightCam	= new Camera_Ortho();
+				gShadow		= new ShadowMap(gLightCam);
+				gDeferred	= new DeferredRendering("PhongLightingShadow")
+					.addShadowMap( gShadow );
+
+				//........................
+				cone00	= Cone("LowPolyRed",12 ,0.5 , 0.7, true);//.setPosition(0,0,-10);
+				floor	= Quad("LowPolyDarkGray").setDegrees("-90","x").setScale(2);//.setPosition(0,0,-10);
+				
+				Fungi.scene.add(
+					floor, 
+					cone00, 
+					cone00.clone().setPosition(1,0,1).setScale(0.7),
+					dPoint,
+					dLine,
+				);
+
+				//........................
+				directionLightShadow(Fungi.camera, gLightCam, gDirLight);
+
+
+				//........................
+				Fungi.loop.start();
+			}
+
+			var ary = new Float32Array( [8.0, 4.0, 1.0 ] );
+
+			function onRender(dt, ss){
+				System.update();
+				dLine.update();
+				dPoint.update();
+
+				/* --------------------------------------------------
+				//Shadow mapping is a sperate operation. */
+				directionLightShadow(Fungi.camera, gLightCam, gDirLight);
+				//gDirLight.setShadowCamera( Fungi.camera, gLightCam );
+				gShadow.renderScene();
+
+				/* --------------------------------------------------
+				//Regular Deferred Lighting */
+				gDeferred.activate();	// Bind G Buffer
+				System.renderScene();	// Render scene to G Buffer
+				gDeferred.render();		// Switch to screen buffer and render scene with lighting
+			}
+
+			
+			const FAR = 10;
+			
+			//https://www.gamedev.net/forums/topic/505893-orthographic-projection-for-shadow-mapping/?do=findComment&comment=4299499
+			function directionLightShadow(mainCam, lightCam, dirLight){
+				/*...............................
+				Get Frustum of our main perspective camera */
+				var fPoints = getFrustumPoints(mainCam, FAR ); //
+				//visualizeFrustum( fPoints, 4 );
+
+				//Centroid of the World Space Frustum
+				let centroid = new Vec3();
+				for(let p of fPoints) centroid.add( p );
+				centroid.scale( 1 / fPoints.length ); //Average for Centroid, n / pLen OR n * (1 / pLen)
+
+				//dPoint.addVec( centroid, 2 ); // See centroid
+
+				/*...............................
+				Move Light Camera away from the centroid at the opposite direction */
+				let distFromCentroid	= FAR,
+					lightCamPos			= Vec3.sub(centroid, Vec3.scale(dirLight._direction, distFromCentroid) ),
+					//lightCamPos	= Vec3.sub(centroid, Vec3.scale(dirLight._direction.invert(new Vec3()), distFromCentroid) ),
+					m4WorldToLight	= new Mat4();
+
+				Mat4.lookAt(lightCamPos, centroid, Vec3.UP, m4WorldToLight); // Create View Matrix
+
+				//dLine.addVec(lightCamPos, centroid, 2);
+				//dPoint.addVec(lightCamPos, 0);
+
+				//-----------------------------------
+				//Move Frustum to Light Space while calculating its bounding box in light space
+				let min = new Vec3(Number.MAX_VALUE,Number.MAX_VALUE,Number.MAX_VALUE),
+					max = new Vec3(Number.MIN_VALUE, Number.MIN_VALUE, Number.MIN_VALUE);
+
+				for(let i of fPoints){
+					Mat4.transformVec3(m4WorldToLight, i)
+
+					if(i[0] < min[0] )		min[0] = i[0];	// min.x
+					else if(i[0] > max[0] )	max[0] = i[0];	// max.x
+
+					if(i[1] < min[1] )		min[1] = i[1];	// min.y
+					else if(i[1] > max[1] )	max[1] = i[1];	// max.x
+
+					if(i[2] < min[2] )		min[2] = i[2];	// min.z
+					else if(i[2] > max[2] )	max[2] = i[2];	// max.x
+				}
+
+				//visualizeFrustum( fPoints, 6 );
+
+				var xh = (Math.abs(max.x) + Math.abs(min.x)) * 0.5,
+					yh = (Math.abs(max.y) + Math.abs(min.y)) * 0.5;
+
+
+				//Mat4.lookAt(lightCamPos, centroid, Vec3.UP, m4WorldToLight); // Create View Matrix
+				//var tmp = new Mat4();
+				//Mat4.invert(tmp,m4WorldToLight)
+				//dLine.addVec(Vec3.ZERO, Mat4.transformVec3( m4WorldToLight, new Vec3(Vec3.FORWARD) ), 1);
+
+				lightCam.position = lightCamPos;
+				lightCam.rotation = Quat.lookRotation( Vec3.sub(lightCamPos, centroid), Vec3.UP);
+				lightCam.updateMatrix();
+
+				//dLine.addVec(Vec3.ZERO, 
+				//	Mat4.transformVec3( lightCam.invertedWorldMatrix, new Vec3(Vec3.FORWARD).scale(0.7) ), 0);
+
+
+				//OrthographicCamera(mins.X, maxes.X, mins.Y, maxes.Y, -maxes.Z - nearClipOffset, -mins.Z);
+				
+				/*
+				visualizeFrustum( getOrthoPoints(lightCam, 
+					min.x, max.x, 
+					min.y, max.y, 
+					-max.z - nearClipPffset, -min.z
+				));
+				dPoint.addVec(lightCam._position, 8);
+				*/
+
+				lightCam.setOrthographic( -xh, xh, -yh, yh, -max.z, -min.z );
+				//lightCam.setOrthographic( min.x, max.x, min.y, max.y, -max.z, -min.z );
+				lightCam.updateMatrix();
+				
+				/*
+				Mat4.ortho(lightCam.projectionMatrix, 
+					min.x, max.x, 
+					min.y, max.y, 
+					-max.z - nearClipPffset, -min.z					
+				);
+
+				//Mat4.invert(lightCam.invertedProjectionMatrix, lightCam.projectionMatrix); 
+				//lightCam._isModified = true;
+				//lightCam.updateMatrix();
+				*/
+				
+				/*
+				//Works, it tightens up the ortho projection.
+				var half = Vec3.sub(max, min).scale(0.5);
+				Mat4.ortho(lightCam.projectionMatrix, 
+					-half.x, half.x, 
+					-half.y, half.y, 
+					-max.z - nearClipPffset, -min.z
+				);
+
+				visualizeFrustum( getOrthoPoints(lightCam, 
+					-half.x, half.x, 
+					-half.y, half.y, 
+					-max.z - nearClipPffset, -min.z
+				));
+				*/
+
+				//gDeferred.quad.material.addUniform("u_shadowTex","tex", gShadow.fbo.bDepth.id);
+				//gDeferred.quad.material.addUniform("u_lightProjMatrix","mat4", lightCam.getProjectionViewMatrix());
+			}
+
+			class DirectionLight{
+				constructor(x=3,y=3,z=-3){
+					this._direction	= new Vec3();
+					this._position	= new Vec3(x,y,z);
+					this._position.normalize( this._direction ).invert();
+				}
+
+				setPosition(x,y,z){
+					this._position.set(x,y,z).normalize( this._direction ).invert();
+					return this;
+				}
+
+				//TODO : Think about calculating the Ortho only once based on the main camera
+				//Frustum, Then on render only moving the light camera. May not really need to
+				// do all the recalcs for the ortho for each frame, just position and rotation of camera
+				setShadowCamera(mainCam, lightCam, farDistance = 10){
+					//...............................
+					//Get Frustum of our main perspective camera
+					var fPoints = getFrustumPoints(mainCam, farDistance );
+
+					//Centroid of the World Space Perspective Frustum
+					//This point is the origin we want for the Light Camera
+					let centroid = new Vec3();
+					for(let p of fPoints) centroid.add( p );
+					centroid.scale( 1 / fPoints.length ); //Average for Centroid, n / pLen OR n * (1 / pLen)
+
+					/*...............................
+					Move Light Camera away from the centroid at the opposite direction */
+					let distFromCentroid	= farDistance, //Add some offset Later
+						lightCamPos			= Vec3.sub(centroid, Vec3.scale(this._direction, distFromCentroid) ),
+						m4WorldToLight		= new Mat4();
+
+					Mat4.lookAt(lightCamPos, centroid, Vec3.UP, m4WorldToLight); // Create View Matrix
+
+					//-----------------------------------
+					//Move Frustum to Light Space while calculating its bounding box in light space
+					let min = new Vec3(Number.MAX_VALUE,Number.MAX_VALUE,Number.MAX_VALUE),
+						max = new Vec3(Number.MIN_VALUE, Number.MIN_VALUE, Number.MIN_VALUE);
+
+					for(let i of fPoints){
+						Mat4.transformVec3(m4WorldToLight, i); //To Light Space
+
+						//Bounding Box
+						if(i[0] < min[0] )		min[0] = i[0];	// min.x
+						else if(i[0] > max[0] )	max[0] = i[0];	// max.x
+
+						if(i[1] < min[1] )		min[1] = i[1];	// min.y
+						else if(i[1] > max[1] )	max[1] = i[1];	// max.x
+
+						if(i[2] < min[2] )		min[2] = i[2];	// min.z
+						else if(i[2] > max[2] )	max[2] = i[2];	// max.x
+					}
+
+					//-----------------------------------
+					//Update Light Camera with the correct
+					var xh = (Math.abs(max.x) + Math.abs(min.x)) * 0.5,
+						yh = (Math.abs(max.y) + Math.abs(min.y)) * 0.5;
+
+					lightCam.position = lightCamPos;
+					lightCam.rotation = Quat.lookRotation( Vec3.sub(lightCamPos, centroid), Vec3.UP);
+					//lightCam.setOrthographic( min.x, max.x, min.y, max.y, -max.z, -min.z );
+					lightCam.setOrthographic( -xh, xh, -yh, yh, -max.z, -min.z );
+				}
+			}
+
+			//http://www.lighthouse3d.com/tutorials/view-frustum-culling/view-frustums-shape/  
+			//http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/
+			function getFrustumPoints(cam, far = null){
+				// Length from camera point the near and far center parts are
+				let nearLen	= cam.near,
+					farLen	= far || cam.far, //Custom far incase wanting to limit the reach
+					// Determine the Start and End Center Points of the Frustum.
+					vForward	= cam.forward().invert(), //Camera's forward is actually backward
+					vNear		= Vec3.scale(vForward, nearLen).add(cam._position),
+					vFar		= Vec3.scale(vForward, farLen).add(cam._position),
+					//Width and Height of the Near and Far Planes of the Frustum.
+					hNear		= 2 * Math.tan( cam.fov / 2 ) * nearLen,
+					wNear		= hNear * cam.ratio,
+					hFar		= 2 * Math.tan( cam.fov / 2 ) * farLen,
+					wFar		= hFar * cam.ratio,
+					//Some Extra Direction Vectors to determine Far/Near Planes
+					vUp			= cam.up(),
+					vLeft		= cam.left(),
+					incUp 		= new Vec3(),
+					incLeft 	= new Vec3(),
+					out			= new Array(8);
+
+				//dPoint.addVec(vNear, 1); // See Near...
+				//dPoint.addVec(vFar, 0); //See Far...
+
+				//-----------------
+				//Near Plane
+				Vec3.scale(vUp, hNear/2, incUp);		//Move up half of height
+				Vec3.scale(vLeft, wNear/2, incLeft);	//Move left half of width
+
+				out[0] = Vec3.add(vNear, incUp).add(incLeft);	//tl = ncenter + (up * Hnear/2) - (right * Wnear/2)
+				out[1] = Vec3.sub(vNear, incUp).add(incLeft);	//bl = ncenter - (up * Hnear/2) - (right * Wnear/2)
+				out[2] = Vec3.sub(vNear, incUp).sub(incLeft);	//br = ncenter - (up * Hnear/2) + (right * Wnear/2)
+				out[3] = Vec3.add(vNear, incUp).sub(incLeft);	//tr = ncenter + (up * Hnear/2) + (right * Wnear/2)
+
+				//dLine.addVec(vNear, Vec3.add(vNear, incUp), 2);
+				//dLine.addVec(vNear, Vec3.add(vNear, incLeft), 2);
+
+				//-----------------
+				//Far Plane
+				Vec3.scale(vUp, hFar/2, incUp);		//Move up half of height
+				Vec3.scale(vLeft, wFar/2, incLeft);	//Move left half of width
+
+				out[4] = Vec3.add(vFar, incUp).add(incLeft);	//ftl = fc + (up * Hfar/2) - (right * Wfar/2)
+				out[5] = Vec3.sub(vFar, incUp).add(incLeft);	//fbl = fc - (up * Hfar/2) - (right * Wfar/2)
+				out[6] = Vec3.sub(vFar, incUp).sub(incLeft);	//fbr = fc - (up * Hfar/2) + (right * Wfar/2)
+				out[7] = Vec3.add(vFar, incUp).sub(incLeft);	//ftr = fc + (up * Hfar/2) + (right * Wfar/2)
+
+				//dLine.addVec(vFar, Vec3.add(vFar, incUp), 2);
+				//dLine.addVec(vFar, Vec3.add(vFar, incLeft), 2);
+
+				//-----------------
+				//Center Points for the Near/Far Planes
+				//out[8] = vNear;
+				//out[9] = vFar;
+
+				//-----------------
+				//let c = new Vec3();
+				//for(let i=0; i < 8; i++) c.add(out[i]);
+				//out[10] = c.divScale(8);
+
+				return out;
+			}
+
+			function getBoundingPoints(min, max){
+				return [
+					new Vec3( max.x, max.y, min.z), //Near
+					new Vec3( max.x, min.y, min.z),
+					new Vec3( min.x, min.y, min.z),
+					new Vec3( min.x, max.y, min.z),
+					new Vec3( max.x, max.y, max.z), //Far
+					new Vec3( max.x, min.y, max.z),
+					new Vec3( min.x, min.y, max.z),
+					new Vec3( min.x, max.y, max.z)
+				];
+			}
+
+			function getOrthoPoints(cam, left, right, down, up, near, far){
+				let vForward	= cam.forward().invert(),
+					vUp			= cam.up(),
+					vLeft		= cam.left().invert(),
+					tmp 		= new Vec3();
+
+				let out = [	cam._position.clone(), cam._position.clone(),
+							cam._position.clone(), cam._position.clone(),
+							null, null, null, null ];
+
+				Vec3.scale(vLeft, left, tmp);
+				out[0].add( tmp ); //Top Left
+				out[1].add( tmp ); //Bot Left
+
+				Vec3.scale(vLeft, right, tmp);
+				out[2].add( tmp ); //Bot Right
+				out[3].add( tmp ); //Top Right
+
+				Vec3.scale(vUp, up, tmp);
+				out[0].add( tmp ); //Top Left
+				out[3].add( tmp ); //Top Right
+
+				Vec3.scale(vUp, down, tmp);
+				out[1].add( tmp ); //Bot Left
+				out[2].add( tmp ); //Bot Right
+
+				//Make copy for Far Plane
+				Vec3.scale(vForward, far, tmp);
+				out[4] = out[0].clone().add(tmp);
+				out[5] = out[1].clone().add(tmp);
+				out[6] = out[2].clone().add(tmp);
+				out[7] = out[3].clone().add(tmp);
+
+				//Move Near plane into position.
+				Vec3.scale(vForward, near, tmp);
+				out[0].add(tmp);
+				out[1].add(tmp);
+				out[2].add(tmp);
+				out[3].add(tmp);
+
+				return out;
+			}
+
+			function visualizeFrustum(ary, lineColor=8){
+				let x, i, ii;
+				for(x=0; x < 4; x++){
+					i	= x % 4;
+					ii	= (i+1) % 4;
+
+					dPoint.addVec( ary[x], 1 );				//Near Plane Points
+					dPoint.addVec( ary[x+4], 0 );			//Far Plane Points
+
+					dLine.addVec( ary[i], ary[ii], lineColor );		//Near Plane Lines
+					dLine.addVec( ary[i+4], ary[ii+4], lineColor );	//Far Plane Lines
+
+					dLine.addVec( ary[i], ary[i+4], lineColor );	//Near-Far Connecting Lines
+				}
+			}
+
+
+
+
+
+
+			//http://xbox.create.msdn.com/en-US/education/catalog/?contenttype=4&devarea=0&platform=20&sort=1&lc=1033&p=1
+			//http://xbox.create.msdn.com/en-US/education/catalog/sample/shadow_mapping_1
+			function orthoShadowMS(mainCam, lightCam, dirLight){
+				//-----------------------------------
+				//Rotation in the direction of the light
+				let m4WorldToLight = new Mat4(),
+					m4LightToWorld = new Mat4();
+				//Mat4.lookAt(Vec3.ZERO, dirLight._direction, Vec3.UP, m4WorldToLight); // Create View Matrix
+				Mat4.lookAt(Vec3.ZERO, dirLight._position, Vec3.UP, m4WorldToLight); // Create View Matrix
+				Mat4.invert(m4LightToWorld, m4WorldToLight);
+
+				//dLine.addVec(Vec3.ZERO, dirLight._direction.invert(new Vec3()).scale(1.5), 0);
+				//dLine.addVec(Vec3.ZERO, Mat4.transformVec3( m4WorldToLight, new Vec3(Vec3.FORWARD) ), 2);
+				//dLine.addVec(Vec3.ZERO, Mat4.transformVec3( m4LightToWorld, new Vec3(Vec3.FORWARD) ), 6);
+
+				/*...............................
+				Get Frustum of our main perspective camera */
+				var fPoints = getFrustumPoints(mainCam, FAR ); //
+				//visualizeFrustum( fPoints, 4 );
+
+				//-----------------------------------
+				//Move Frustum to Light Space while calculating its bounding box in light space
+				let min = new Vec3(Number.MAX_VALUE,Number.MAX_VALUE,Number.MAX_VALUE),
+					max = new Vec3(Number.MIN_VALUE, Number.MIN_VALUE, Number.MIN_VALUE);
+
+				for(let i of fPoints){
+					Mat4.transformVec3(m4WorldToLight, i)
+
+					if(i[0] < min[0] )		min[0] = i[0];	// min.x
+					else if(i[0] > max[0] )	max[0] = i[0];	// max.x
+
+					if(i[1] < min[1] )		min[1] = i[1];	// min.y
+					else if(i[1] > max[1] )	max[1] = i[1];	// max.x
+
+					if(i[2] < min[2] )		min[2] = i[2];	// min.z
+					else if(i[2] > max[2] )	max[2] = i[2];	// max.x
+				}
+
+				//visualizeFrustum( fPoints, 6 );
+
+				//-----------------------------------
+				//Bounding Box
+				let boundSize	= Vec3.sub(max, min),
+					hBoundSize	= Vec3.scale(boundSize, 0.5); //Half
+
+				let lightPos	= Vec3.add(min, hBoundSize);
+					lightPos.z	= min.z; //Move the point to the near plane.
+
+				//boundSize.x *= 0.5;
+				//boundSize.y *= 0.5;
+
+				//dPoint.addVec(lightPos, 8); //Ortho Camera Position but in light space
+
+				//Quat.rotateVec3(qLight2World, lightPos); //move Position to world space
+				Mat4.transformVec3(m4LightToWorld, lightPos); //move Position to world space
+
+				//Camera is pointing backwards (toward +z), It need to point that way for the math
+				//But in world space forward (towards -z) is negative for the camera
+				dPoint.addVec(lightPos, 8);		//See Camera Light Position but in World Space
+				dLine.addVec(lightPos, Vec3.add(lightPos, dirLight._position ), 8); //See Light Camera Forward Direction
+
+				//visualizeFrustum( getBoundingPoints(min,max), 8 );
+
+				//-----------------------------------
+				//Update Light Camera with Position and Rotation
+				//May need to flip. things be it add or dirLight
+
+				//Matrix lightView = Matrix.CreateLookAt(lightPosition, lightPosition - lightDir,  Vector3.Up);
+				//var test = new Mat4();
+				//Mat4.lookAt(lightPos, Vec3.sub(lightPos,dirLight._position), Vec3.UP, test);
+				
+				//dPoint.addVec(lightPos, 2);
+				//dPoint.addVec(Mat4.transformVec3( test, new Vec3(Vec3.FORWARD) ), 6);
+				//dLine.addVec(lightPos, Mat4.transformVec3( test, new Vec3(Vec3.FORWARD) ).add(lightPos), 0);
+
+
+				let lookAtTarget = Vec3.add( lightPos, dirLight._position ); 
+				////let lookAtTarget = Vec3.sub( lightPos, dirLight._position ); 
+				//let lookAtTarget = Vec3.sub( lightPos, dirLight._direction ); 
+				////let lookAtTarget = Vec3.add( lightPos, dirLight._direction ); 
+				gLightCam.position = lightPos;
+				gLightCam.lookAt( lookAtTarget, Vec3.UP );
+				gLightCam.updateMatrix();
+
+				//dPoint.addVec(lightPos, 8);
+				//dLine.addVec(lightPos, lookAtTarget, 8);
+
+
+				//lightCam.setPosition(0,0,0);
+				//lightCam.rotation = Quat.lookRotation( dirLight._direction.invert(new Vec3()), Vec3.UP);
+				//lightCam.updateMatrix();
+
+				//dLine.addVec(Vec3.ZERO, 
+				//	Mat4.transformVec3( lightCam.invertedWorldMatrix, new Vec3(Vec3.FORWARD).scale(0.7) ), 0);
+
+				//dLine.addVec(Vec3.ZERO, 
+				//	Mat4.transformVec3( lightCam.worldMatrix, new Vec3(Vec3.FORWARD).scale(0.7) ), 0);
+
+
+				/* PEDRO !!! Keep in mind that lightDir is origin to the sun, so its really DirectionalLight Position
+				 Matrix lightView = Matrix.CreateLookAt(lightPosition, 
+                                                   lightPosition - lightDir, 
+                                                   Vector3.Up);
+				*/
+
+				//-----------------------------------
+				/* */
+				visualizeFrustum( getOrthoPoints(lightCam, 
+					-boundSize.x, boundSize.x, 
+					-boundSize.y, boundSize.y, 
+					-boundSize.z, boundSize.z
+				));
+				
+
+				Mat4.ortho(lightCam.projectionMatrix, 
+					-boundSize.x, boundSize.x, 
+					-boundSize.y, boundSize.y, 
+					-boundSize.z, boundSize.z
+				);
+
+				Mat4.invert(lightCam.invertedProjectionMatrix, lightCam.projectionMatrix); 
+				lightCam._isModified = true;
+				lightCam.updateMatrix();
+
+
+				gDeferred.quad.material.addUniform("u_shadowTex","tex", gShadow.fbo.bDepth.id);
+				gDeferred.quad.material.addUniform("u_lightProjMatrix","mat4", lightCam.getProjectionViewMatrix());
+				//gDeferred.quad.material.addUniform("u_colorTex","tex", gDeferred.fbo.bDepth.id);
+
+
+				/* 
+				var tmp = getFrustumPoints(mainCam);
+				//var mat = lightCam.getProjectionViewMatrix();
+				var mat = lightCam.invertedWorldMatrix;
+
+				for(let i of tmp) Mat4.transformVec3(mat, i);
+				visualizeFrustum( tmp, 0 );
+				*/
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

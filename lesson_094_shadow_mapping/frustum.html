@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+
+			import Points		from "./fungi/primitives/Points.js";
+			import Lines		from "./fungi/primitives/Lines.js";
+			import Cone			from "./fungi/primitives/Cone.js";
+
+			import Camera_O		from "./fungi/data/Camera_Ortho.js";
+			import Camera_P		from "./fungi/data/Camera_Perspective.js";
+
+			import Frustum			from "./fungi.mod/deferred/Frustum.js";
+			import DirectionLight	from "./fungi.mod/deferred/DirectionalLight.js";
+
+			import Maths, { Vec3, Quat, Mat4 } from "./fungi/Maths.js";
+
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/LowPolyPhong.txt" }
+				])	.then( async()=>{ await System.startUp(onRender); } )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			const FAR = 10;
+
+			let dPoint, dLine, gDirLight,
+				gLightCam, gMainCam;
+
+			let initialCamRotation = new Quat(),
+				initialCamPosition = new Vec3();
+
+			function onInit(){
+				Fungi.camera
+					.setPosition(28.082090377807617, 18.72369384765625, 16.933265686035156)
+					.setAxisAngle([-0.4135403829754362,0.8800238520092761,0.2335429786034613], 1.1410834320318715);
+					//.setPosition( 0, 1, 3 ).setDegrees(-20, "x");
+
+				//........................
+				//Debugging Objects
+				dPoint	= new Points();		//dPoint.options.depthTest = false;
+				dLine	= new Lines();		//dLine.options.depthTest = false;
+
+				//........................
+				gDirLight = new DirectionLight();
+
+				//........................
+				gLightCam		= new Camera_O();
+				gMainCam		= new Camera_P().setPosition(0,1,3);
+
+				initialCamRotation.copy(gMainCam._rotation);
+				initialCamPosition.copy(gMainCam._position);
+
+				//........................
+				Fungi.scene.add( dPoint, dLine );
+				Fungi.loop.start();
+			}
+
+			function onRender(dt, ss){
+				//....................................
+				/* ANIMATE THE FRUSTUMS   */
+				var t = Math.sin(ss * 0.5);
+
+				//gMainCam.rotation = Quat.rotateY( initialCamRotation, Maths.PI_Q * t, new Quat() );	//Rotate -45 to 45
+				gMainCam.rotation = Quat.rotateY( initialCamRotation, Maths.sawtoothWave(ss * 0.05, 0, Maths.PI_2), new Quat() ); //360
+				//gMainCam.position = Vec3.scale(Vec3.BACK, t * 5).add(initialCamRotation); //Back and Forth
+
+				//gMainCam.position = initialCamPosition.rotate(Maths.PI_2 * (t * 0.5 + 0.5), "y", [0,0,0]); //orbit
+				//gMainCam.lookDir( gMainCam._position );
+
+				//....................................
+				dPoint.reset();		dLine.reset();
+				renderFrustums();
+				dPoint.update();	dLine.update();
+
+				//....................................
+				System.update().renderScene();
+			}
+
+			function renderFrustums(){
+				//....................................
+				//Perspective
+				var fAry = Frustum.getPerspectivePoints(gMainCam, 10);
+				Frustum.visualize(fAry, dPoint, dLine, 4);
+
+				//....................................
+				//Orthographic
+				gDirLight.setShadowCamera(gMainCam, gLightCam, 10, dPoint, dLine);
+				var oAry = Frustum.getOrthoCameraPoints( gLightCam );
+				Frustum.visualize(oAry, dPoint, dLine, 8);
+
+				//Camera position and its true forward (not forward viewing direction)
+				dPoint.addVec( gLightCam._position, 8 );
+				dLine.addVec( gLightCam._position, Vec3.add(gDirLight._position, gLightCam._position), 8);
+
+				//....................................
+				//See Light Source and Direction
+				dPoint.addVec(gDirLight._position, 9);
+				dLine.addVec(gDirLight._position, Vec3.scale(gDirLight._direction,5).add(gDirLight._position), 9);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

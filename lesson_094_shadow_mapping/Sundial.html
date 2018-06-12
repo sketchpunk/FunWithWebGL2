@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+			import Geometry		from "./fungi/data/Geometry.js";
+
+			import Points		from "./fungi/primitives/Points.js";
+			import Lines		from "./fungi/primitives/Lines.js";
+			import Wedge		from "./fungi/primitives/Wedge.js";
+			import Cylinder		from "./fungi/primitives/Cylinder.js";
+
+			import Camera_Ortho			from "./fungi/data/Camera_Ortho.js";
+			import DeferredRendering	from "./fungi.mod/deferred/DeferredRendering.js";
+			import ShadowMap			from "./fungi.mod/deferred/ShadowMap.js";
+			import DirectionLight		from "./fungi.mod/deferred/DirectionalLight.js";
+
+			import Maths, { Vec3, Quat } from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/LowPolyColor.txt" },
+					{ type:"shader", file:"./fungi.mod/deferred/shaders/PhongLightingShadow.txt" },
+
+					//{ type:"shader", file:"/fungi/shaders/VecWColor.txt" },
+					//{ type:"shader", file:"/fungi/shaders/LowPolyPhong.txt" },
+				])	.then( async()=>{ await System.startUp(onRender); } )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			let dPoint, dLine,
+				gDeferred, gDirLight, gLightCam, gShadow;
+
+			let initalSunPosition = new Vec3(0,3,-3);
+			let sunRotation = new Quat();
+			let sunPosition = new Vec3();
+
+			function onInit(){
+				Fungi.camera
+					.setPosition( 0, 1, 3 ).setDegrees(-20, "x");
+
+				//........................
+				//Debugging Objects
+				dPoint	= new Points();
+				dLine	= new Lines();
+
+				let clockFace = Cylinder("LowPolyRedish", 12, 1, 1, 0.15), 
+					clockHand = Wedge("LowPolyRedish", 1.1, 0.5, 0.1, true).setDegrees(-90).setPosition(0,0.15,-0.95);
+
+				//........................
+				//Setup Lighting
+				gDirLight = new DirectionLight().setPositionVec(initalSunPosition);
+				//gDirLight._position.setLength(2.5);
+				gDirLight.updateUBO();
+
+				//See Light Source and Direction
+				dPoint.addVec(gDirLight._position, 9);
+				dLine.addVec(gDirLight._position, Vec3.scale(gDirLight._direction,5).add(gDirLight._position), 9);
+
+				//........................
+				//Shadow Map with Deferred Rendering
+				gLightCam	= new Camera_Ortho();
+				gShadow		= new ShadowMap(gLightCam, 2048);
+				gDeferred	= new DeferredRendering("PhongLightingShadow")
+					.addShadowMap( gShadow );
+
+				//........................
+				Fungi.scene.add( dPoint, dLine, clockFace, clockHand );
+				Fungi.loop.start();
+			}
+
+			function onRender(dt, ss){
+				//------------------------------------
+				System.update();
+				dPoint.reset();
+				dLine.reset();
+
+				//------------------------------------
+				sunRotation.setAxisAngle( [0,0,1], Maths.PI_H * Math.sin( ss * 0.7 ) );
+				Quat.rotateVec3( sunRotation, initalSunPosition, sunPosition );
+				gDirLight.setPositionVec( sunPosition ).updateUBO();
+
+				//See Light Source and Direction
+				dPoint.addVec(gDirLight._position, 9);
+				dLine.addVec(gDirLight._position, Vec3.scale(gDirLight._direction,5).add(gDirLight._position), 9);
+
+				//------------------------------------
+				//Shadow mapping is a sperate operation.
+				gDirLight.setShadowCamera( Fungi.camera, gLightCam, 7.0 );
+				gShadow.renderScene();
+
+				dPoint.update();
+				dLine.update();
+
+				//------------------------------------
+				//Regular Deferred Lighting
+				gDeferred.activate();	// Bind G Buffer
+				System.renderScene();	// Render scene to G Buffer
+				gDeferred.render();		// Switch to screen buffer and render scene with lighting
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

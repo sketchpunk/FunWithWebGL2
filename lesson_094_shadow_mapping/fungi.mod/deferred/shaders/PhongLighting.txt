@@ -1,0 +1,122 @@
+<shader>{
+	"name"		: "PhongLighting",
+	"ubo"		: [ "UBOTransform", "UBOLighting" ],
+	"options"	: { "modelMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_colorTex",			"type":"sample2D" },
+		{ "name":"u_normalTex",			"type":"sample2D" },
+		{ "name":"u_positionTex",		"type":"sample2D" },
+		{ "name":"u_emissionTex",		"type":"sample2D" },
+		{ "name":"u_depthTex",			"type":"sample2D" },
+		{ "name":"u_ambientStrength",	"type":"float" },
+		{ "name":"u_diffuseStrength",	"type":"float" },
+		{ "name":"u_specularStrength",	"type":"float" },
+		{ "name":"u_specularShininess",	"type":"float" }
+	]
+}<\shader>
+	
+<materials>[ { 
+	"name"		: "PhongLighting", 
+	"options"	: { "depthTest":false },
+	"uniforms"	: [
+		{ "name":"u_ambientStrength",	"value":"0.1" },
+		{ "name":"u_diffuseStrength",	"value":"0.5" },
+		{ "name":"u_specularStrength",	"value":"0.2" },
+		{ "name":"u_specularShininess",	"value":"20.0" }
+	]
+} ]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	void main(void){
+		v_uv = a_uv;
+		gl_Position	= vec4(a_position.xyz,1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	in highp vec2 v_uv;
+
+	uniform UBOLighting{
+		vec3 lightPosition;
+		vec3 lightDirection;
+		vec3 lightColor;
+	};
+
+	uniform sampler2D u_colorTex;
+	uniform sampler2D u_normalTex;
+	uniform sampler2D u_positionTex;
+	uniform sampler2D u_emissionTex;
+	uniform sampler2D u_depthTex;
+	uniform float u_ambientStrength;
+	uniform float u_diffuseStrength;
+	uniform float u_specularStrength;
+	uniform float u_specularShininess;
+
+	out vec4 oFragColor;
+
+	//const vec3 uLightPos			= vec3(8.0,4.0,1.0);
+	//const vec3 uLightColor			= vec3(1.0,1.0,1.0);
+
+	//const float uAmbientStrength	= 0.5;
+	//const float uDiffuseStrength	= 0.5;
+	//const float uSpecularStrength	= 0.2f;	//0.15
+	//const float uSpecularShininess	= 1.0f; //256.0
+
+	void main(void){
+		//....................................................
+		// Skip any pixel that depth at or beyond the camera.
+		ivec2 fCoord	= ivec2(gl_FragCoord.xy);
+		float dDepth	= texelFetch(u_depthTex, fCoord, 0).x;
+		if(dDepth >= 1.0) discard; //oFragColor = vec4(1.0, 0.0, 0.0, 1.0);
+
+		//....................................................
+		//Check if the pixel had any normal direction, if not don't bother lighting it.
+		vec4 dColor		= texelFetch(u_colorTex, fCoord, 0); //texture(u_colorTex, v_uv);
+		vec3 dNormal	= texelFetch(u_normalTex, fCoord, 0).xyz;
+		vec3 dEmission	= texelFetch(u_emissionTex, fCoord, 0).xyz;
+
+		if(abs(dNormal.x) + abs(dNormal.y) + abs(dNormal.z) <= 0.0 || 
+				dEmission.x + dEmission.y + dEmission.z > 0.0){
+			oFragColor = dColor;
+			return;
+		}
+
+		//....................................................
+		//Start Calculating Lighting
+		vec3 dWorldPos	= texelFetch(u_positionTex, fCoord, 0).xyz;
+
+		//Ambient Lighting
+		vec3 cAmbient		= lightColor * u_ambientStrength;
+		
+		//Diffuse Lighting
+		vec3 lightVector	= normalize(lightPosition - dWorldPos);		//light direction based on pixel world position
+		float diffuseAngle	= max( dot(dNormal,lightVector) ,0.0);	//Angle between Light Direction and Pixel Direction (1==90d)
+		vec3 cDiffuse		= lightColor * diffuseAngle * u_diffuseStrength;
+
+		//Specular Lighting
+		vec3 camVector		= normalize(cameraPos - dWorldPos);	//Camera Direction based on pixel world position
+		vec3 reflectVector	= reflect(-lightVector, dNormal);		//Reflective direction of line from pixel direction as pivot.
+		float specular		= pow( max( dot(reflectVector,camVector) ,0.0), u_specularShininess ); //Angle of reflected light and camera eye
+		vec3 cSpecular		= lightColor * specular * u_specularStrength;
+
+		//Final Color
+		oFragColor = vec4(dColor.rgb * (cAmbient + cDiffuse + cSpecular), 1.0);
+		//oFragColor = vec4( dWorldPos, 1.0);
+	}
+<\fragment>

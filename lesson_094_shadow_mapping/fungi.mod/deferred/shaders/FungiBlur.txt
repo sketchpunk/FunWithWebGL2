@@ -1,0 +1,92 @@
+<shader>{
+	"name"		: "FungiBlur",
+	"ubo"		: [ ],
+	"options"	: { "modelMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_colorTex",	"type":"sample2D" },
+		{ "name":"u_dir",		"type":"vec2" },
+		{ "name":"u_kernel",	"type":"afloat" },
+		{ "name":"u_kernelLen",	"type":"int" }
+	]
+}<\shader>
+	
+<materials>[
+]<\materials>
+
+uniform UBOTransform{
+	mat4 	projViewMatrix;
+	vec3	cameraPos;
+	float	globalTime;
+	vec2	screenSize;
+};
+
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	out highp vec2 v_uv;
+
+	void main(void){
+		v_uv 		= a_uv;
+		gl_Position	= vec4( a_position.xyz ,1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in highp vec2 v_uv;
+
+	uniform sampler2D	u_colorTex;
+	uniform vec2		u_dir;
+	uniform float		u_kernel[12];
+	uniform int			u_kernelLen;
+
+	out vec4 oFragColor;
+
+	vec4 FungiBlur(sampler2D tex, vec2 uv, vec2 dir){
+		//TODO Pixel Size can be a uniform, 1 / TextureSize.xy, can mult by direction too to save time.
+		vec2 pxSize	= (1.0 / vec2( textureSize(tex, 0) )) * dir; //Pixel Size
+		vec4 c		= texture(tex, uv) * u_kernel[0];
+		
+		vec2 pxNext;
+		for(int i=1; i < u_kernelLen; i++){
+			pxNext = pxSize * (0.5 + float(i * 2 - 1)); //Try to sample the midde between two pixels for extra average sampling.
+			c += texture(tex, uv - pxNext) * u_kernel[i];
+			c += texture(tex, uv + pxNext) * u_kernel[i];
+		}
+
+		return c;
+	}
+
+	void main(void){
+		oFragColor = FungiBlur(u_colorTex, v_uv, u_dir);
+	}
+<\fragment>
+
+http://dev.theomader.com/gaussian-kernel-calculator/
+http://www.pyramidsoftwaresolutions.com/webgl-threejs-blur-tutorial.html
+Instead of getting the exact center of a pixel, we can get the average based on the weight of two pixels
+which would give you a more accurate gaussian blur.
+
+NewWeight = weight(texel1) + weight(texel2) 
+NewOffset = (offset(texel1) * weight(texel1) + offset(texel2) * weight(texel2)) / NewWeight 
+
+/*
+	vec4 FungiBlurx(sampler2D tex, vec2 uv, vec2 dir){
+		vec2 pxSize = 1.0 / vec2( textureSize(tex, 0) ) * dir; //Pixel Size
+		vec4 c = vec4(0.0);
+		
+		c += texture(tex, uv - pxSize * 5.5) * 0.00598;
+		c += texture(tex, uv - pxSize * 3.5) * 0.060626;
+		c += texture(tex, uv - pxSize * 1.5) * 0.241843;
+		c += texture(tex, uv) * 0.383103;
+		c += texture(tex, uv + pxSize * 1.5) * 0.241843;
+		c += texture(tex, uv + pxSize * 3.5) * 0.060626;
+		c += texture(tex, uv + pxSize * 5.5) * 0.00598;
+
+		return c;
+	}
+*/
