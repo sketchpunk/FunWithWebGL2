@@ -19,7 +19,7 @@ https://gist.github.com/jhermsmeier/72626d5fd79c5875248fd2c1e8162489
 https://github.com/sketchpunk/Fungi/commit/d90399a63076d078b4dd4ad939ec266cf140b542
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/2Y3Enbasv2c)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 * [Twitter](https://twitter.com/SketchpunkLabs)
 * [Patreon](https://www.patreon.com/sketchpunk)

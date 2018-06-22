@@ -12,7 +12,7 @@ https://github.com/sketchpunk/Fungi/commit/e6e8ab2b11f01134ceab046646c18561c13e2
 
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/DBSBCPSA5F4)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 * [Twitter](https://twitter.com/SketchpunkLabs)
 * [Patreon](https://www.patreon.com/sketchpunk)

@@ -31,7 +31,7 @@ https://github.com/sketchpunk/Fungi/commit/b726258fb01235ebf4b8ce1a8eb3784436ae3
 
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/vemIyDpBBH8)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 * [Twitter](https://twitter.com/SketchpunkLabs)
 * [Patreon](https://www.patreon.com/sketchpunk)

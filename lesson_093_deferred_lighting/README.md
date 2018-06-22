@@ -18,9 +18,10 @@ https://github.com/tsherif/webgl2examples/blob/master/deferred.html
 
 ### Fungi Changes
 
+https://github.com/sketchpunk/Fungi/commit/752f2f962f01af4d84e6c4dbb39aa561a6b55816
 
 ### Links
-* [Lesson on Youtube]()
+* [Lesson on Youtube](https://youtu.be/zacV3I0AEhI)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 * [Twitter](https://twitter.com/SketchpunkLabs)
 * [Patreon](https://www.patreon.com/sketchpunk)
