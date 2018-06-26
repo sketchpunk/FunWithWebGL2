@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+			import Maths		from "./fungi/Maths.js";
+			import Transform	from "./fungi/data/Transform.js";
+			import Cylinder 	from "./fungi/primitives/Cylinder.js";
+
+			import Geometry, { GeoRenderable } from "./fungi/data/Geometry.js";
+
+			import { SpinAnimation } from "./lib/Animations.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/LowPolyPhong.txt" },
+				])	.then( async()=>{ 
+						await System.startUp(onRender); 
+						//System.darkScene();
+					} )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			var gSpinAni;
+
+			function onRender(dt, ss){ 
+				gSpinAni();
+				System.update().renderScene();
+			}
+			function onInit(){
+				//........................				
+				Fungi.camera
+					.setPosition(0,1.9,4).setDegrees(-20,"x");
+					//.setPosition(0.06347180157899857, -0.17466752231121063, 0.8773066997528076)
+					//.setAxisAngle([-0.9128173656934553,-0.4078321446655913,-0.02113101613228763], 0.1134016245927154);
+
+					Fungi.getUBO("UBOLighting")
+						.bind()
+						.updateItem("lightPosition",	new Float32Array([ 2.0, 4.0, 2.0 ]) )
+						.unbind();
+
+				//........................
+				var geo = new Geometry();
+
+				var drill = Drill(geo).setPosition(0,0.25,0);
+				geo.reset();
+				
+				var drillBase = Cylinder("LowPolyPhong_gray", 8, 0.6, 0.55, 0.25, true);
+				
+				var hook = Hook(geo).setScale(1.5).setPosition(0,0,0.09);
+				geo.reset();
+
+				var platform = Platform(geo);
+				geo.reset();
+
+				var SpiralCore 		= new Transform()
+					.setScale(0.5)
+					.setPosition(0, 1, 0)
+					.addChild( hook )
+					.addChild( drillBase )
+					.addChild( drill );
+
+				gSpinAni = SpinAnimation(SpiralCore, 0.2);
+
+				Fungi.scene.add( SpiralCore, platform );
+
+				//........................
+				Fungi.scene.prepareItems();
+				Fungi.loop.start();
+			}
+
+			function Drill(geo){
+				//Create Flat Shape
+				var split = 8;
+				var xMax = 0.5;
+				var inc = xMax * 2 / split;
+
+				var rows = [
+					[1,		1,		0 ],
+					
+					[0.9,	0.7,	0 ],
+					[0.9,	0.7,	-0.04 ],
+					[0.8,	0.6,	-0.04 ],
+					[0.8,	0.6,	0 ],
+
+					[0.7,	0.5,	0 ],
+					[0.7,	0.5,	-0.04 ],
+					[0.6,	0.4,	-0.04 ],
+					[0.6,	0.4,	0 ],
+
+					[0.5,	0.3,	0 ],
+					[0.5,	0.3,	-0.04 ],
+					[0.4,	0.2,	-0.04 ],
+					[0.4,	0.2,	0 ],
+
+					[0.3,	0.1,	0 ],
+					[0.3,	0.1,	-0.04 ],
+					[0.2,	0.0,	-0.04 ],
+					[0.2,	0.0,	0 ],
+
+					[0,		0,		0 ]
+				];
+
+				for(var i=0; i < rows.length; i++){
+					var d = rows[i];
+					for(var x = -xMax; x <= xMax; x+=inc){
+						geo.addVert(
+							(Math.abs(x) <= 1e-6)? 0 : x
+							,Maths.lerp( d[0], d[1], x / xMax * 0.5 + 0.5 )
+							,d[2]
+						);
+					}
+				}
+
+				geo.triangleGrid(split+1, rows.length);
+				
+				/* Wrap object around a Cylinder */
+				var radius = 0.5;
+				var radOffset = Maths.toRad(90);
+				var v, len, rad;
+				for(var i=0; i < geo.verts.length; i++){
+					v	= geo.verts[i];
+					rad	= radOffset + -(v.x / xMax) * Math.PI;	//Offset + Normalized X Position Times Angle
+					len = v.z + radius;							//Add Z to radius to keep its position in relation.
+					v.x = len * Math.cos(rad);					// New X around a circle
+					v.z = len * Math.sin(rad);					// New Z(y) around a circle
+					//console.log(v.x, -(v.x / maxX) * Math.PI );
+				}
+				
+
+				/* Taper the Cylinder */
+				var yMax = 1, scale;
+				for(var i=0; i < geo.verts.length; i++){
+					v		= geo.verts[i];
+					scale	= 1.0 - (v.y / yMax);
+					rad		= Math.atan2(v.z, v.x);
+					len		= Math.sqrt(v.x*v.x + v.z*v.z);
+
+					v.x 	= len * scale * Math.cos(rad);
+					v.z		= len * scale * Math.sin(rad);
+				}
+
+				return GeoRenderable("Drill", "LowPolyPhong_yellow", geo, true);
+			}
+
+			function Platform(geo){
+				geo.addVert(0.0,	0.17,	0);
+				geo.addVert(0.2,	0.17,	0);
+				geo.addVert(0.24,	0.2,	0);
+
+				geo.addVert(0.8,	0.2,	0);
+				geo.addVert(0.9,	0.17,	0);
+				geo.addVert(0.92,	0.17,	0);
+				geo.addVert(0.94,	0.2,	0);
+
+				geo.addVert(1,		0.2,	0);
+				geo.addVert(1.2,	0.05,	0);
+				geo.addVert(1.18,	0.0,	0);
+
+				var pntLen = geo.verts.length;
+				var latheLen = 16;
+
+				geo.lathe( [0,1,2,3,4,5,6,7,8,9], latheLen, "y" );
+				geo.triangleLathe(pntLen, latheLen, true);
+
+				return GeoRenderable("Platform", "LowPolyPhong_litegray", geo, true);
+			}
+
+			function Hook(geo){
+				var v, rad, cos, sin, radius = 0.1;
+				//Create Half Circle
+				for(var i=0; i <= 6; i++){
+					rad = Math.PI * i / 6  + Math.PI;
+					cos = radius * Math.cos( rad );
+					sin = radius * Math.sin( rad );
+					geo.addVert( cos, sin - 0.1, 0 );
+				}
+
+				//Create the rest of the shape.
+				geo.cloneVert(0, true, false).y = 0;
+				geo.cloneVert(7, true).x += 0.1;
+				geo.cloneVert(8, true).y -= 0.15;
+				geo.addVert(0,-0.35, 0);
+				geo.addVert(0,-0.40, 0);
+				geo.addVert(-0.2,-0.25, 0);
+				geo.addVert(-0.2, 0, 0);
+
+				var idxAry = [0,1,2,3,4,5,6,7,8,9,10,11,12,13];
+				var pntCnt = idxAry.length;
+
+				var idxAry2 = geo.extrude(idxAry, [0,0,-0.05]);
+				geo.scale(idxAry2, [1.3, 1.3, 1]);
+
+				var idxAry3 = geo.extrude(idxAry2, [0,0,-0.05]);
+				var idxAry4 = geo.extrude(idxAry, [0,0,-0.15]);
+
+				geo.triangleWallLoop(idxAry,idxAry2);
+				geo.triangleWallLoop(idxAry2,idxAry3);
+				geo.triangleWallLoop(idxAry3,idxAry4);
+
+				//Front Face Triangle Index
+				var face = [
+					0, 13, 1, 	13, 12, 1,
+					2, 1, 12, 	3, 2, 12,	3, 12, 11,  3, 11, 4,
+					4, 10, 9, 	5, 4, 9,	6, 5, 9, 	6, 9, 8,	6, 8, 7,
+				];
+
+				var offset = pntCnt * 3; //How many vertice to the final extrude to create back face.
+
+				for(var f=0; f < face.length; f+=3){
+					geo.addFace( face[f], face[f+1], face[f+2] ); //Front Face
+					geo.addFace( face[f+2]+offset, face[f+1]+offset, face[f]+offset ); //Back Face
+				}
+
+				return GeoRenderable("Hook", "LowPolyPhong_gray", geo, true);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
