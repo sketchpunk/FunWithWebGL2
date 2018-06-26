@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+
+			import Terrain		from "./fungi.mod/terrain/Terrain_Grid.js";
+			import PatchNine	from "./fungi.mod/terrain/PatchNine.js";
+			import DynamicChunk	from "./fungi.mod/terrain/DynamicChunk.js";
+
+			import Geometry, { GeoRenderable } from "./fungi/data/Geometry.js";
+			import Noise		from "./lib/Noise.js";
+
+			window.addEventListener("load",function(){
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/LowPolyPhong.txt" },
+				])	.then( async()=>{ await System.startUp(onRender); } )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+
+			window.addEventListener("keyup", function(e){
+				switch(e.keyCode){
+					case 38: gPatch9.move( 0,-1).updateAreas(); break; //up
+					case 40: gPatch9.move( 0, 1).updateAreas(); break; //down
+					case 37: gPatch9.move(-1, 0).updateAreas(); break; //Left
+					case 39: gPatch9.move( 1, 0).updateAreas(); break; //Right
+				}
+			});
+
+
+			var gPatch9;
+			function onRender(dt, ss){ System.update().renderScene(); }
+			function onInit(){
+				//........................				
+				Fungi.camera //.setPosition(0,1,5).setDegrees(-20,"x");
+				.setPosition(0.0197012759745121, 3.081115245819092, 6.377169609069824)
+				.setAxisAngle([-0.9999765149889902,0.006747655554203742,0.0015446324316105947], 0.45008350053049756);
+
+				//........................
+				//Define the chunk data
+				var unitSize 		= 2,
+					CNoise 			= new ChunkNoise( unitSize, 0.2, 8, 1 ), //Freq, CellCnt, Height
+					chunkVertLen 	= CNoise.vertArray.length,
+					chunkIdxLen 	= CNoise.indexArray.length;
+
+				//........................
+				//Setup our Chunk Manager
+				gPatch9 = new PatchNine( unitSize );
+				gPatch9.recycleHandler = function(cx, cy, chunk){
+					CNoise.changeOffset(cx, cy);
+					chunk.updateBuffers( CNoise.vertArray );
+				};
+
+				//........................
+				//Create our Chunks
+				var dChunk;
+				for(var i=0; i < 9; i++){
+					//Create Dynamic Terrain Chunk
+					dChunk = new DynamicChunk("dChunk", chunkVertLen, chunkIdxLen, "LowPolyPhong");
+					dChunk.updateBuffers(null, CNoise.indexArray);
+					dChunk.options.cullFace = false;
+
+					Fungi.scene.add(dChunk);		
+					gPatch9.addTransform(dChunk);
+				}
+
+				//........................
+				Fungi.loop.start();
+			}
+
+			//Object creates a Vertex Grid and allows to apply different noise heights
+			//This allows the use of a single set of data that can be reused to update
+			//Dynamic Terrain Chunks.
+			class ChunkNoise{
+				constructor(uSize = 2, freq = 0.2, cellCnt = 8, tHeight = 1){
+					this._freq			= freq;					// Noise Frequency
+					this._unitSize		= uSize;				// W / H of the Chunk
+					this._cellCount		= cellCnt;				// The over all grid size of a chunk,
+					this._vertCount		= this._cellCount + 1;	// How many Verts across is a chunk
+					this._terrainHeight	= tHeight;
+					
+					//Build the Verts and Triangle Strip Index for Terrain Chunk
+					var geo = Terrain.createGrid( this._unitSize, this._cellCount );
+					this.vertArray	= geo.vertexArray();
+					this.indexArray	= [];
+					Geometry.triangleStrip( this.indexArray, this._vertCount, this._vertCount );
+				}
+
+				changeOffset(freqOffsetX=0, freqOffsetY=0){
+					let offsetFreq = this._freq * this._cellCount,
+						x, y, i, ii, n;
+
+					freqOffsetX *= offsetFreq;
+					freqOffsetY *= offsetFreq;
+
+					// Convert X,Y position to float array index of vertices
+					// Then Update the Y component of the vertice with new Height
+					for(y=0; y < this._vertCount; y++){
+						i = y * this._vertCount * 3; // Y * Vertices Per Column * Vertex Component Length
+
+						for(x=0; x < this._vertCount; x++){
+							ii	= i + x * 3;
+							n	= Noise.perlin2( x * this._freq + freqOffsetX, y * this._freq + freqOffsetY );
+
+							this.vertArray[ ii+1 ] = (n * 0.5 + 0.5) * this._terrainHeight;
+						}
+					}
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

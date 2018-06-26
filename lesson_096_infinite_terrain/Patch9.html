@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import System		from "./fungi/System.js";
+
+			import Quad			from "./fungi/primitives/Quad.js";
+			import Renderable	from "./fungi/rendering/Renderable.js";
+			import { Material }	from "./fungi/Shader.js";
+
+			import Noise		from "./lib/Noise.js";
+
+
+			var p9, qVao;
+			window.addEventListener("load",function(){
+				//p9 = new PatchNine();
+				//p9.move(-1,0).debug();
+				//return;
+				System.beginWithResources([
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/BaseColor.txt" },
+				])	.then( async()=>{ await System.startUp(onRender); } )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("Catch",err) );
+			});
+
+			window.addEventListener("keyup", function(e){
+				switch(e.keyCode){
+					case 38: p9.move(0,-1).updateAreas(); break; //up
+					case 40: p9.move(0,1).updateAreas(); break; //down
+					case 37: p9.move(-1,0).updateAreas(); break; //Left
+					case 39: p9.move(1,0).updateAreas(); break; //Right
+				}
+			});
+
+			function onRender(dt, ss){ System.update().renderScene(); }
+			function onInit(){
+				//........................				
+				Fungi.camera //.setPosition(0,1,5).setDegrees(-20,"x");
+				.setPosition(0.0197012759745121, 3.081115245819092, 6.377169609069824)
+				.setAxisAngle([-0.9999765149889902,0.006747655554203742,0.0015446324316105947], 0.45008350053049756);
+
+				//........................
+				const quadSize = 1.5;
+
+				qVao	= Quad.vao("Quad", 0, 0, 0, quadSize, 0, quadSize, false);
+				p9		= new PatchNine(quadSize);
+				p9.recycleHandler = function(x,y,itm){ itm.updateColor(x,y); }
+
+				for(var i=0; i < 9; i++){
+					let s = new Section("s" + i);
+					p9.addTransform(s)
+					Fungi.scene.add(s);
+				}
+
+				//p9.debug().center(1,-2).debug().updateAreas();
+
+
+				//........................
+				Fungi.loop.start();
+			}
+
+class PatchNine{
+	constructor(uSize=1){
+		this.unitSize		= uSize;
+		this.recycleHandler	= null;		//How to handle items being recycled (X,Y,ITEM)
+
+		this.areaX		= 0;			//Current Center Location
+		this.areaY		= 0;
+		this.areas		= [				//Grid of the 9 Locations, Center being the main area
+			{x:-1, y:-1, idx:null},
+			{x: 0, y:-1, idx:null},
+			{x: 1, y:-1, idx:null},
+			
+			{x:-1, y: 0, idx:null},
+			{x: 0, y: 0, idx:null},
+			{x: 1, y: 0, idx:null},
+
+			{x:-1, y: 1, idx:null},
+			{x: 0, y: 1, idx:null},
+			{x: 1, y: 1, idx:null}
+		];
+
+		this.pool		= [				//List of items that will act as areas
+			{x:-1, y:-1, item:null},
+			{x: 0, y:-1, item:null},
+			{x: 1, y:-1, item:null},
+			
+			{x:-1, y: 0, item:null},
+			{x: 0, y: 0, item:null},
+			{x: 1, y: 0, item:null},
+
+			{x:-1, y: 1, item:null},
+			{x: 0, y: 1, item:null},
+			{x: 1, y: 1, item:null}
+		];
+	}
+
+	//=============================================================
+	//
+		addTransform(t){
+			for(var i of this.pool){
+				if(!i.item){
+					i.item = t;
+					t.setPosition( i.x * this.unitSize, 0.01, i.y * this.unitSize );
+
+					if(this.recycleHandler) this.recycleHandler(i.x, i.y, t);
+
+					break;
+				}
+			}
+			return this;
+		}
+
+	//=============================================================
+	//
+		move(x, y){ this.center( this.areaX + x, this.areaY + y ); return this; }
+		center(x,y){
+			this.areaX = x;
+			this.areaY = y;
+
+			//Create XY positions as -1, 0, 1
+			var itm, i=0;
+			for(itm of this.areas){
+				itm.x	= x + (i % 3 - 1);
+				itm.y	= y + (Math.floor(i / 3) - 1);
+				itm.idx = null;
+				i++;
+			}
+			return this;
+		}
+
+	//=============================================================
+	//
+		updateAreas(){
+			let i, a, p, 
+				stack	= [],
+				xRangeA	= this.areaX - 1,
+				xRangeB	= this.areaX + 1,
+				yRangeA	= this.areaY - 1,
+				yRangeB	= this.areaY + 1;
+
+			//......................................
+			// Find which items needs to be recycled
+			// and update the areas with which item is assigned to it.
+			for(i=0; i < this.pool.length; i++){
+				p = this.pool[ i ];
+
+				if( p.x > xRangeB || p.x < xRangeA || 
+					p.y > yRangeB || p.y < yRangeA ) stack.push( i ); //Recycle Item
+				else{
+					for(a of this.areas){
+						if(a.x == p.x && a.y == p.y){ a.idx = i; break; }
+					}
+				}
+			}
+
+			//......................................
+			//Reuse old items for new areas, update them if available.
+			while(stack.length > 0){
+				i = stack.pop();
+				p = this.pool[ i ];
+
+				for(a of this.areas){
+					if(a.idx == null){
+						a.idx	= i;
+						p.x		= a.x;
+						p.y		= a.y;
+
+
+						p.item.setPosition(p.x * this.unitSize, 0.01, p.y * this.unitSize);
+
+						if(this.recycleHandler) this.recycleHandler(p.x, p.y, p.item);
+						break;
+					}
+				}
+			}
+		}
+
+	//=============================================================
+	//
+		debug(){
+			var txt = "";
+			for(var i=0; i < 9; i++){
+				txt += this.areas[i].x + ":" + this.areas[i].y + " \t ";
+				if( ((i+1) % 3) == 0 ) txt += "\n";
+			}
+			console.log(txt);
+			return this;
+		}
+}
+
+
+			const COLOR_FREQ = 0.4;
+			class Section extends Renderable{
+				constructor(name){
+					super(name, qVao, null);
+					this.options.cullFace = false;
+
+					this.material = Fungi.getMaterial("BaseColorGreen").clone();
+					//this.updateColor();
+				}
+
+				updateColor(x=0, y=0){ //a hack, but easier to create random color for gl
+					this.material.uniforms.get("u_color").value = [ 
+						Noise.perlin2(x * COLOR_FREQ, y * COLOR_FREQ) * 0.5 + 0.5,
+						Noise.perlin2(x * COLOR_FREQ * 2, y * COLOR_FREQ * 2) * 0.5 + 0.5,
+						Noise.perlin2(x * COLOR_FREQ * 3, y * COLOR_FREQ * 3) * 0.5 + 0.5
+					]; //[ Math.random(), Math.random(), Math.random() ];
+				}
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
