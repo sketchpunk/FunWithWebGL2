@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Ecs, { Components, Entity, System, Assemblages } from "./Ecs.js";
+
+			window.addEventListener("load",function(){
+				onInit();
+			});
+
+			var gEcs;
+			async function onInit(){
+				//.....................................
+				gEcs = new Ecs(); //Create an object the manage systems and entities
+				gEcs.addSystem(new TestSystem(), 10);
+				gEcs.addSystem(new FirstSystem(), 2);
+				
+
+				//.....................................
+				gEcs.addEntity( Assemblages.new("GameObject", "e1") ); // Create entity from Assemblages
+
+				gEcs.newAssemblage( "GameObject", "e2" );
+
+				let e = gEcs.newEntity( "e3", ["Com1"] );
+				e.addByName("Com2");
+				
+
+				//.....................................
+				gEcs.updateSystems();
+			}
+
+			//.............................
+			Components(class Com1{
+			});
+
+			Components(class Com2{
+			});
+
+			Assemblages.add("GameObject", ["Com1"]);
+
+
+			class TestSystem extends System{
+				constructor(){ super(); }
+
+				update(ecs){
+					let ary = ecs.queryEntities(["Com1"]);
+						
+					console.log("--------------------------------")
+					console.log("TestSystem Update - Entities with Com1");
+					for(let i of ary){
+						console.log("Found Entity ", i.name);
+					}
+				}
+			}
+
+
+			class FirstSystem extends System{
+				constructor(){ super(); }
+
+				update(ecs){
+					let ary = ecs.queryEntities(["Com1","Com2"]);
+						
+					console.log("--------------------------------")
+					console.log("FirstSystem Update - Entities with Com1 AND Com2");
+					for(let i of ary){
+						console.log("Found Entity ", i.name);
+					}
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+
+			import FacedCube 	from "./fungi/primitives/FacedCube.js";
+			import GridFloor 	from "./fungi/primitives/GridFloor.js";
+
+			window.addEventListener("load",function(){
+				App.launch(null, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+				])	.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			function onInit(){
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+				let eGridFloor = Fungi.ecs.newAssemblage("Draw", "GridFloor");
+				eGridFloor.com.Drawable.vao 		= GridFloor.vao();
+				eGridFloor.com.Drawable.drawMode 	= Fungi.LINE;
+				eGridFloor.com.Drawable.material 	= Fungi.getMaterial("MatGridFloor");
+
+				let eFaceCube = newDraw( "faceCube", "VecWColor", FacedCube.vao() );
+				eFaceCube.com.Transform.setPosition(0,0.5,0);
+
+				Fungi.ecs.updateSystems();
+			}
+
+
+			function newDraw(name, mat = null, vao = null, drawMode=null, cullFace=null){
+				let out = Fungi.ecs.newAssemblage("Draw", name);
+
+				out.com.Drawable.vao = vao;
+
+				if(drawMode != null) out.com.Drawable.drawMode = drawMode;
+				if(cullFace != null) out.com.Drawable.options.cullFace = cullFace;
+				if(mat) out.com.Drawable.material = Fungi.getMaterial(mat);
+
+				return out;
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

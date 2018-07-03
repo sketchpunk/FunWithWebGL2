@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import { Components, Entity } from "./Ecs.js";
+
+			window.addEventListener("load",function(){
+				//Components( Com2 );
+
+				//console.log( Components(2085975797) ); 	//Create by component ID
+				//console.log( Components("Com2") ); 		//Create by Component Name	
+
+				//let e = new Entity("eTest");
+
+				//e.addCom( Components("Com2") );
+				//e.addByName("Com1");
+				//e.addByArray(["Com1", "Com2"]);
+
+				//let e = new Entity("eTest", ["Com1", "Com3"]);
+
+				//console.log( e );
+			});
+
+			class Com1{
+				constructor(){
+					this.test = "woot";
+				}
+			} Components( Com1 );
+
+
+			function Com2(){
+				this.test = "woot2";
+			}
+
+
+			Components(class Com3{
+				constructor(){
+					this.test = "woot3";
+				}
+			});
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

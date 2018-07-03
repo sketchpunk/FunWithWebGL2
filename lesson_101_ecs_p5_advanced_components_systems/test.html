@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import DVao 		from "./fungi/components/DynamicVao.js";
+
+			import { Quat }		from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+				])	.then( ()=>App.useBehaviours() )
+					.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var ePoint, eLine;
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+			function onInit(){
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+
+				//.................................................
+				var ePoint	= DVao.initPoint( Api.newDraw("dPoint", "VecWColor") );
+				DVao.rawPoint(ePoint, 1, 0.5, 0, 0)
+					.rawPoint(ePoint, -1, 0.5, 0, 3);
+				
+				var eLine = DVao.initLine( Api.newDraw("dLine", "VecWColor") );
+				DVao.rawLine(eLine, 0,0,0, 0,2,0, 8);
+				DVao.rawBox(eLine, -1,-1,-1, 1,1,1, 6);
+
+				eLine.addByName("Behaviour").update = function(){
+					this.entity.com.Transform.rotation = 
+						Quat.axisAngle( [0,1,0], Math.sin(Fungi.sinceStart * 0.3) *  Math.PI * 2 );
+				}
+
+
+				//.................................................
+				Fungi.loop.start();
+			}
+
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

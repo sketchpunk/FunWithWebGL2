@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+
+			import DVao 		from "./fungi/components/DynamicVao.js";
+			import Hier 		from "./fungi/components/Hierarchy.js";
+
+			import Maths, { Vec3, Quat } from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+				])	.then( ()=>App.useBehaviours() )
+					.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.useTransformHierarchy() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var aCube, bCube, dLine;
+			function onRender(dt, ss){ 
+				DVao.reset( dLine );
+				Fungi.ecs.updateSystems();
+			}
+			function onInit(){
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+				//.................................................
+
+				aCube = DVao.initLine( Api.newHDraw("aCube", "VecWColor") );
+				DVao.rawBox(aCube, -1,-1,-1, 1,1,1, 6);
+
+				//aCube.com.Transform.setDegrees(45);
+
+				/**/
+				var b = aCube.addByName("Behaviour");
+				b.update 		= spinAnim;
+				b.lineLength 	= 2;
+				b.lineColor 	= 6;
+				b.speed			= 0.2;
+
+
+				bCube = DVao.initLine( Api.newHDraw("bCube", "VecWColor") );
+				DVao.rawBox(bCube, -0.5,-0.5,-0.5, 0.5,0.5,0.5, 2);
+
+				//bCube.com.Transform.setDegrees(45);
+
+				/*
+				b = bCube.addByName("Behaviour");
+				b.update 		= spinAnim;
+				b.lineLength 	= 1;
+				b.lineColor 	= 2;
+				b.speed			= -0.35;
+				*/
+				
+
+				Hier.addChild(aCube, bCube);
+				//console.log(aCube.com.Hierarchy);
+				//console.log(bCube.com.Hierarchy);
+
+
+				//...............................................
+				dLine = DVao.initLine( Api.newDraw("dLine", "VecWColor") );
+
+
+				//.................................................
+				Fungi.loop.start();
+			}
+
+
+			function spinAnim(){
+				this.entity.com.Transform.rotation = 
+					Quat.axisAngle( Vec3.UP, Maths.sawtoothWave(Fungi.sinceStart * this.speed, 0, Maths.PI_2) );
+
+				var q = Hier.getWorldRotation( this.entity ),
+					f = Quat.rotateVec3(q, Vec3.FORWARD).normalize().scale(this.lineLength);
+				DVao.rawLine(dLine, 0,0,0, f[0], f[1], f[2], this.lineColor);
+			};
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
