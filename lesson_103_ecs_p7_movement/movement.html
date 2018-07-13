@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi			from "./fungi/Fungi.js";
+			import App				from "./fungi/App.js";
+			import Api				from "./fungi/Api.js";
+
+			import Cone				from "./fungi/primitives/Cone.js";
+			import Movement			from "./fungi/components/Movement.js";
+			import MovementSystem	from "./fungi/systems/MovementSystem.js";
+			import DVao 			from "./fungi/components/DynamicVao.js";
+
+			import { System }		from "./fungi/Ecs.js";
+			import { Vec3 }			from "./fungi/Maths.js";
+
+			const	boundMin = new Vec3(-4, 0.01,-4),
+					boundMax = new Vec3( 4, 8, 4);
+
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/LowPolyPhong.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+			function onInit(){
+				//........................
+				App.loadFPS();
+				Fungi.camera.com.Transform
+				//.setPosition(0,2,5).setDegrees(-20,"x");
+				.setPosition(7.314393043518066, 14.802774429321289, 18.792734146118164)
+				.setAxisAngle([-0.7828440150226748,0.5998789843447595,0.16522793652599765], 0.6766252409533854);
+
+				Fungi.ecs
+					.addSystem(new MovementSystem(), 30)
+					.addSystem(new ConstrainedSystem(), 31);
+
+				Fungi.assemblages.add("Move", ["Movement", "Drawable", "Transform"]);
+
+				//........................
+				/*
+				let eCone 	= Cone("Cone", "LowPolyPhong", 6, 0.2, 0.5, false);
+				let m		= eCone.addByName("Movement");
+				m.useGravity	= false;
+				m.useFriction	= false;
+				//m.acceleration.set(1,2,0.5);
+				//m.velocity.set(0,0.0,1.0);
+				m.velocity.set( rnd(), rnd(), rnd() );
+				eCone.com.Transform._position.set(
+					rnd( boundMin.x, boundMax.x ),
+					rnd( boundMin.y, boundMax.y ),
+					rnd( boundMin.z, boundMax.z )
+				);
+				*/
+
+
+				/* */
+				let m, e;
+				let vao = Cone.vao("Cone", 6, 0.2, 0.5, false);
+				let mat = Fungi.getMaterial("LowPolyPhong");
+				for(var i=0; i < 100; i++){
+					e = Fungi.ecs.newAssemblage("Move");
+					e.com.Drawable.vao		= vao;
+					e.com.Drawable.material	= mat;
+
+					m = e.com.Movement.set(false, false);
+					m.useGravity	= false;
+					m.useFriction	= false;
+					m.velocity.set( rnd(), rnd(), rnd() );
+
+					e.com.Transform._position.set(
+						rnd( boundMin.x, boundMax.x ),
+						rnd( boundMin.y, boundMax.y ),
+						rnd( boundMin.z, boundMax.z )
+					);
+				}
+				
+
+				//........................
+
+				let eCube = DVao.initLine( Api.newDraw("LineCube", "VecWColor") );
+				DVao.vecBox(eCube, boundMin, boundMax, 6);
+
+
+
+				//........................
+				Fungi.loop.start();
+			}
+
+			const QUERY_COM = ["Movement", "Transform"];
+			class ConstrainedSystem extends System{
+				constructor(){ super(); }
+				update(ecs){
+					let m, t, e, p, isChg,
+						ary = ecs.queryEntities( QUERY_COM );
+					for( e of ary ){
+						t = e.com.Transform;
+						p = t._position;
+						m =	e.com.Movement;
+						isChg = false;
+
+						if(p.x < boundMin.x){ p.x = boundMin.x; m.velocity.x *= -1; isChg = true; }
+						if(p.x > boundMax.x){ p.x = boundMax.x; m.velocity.x *= -1; isChg = true; }
+
+						if(p.y < boundMin.y){ p.y = boundMin.y; m.velocity.y *= -1; isChg = true; }
+						if(p.y > boundMax.y){ p.y = boundMax.y; m.velocity.y *= -1; isChg = true; }
+
+						if(p.z < boundMin.z){ p.z = boundMin.z; m.velocity.z *= -1; isChg = true; }
+						if(p.z > boundMax.z){ p.z = boundMax.z; m.velocity.z *= -1; isChg = true; }
+
+						if(isChg){
+							m.doOrientation	= true;
+							t._isModified	= true;
+						}
+					}
+				}
+			}
+
+			function rnd(a=0.5, b=2){ return (b-a) * Math.random() + a; }
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

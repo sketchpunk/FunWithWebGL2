@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import App		from "./fungi/App.js";
+			import Api		from "./fungi/Api.js";
+			import Vao 		from "./fungi/Vao.js";
+
+			import { LoadInlineShader }	from "./fungi/Shader.js";
+
+			import Ray, { BoundingBox }	from "./fungi.mod/raycast/Ray.js";
+			import DVao 				from "./fungi/components/DynamicVao.js";
+			import RightMouseSystem 	from "./fungi/systems/RightMouseSystem.js";
+
+			import VoxChunk				from "./fungi.mod/voxel/VoxelChunk.js";
+			import VoxVao				from "./fungi.mod/voxel/VoxelDynamicVao.js";
+			import DynamicVoxelSystem	from "./fungi.mod/voxel/DynamicVoxelSystem.js";
+			import VoxelRaycast			from "./fungi.mod/voxel/VoxelRaycast.js";
+
+			
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/LowPolyPhong.txt" },
+					//{ type:"shader", file:"/fungi/shaders/TextureUV.txt" },
+					{ type:"image", name:"tex01", file:"./tile_array.png", doYFlip:false, useMips:false, w:128, h:128, arrayLen:6 },
+				])	.then( ()=>App.useDynamicVao() )
+					//.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var eBoxes, eLines, ePoints, bbox, eChunk, vChunk;
+
+			var eGrid_Bottom, eGrid_Back, eGrid_Left, eGrid_Right, eGrid_Front, eGrid_Top;
+
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform
+				//.setPosition(0,0.9,2).setDegrees(-30,"x");
+					.setPosition(2.2309584617614746, 3.3312904834747314, 7.486518383026123)
+					.setAxisAngle([-0.8082710859810525,0.5768920088559977,0.11786997986988432], 0.49519657441520065);
+
+				LoadInlineShader("inline_shader");
+				LoadInlineShader("inline_shader2");
+
+				Fungi.ecs.addSystem(new RightMouseSystem( onRightMouse ), 10);
+				Fungi.ecs.addSystem(new DynamicVoxelSystem(), 21);
+
+				//........................
+				const unitSize		= 4;
+				const unitDiv		= unitSize * 2;
+				const unitOffset	= unitSize / -2.0;
+				const voxSize		= unitSize * 2;
+				
+				eGrid_Bottom	= Api.newDraw("qg_bottom", "TextureAry", quadGridVao("quadGrid_bottom", unitSize, unitDiv, 1, 1) );
+				eGrid_Bottom.com.Transform.setPosition(unitOffset,0.01,unitOffset);
+
+				eGrid_Back		= Api.newDraw("qg_back", "TextureAry", quadGridVao("quadGrid_back", unitSize, unitDiv, 2, 6) );
+				eGrid_Back.com.Transform.setDegrees(90,"x").setPosition(unitOffset,unitSize,unitOffset);
+
+				eGrid_Left		= Api.newDraw("qg_back", "TextureAry", quadGridVao("quadGrid_back", unitSize, unitDiv, 2, 6) );
+				eGrid_Left.com.Transform.setDegrees(-90,"z").setPosition(unitOffset,unitSize,unitOffset);
+
+				eGrid_Front		= Api.newDraw("qg_back", "TextureAry", quadGridVao("quadGrid_back", unitSize, unitDiv, 2, 6) );
+				eGrid_Front.com.Transform.setDegrees(-90,"x").setPosition(unitOffset,0,-unitOffset);
+
+				eGrid_Right		= Api.newDraw("qg_back", "TextureAry", quadGridVao("quadGrid_back", unitSize, unitDiv, 2, 6) );
+				eGrid_Right.com.Transform.setDegrees(90,"z").setPosition(-unitOffset,0,unitOffset);
+
+				eGrid_Bottom	= Api.newDraw("qg_bottom", "TextureAry", quadGridVao("quadGrid_bottom", unitSize, unitDiv, 0, 0) );
+				eGrid_Bottom.com.Transform.setDegrees(180,"z").setPosition(-unitOffset,unitSize,unitOffset);
+/**/
+
+				//........................
+				/**/
+				eChunk = VoxChunk.init( Api.newDraw("VoxelC","VoxTexAry"), voxSize, voxSize, voxSize, 0.5, 0 );
+						VoxVao.init( eChunk, "vchunk1" );
+				vChunk	= eChunk.com.VoxelChunk;
+				eChunk.com.Transform.setPosition(unitOffset, 0, unitOffset);
+
+				bbox	= new BoundingBox( [0,0,0], VoxChunk.getMaxBound(vChunk) ).setTarget( eChunk ).update();
+
+				//VoxChunk.set(vChunk, 0, 0, 1, 1 );
+				//VoxChunk.set(vChunk, 0, 0, 0, 1 );
+				//VoxChunk.set(vChunk, 0, 1, 0, 1 );
+				//VoxChunk.set(vChunk, 0, 2, 0, 1 );
+				//VoxChunk.set(vChunk, 0, 3, 0, 1 );
+				//VoxChunk.set(vChunk, 0, 4, 0, 1 );
+				//VoxChunk.set(vChunk, 0, 4, 1, 1 );
+				
+
+				//........................
+				eBoxes	= DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+				eLines	= DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+
+				//DVao.vecBox(eBoxes, [0,0,0], VoxChunk.getMaxBound(vChunk), 0);	//Main Box
+				DVao.vecBox(eBoxes, bbox.worldBounds[0], bbox.worldBounds[1], 0);	//Main Box
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			function quadGridVao(name, size, divide, texA, texB){
+				const vertCompLen = 4;
+				let vAry	= new Array(),			//Vertex Array
+					iAry	= new Array(),			//Index Array
+					uAry	= new Array(),			//UV Array
+					inc		= new Array(divide+1),	//Cache increment Values
+					x, y, idx, t;
+
+				//Calc the over all increment
+				for(x=0; x <= divide; x++) inc[x] = x / divide * size;
+
+				//Generate Grid
+				for(y=0; y < divide; y++){
+					for(x=0; x < divide; x++){
+						idx	= vAry.length / vertCompLen;
+						t	= Math.floor( Math.random() * (texB-texA) + texA);
+
+						vAry.push( inc[x],		0,	inc[y+1],	t);	//B Left
+						vAry.push( inc[x+1],	0,	inc[y+1],	t);	//B Right
+						vAry.push( inc[x+1],	0,	inc[y],		t);	//T Right
+						vAry.push( inc[x],		0,	inc[y],		t);	//T Left
+						iAry.push( idx, idx+1, idx+2, idx+2, idx+3, idx );	//Triangle Index for Quad
+						uAry.push( 0,0,  1,0,  1,1,  0,1);					//UV Values for Quad
+					}
+				}
+				return Vao.standardRenderable(name, 4, vAry, null, uAry, iAry);
+			}
+
+
+			function onRightMouse(mode){
+				if(mode != RightMouseSystem.MODE_DOWN) return;
+
+				//Get Ray
+				var ray = Ray.MouseSegment(Fungi.input.coord.x, Fungi.input.coord.y).prepareAABB();
+				DVao.reset(eLines);
+				DVao.vecLine(eLines, ray.origin, ray.end, 6);
+
+				//Test Ray
+				var vData = VoxelRaycast(ray, eChunk, bbox);
+				if(vData == null){ console.log("no hit"); return true; }
+
+
+				//------------------------------------
+				//Add or Remove Voxel
+				var x = vData.voxelCoord[0],	//Voxel Coord
+					y = vData.voxelCoord[1],
+					z = vData.voxelCoord[2],
+					v = 1;						//Add or Remove Voxel.
+
+				var addMode = !Fungi.input.isAlt(); //!e.altKey;	//If altKey, then we are removing voxels
+				
+				if(addMode){
+					if(vData.isHit){ //If we hit a voxel, not not the wall, get the coords of the last voxel before hit.
+						x += vData.hitNorm[0];
+						y += vData.hitNorm[1];
+						z += vData.hitNorm[2];
+					}
+				}else{//Remove Mode
+					if(!vData.isHit) return false; //Exit if not voxel was hit.
+					v = 0;
+				}
+
+				//Set voxel data and update mesh.
+				VoxChunk.set(vChunk,x,y,z,v);
+				return true;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+
+<script id="inline_shader" type="plain/text">
+	<shader>{
+		"name":"TextureAry",
+		"ubo":[ "UBOTransform", "UBOModel" ],
+		"options": { "modelMatrix":true },
+		"uniforms":[
+			{ "name":"u_tex01", "type":"sampler2DArray" },
+			{ "name":"u_texScale", "type":"vec2" }
+		]
+	}<\shader>
+		
+	<materials>[
+		{ "name":"TextureAry","useBlending":true,"useSampleAlphaCoverage":false, 
+			"uniforms":[ 
+				{ "name":"u_tex01",		"value":"tex01", "type":"tex" },
+				{ "name":"u_texScale",	"value":[1,1] }
+			]
+		}
+	]<\materials>
+		
+	<vertex>
+		#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 	projViewMatrix;
+			vec3	cameraPos;
+			float	globalTime;
+			vec2	screenSize;
+		};
+
+		uniform UBOModel{
+			mat4 	modelMatrix;
+			mat3	normalMatrix;
+		};
+
+		uniform vec2 u_texScale;
+
+		out vec2 v_uv;
+		flat out float v_idx; 
+
+		void main(void){
+			v_idx		= a_position.w;
+			v_uv		= a_uv * u_texScale;
+			gl_Position	= projViewMatrix * modelMatrix * vec4(a_position.xyz, 1.0);
+		}
+	<\vertex>
+
+	<fragment>
+		#version 300 es
+		precision mediump float;
+		precision highp sampler2DArray;
+		
+		in vec2 v_uv;
+		flat in float v_idx; 
+
+		//uniform sampler2D u_tex01;
+		uniform sampler2DArray u_tex01;
+		out vec4 oFragColor;
+
+		void main(void){ 
+			//oFragColor = texture( u_tex01, v_uv );
+			oFragColor = texture( u_tex01, vec3(v_uv, v_idx) );
+		}
+	<\fragment>
+</script>
+
+<script id="inline_shader2" type="plain/text">
+	<shader>{
+		"name":"VoxTexAry",
+		"ubo":[ "UBOTransform", "UBOModel" ],
+		"options": { "modelMatrix":true },
+		"uniforms":[
+			{ "name":"u_tex01", "type":"sampler2DArray" },
+			{ "name":"u_texScale", "type":"vec2" }
+		]
+	}<\shader>
+		
+	<materials>[
+		{ "name":"VoxTexAry","useBlending":true,"useSampleAlphaCoverage":false, 
+			"uniforms":[ 
+				{ "name":"u_tex01",		"value":"tex01", "type":"tex" },
+				{ "name":"u_texScale",	"value":[1,1] }
+			]
+		}
+	]<\materials>
+		
+	<vertex>
+		#version 300 es
+		layout(location=0) in vec4 a_position;
+		layout(location=2) in vec2 a_uv;
+
+		uniform UBOTransform{
+			mat4 	projViewMatrix;
+			vec3	cameraPos;
+			float	globalTime;
+			vec2	screenSize;
+		};
+
+		uniform UBOModel{
+			mat4 	modelMatrix;
+			mat3	normalMatrix;
+		};
+
+		uniform vec2 u_texScale;
+
+		out vec2 v_uv;
+		flat out float v_idx; 
+
+		void main(void){
+			switch(int(a_position.w)){
+				case 4: v_idx = 1.0; break;
+				case 5: v_idx = 0.; break;
+				default: v_idx = 2.0; break;
+			}
+			//v_idx		= a_position.w;
+			v_uv		= a_uv * u_texScale;
+			gl_Position	= projViewMatrix * modelMatrix * vec4(a_position.xyz, 1.0);
+		}
+	<\vertex>
+
+	<fragment>
+		#version 300 es
+		precision mediump float;
+		precision highp sampler2DArray;
+		
+		in vec2 v_uv;
+		flat in float v_idx; 
+
+		//uniform sampler2D u_tex01;
+		uniform sampler2DArray u_tex01;
+		out vec4 oFragColor;
+
+		void main(void){ 
+			//oFragColor = texture( u_tex01, v_uv );
+			oFragColor = texture( u_tex01, vec3(v_uv, v_idx) );
+		}
+	<\fragment>
+</script>
+
+
+</body>
+</html>
