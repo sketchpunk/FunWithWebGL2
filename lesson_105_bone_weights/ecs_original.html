@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import App		from "./fungi/App.js";
+			import Api		from "./fungi/Api.js";
+			import Maths 	from "./fungi/Maths.js";
+			import Vao 		from "./fungi/Vao.js";
+			import {Easing} from "./lib/Tween.js";
+
+			import Geometry	from "./fungi/data/Geometry.js";
+			import DVao 	from "./fungi/components/DynamicVao.js";
+
+			import Armature			from "./fungi.mod/armature/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature/ArmaturePreview.js";
+			import ArmatureSystem	from "./fungi.mod/armature/ArmatureSystem.js";
+
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreview.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmatureSkin.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var ePoints, eArm;
+			function onRender(dt, ss){
+				//animateBones(ss);
+				Fungi.ecs.updateSystems();
+			}
+			function onInit(){
+				//........................				
+				Fungi.ecs.addSystem(new ArmatureSystem, 100);
+				Fungi.camera.com.Transform
+					.setPosition(0,2,5).setDegrees(-20,"x");
+
+
+				//ePoints	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				//DVao.rawPoint(ePoints, 0, 0.5, 0, 4);
+
+				/**/
+				//........................
+				eArm 		= Armature.init( Api.newDraw("Bones", "ArmaturePreview") );
+				let cArm 	= eArm.com.Armature;
+				let j0 		= Armature.addJoint(cArm, "root0", 0.6);
+				let j00		= Armature.addJoint(cArm, "bone00", 0.6, j0);
+				let j000	= Armature.addJoint(cArm, "bone000", 0.6, j00);
+
+				Armature.sortJoints( eArm ).bindPose( eArm ); //Finalize Armature
+
+				//Setup Preview
+				ArmaturePreview.init( eArm );
+				ArmaturePreview.useStick( eArm, "armPreview",);
+				let totalJoints = eArm.com.Armature.joints.length;
+
+				//j0.rotation.rz(20 * Math.PI / 180);		j0.isModified = true;
+				//j00.rotation.rz(20 * Math.PI / 180);	j00.isModified = true;
+				//j000.rotation.rz(20 * Math.PI / 180);	j000.isModified = true;
+
+
+				/**/
+				//........................
+				let geo = new Geometry();
+				buildShape(geo);
+				hardcodeWeights(geo, totalJoints);
+
+				let eShape = geo.applyDraw( Api.newDraw("skin", "ArmatureSkin"), "skinMesh", false, 4, Fungi.LINE_STRIP); //LINE_STRIP
+				eShape.addCom( cArm ); //Kind of a Hack
+
+				eShape.com.Drawable.draw = function( rend, entity, cDraw ){
+					rend.loadMaterial( cDraw.material );
+
+					rend.shader.setUniform("u_joints", entity.com.Armature.flatOffset);
+					rend.shader.setUniform("u_jointCount", 2);
+
+					rend.loadEntity( entity );
+					rend.draw( cDraw );
+				}
+
+				//........................
+				Fungi.loop.start();
+				//Fungi.ecs.updateSystems();
+			}
+
+			function buildShape(geo){
+				let idxAry = [0,1,2,3];
+
+				geo.addVerts( 
+					-0.2, 0,  0.2,  0.2, 0,  0.2,
+					 0.2, 0, -0.2,  -0.2, 0, -0.2
+				);
+
+				for(var i=1; i < 6; i++) geo.extrude(idxAry, [ 0, 0.3 * i, 0 ]);
+			}
+
+			function hardcodeWeights(geo, totalJoints){
+				var b0=0, b1=0, w0=0, w1=0;
+				for(var i=0; i < geo.verts.length; i+=4){
+					b0 = Math.floor(i / 4 / 2);
+					b1 = Math.floor( ((i / 4)+1) / 2);
+					w0 = ( i/4 % 2 == 0 )? 1 : 0.5;
+					w1 = ( i/4 % 2 == 0 )? 0 : 0.5;
+
+					//If the next joint doesn't exist, then make full control of current joint
+					if(b1 >= totalJoints){
+						w0 = 1;
+						b1 = b0;
+						w1 = 0;
+					}
+
+					geo.verts[i+0].initJoints(b0,b1,0,0).initJointWeights(w0,w1,0,0);
+					geo.verts[i+1].initJoints(b0,b1,0,0).initJointWeights(w0,w1,0,0);
+					geo.verts[i+2].initJoints(b0,b1,0,0).initJointWeights(w0,w1,0,0);
+					geo.verts[i+3].initJoints(b0,b1,0,0).initJointWeights(w0,w1,0,0);
+					//console.log(i, b0, w0, " -- ", b1, w1);
+				}
+			}
+
+			function animateBones(ss){
+				var j = eArm.com.Armature.joints;
+				//var angle = Math.PI * 0.25 * Maths.triangleWave(ss * 0.3, -1, 1);
+				//var angle = Math.PI * 0.25 * Math.sin(ss, -1, 1);
+				//var angle = Math.PI * 0.25 * Easing.bounce_InOut( Maths.triangleWave(ss * 0.3) );
+				//var angle = Math.PI * 0.25 * Easing.elastic_InOut( Maths.triangleWave(ss * 0.3) );
+				var angle = Math.PI * 0.25 * Easing.back_InOut( Maths.triangleWave(ss * 0.3) );
+				//var angle = Math.PI * 0.25 * Easing.bouncy( Maths.triangleWave(ss * 0.1) );
+
+				j[0].rotation.setAxisAngle( [0,0,1], angle );
+				j[0].isModified = true;
+
+				j[1].rotation.setAxisAngle( [0,0,1], angle );
+				j[1].isModified = true;
+
+				j[2].rotation.setAxisAngle( [0,0,1], angle );
+				j[2].isModified = true;
+
+				eArm.com.Armature.isModified = true;
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

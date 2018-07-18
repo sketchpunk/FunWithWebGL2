@@ -1,4 +1,4 @@
-# Fun with WebGL 2.0 - 104 - Texture Arrays
+# Fun with WebGL 2.0 - 105 - Bone / Skin Weights
 **Description**:
 
 

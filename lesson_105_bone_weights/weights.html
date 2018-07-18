@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import App		from "./fungi/App.js";
+			import Api		from "./fungi/Api.js";
+			import Geometry	from "./fungi/data/Geometry.js";
+
+			import Armature			from "./fungi.mod/armature/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature/ArmaturePreview.js";
+			import ArmatureSystem	from "./fungi.mod/armature/ArmatureSystem.js";
+
+			import DVao 	from "./fungi/components/DynamicVao.js";
+			import DualQuat from "./fungi/maths/DualQuat.js";
+			import Maths, { Vec3, Quat } 	from "./fungi/Maths.js";
+
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreview.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var ePoints, eArm, eLines;
+
+			function onRender(dt, ss){
+				Fungi.ecs.updateSystems();
+			}
+			function onInit(){
+				//........................				
+				Fungi.ecs.addSystem(new ArmatureSystem, 100);
+				Fungi.camera.com.Transform
+					.setPosition(0,2,5).setDegrees(-20,"x");
+
+				//........................
+				eLines	= DVao.initLine( Api.newDraw("ePoint", "VecWColor") );
+				ePoints	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				//test1();
+
+				/**/
+				//........................
+				eArm 		= Armature.init( Api.newDraw("Bones", "ArmaturePreview") );
+				let cArm 	= eArm.com.Armature;
+				let j0 		= Armature.addJoint(cArm, "root0", 0.6);
+				let j00		= Armature.addJoint(cArm, "bone00", 0.6, j0);
+				let j000	= Armature.addJoint(cArm, "bone000", 0.6, j00);
+
+				Armature.sortJoints( eArm ).bindPose( eArm ); //Finalize Armature
+
+				//Setup Preview
+				ArmaturePreview.init( eArm );
+				ArmaturePreview.useStick( eArm, "armPreview",);
+
+				//j0.rotation.rz(20 * Math.PI / 180);		j0.isModified = true;
+				//j00.rotation.rz(20 * Math.PI / 180);	j00.isModified = true;
+				//j000.rotation.rz(20 * Math.PI / 180);	j000.isModified = true;
+				//Armature.updatePose(eArm);
+				//Armature.flatOffset(eArm, cArm.flatOffset )
+				//ArmaturePreview.flattenData( eArm ).updateBuffer( eArm );
+				
+				//........................
+				let geo = new Geometry();
+				geo.addVert(-1, 1.7, 0);
+				geo.addVert(0.5, 1.0, 0);
+				geo.addVert(0.3, 0.8, 0);
+				geo.addVert(-0.8, 0.2, 0);
+				geo.addVert(1.01, 0.35, 0);
+				
+				geoWeights(geo, cArm, 1);
+
+				//........................
+				//Fungi.loop.start();
+				Fungi.ecs.updateSystems();
+			}
+
+
+			//Two Weight Conditions.
+			// 1 - If there is a next bone, Share weight with it.
+			// 2 - if there is no next bone, then weight is 1.
+			function geoWeights(geo, e, range = 1){
+				let arm		= (e instanceof Armature)? e : e.com.Armature,
+					bones	= getBoneInfo(arm),
+					bCnt	= bones.length,
+					maxLen	= range * range; //Square it to get lengthSqr for comparison
+
+				let i, 						// Index 
+					b,						// Bone Ref
+					t,						// Projection Value
+					lenVec	= new Vec3(),	// Length Vector
+					lenSqr,					// Length Square
+					nextIdx,				// Index of Next Bone
+					nextWeight,				// Weight for next Bone
+					thisWeight,				// Weight for this bone being checked
+					tPos	= new Vec3(),	// Position of Projection
+					bvLen	= new Vec3();	// Vector Length of Bone Origin to Vertex
+
+				for(let v of geo.verts){
+					DVao.vecPoint(ePoints, v, 0);
+
+					for(i=0; i < bCnt; i++){
+						b = bones[i];
+
+						//....................................
+						Vec3.sub(v, b.vStart, bvLen);						// get b for projection
+						t = Vec3.dot( b.vLength, bvLen ) * b.fLenSqrInv;	// proj = dot(a,b) / dot(a,a);
+
+						// if out of bounds, then not parallel to bone.
+						// If by chance its 1 BUT there is a next bone, exit too.
+						if(	t < 0 || 
+							t > 1 || 
+							(t == 1 && b.nextIdx != -1)
+						) continue; 
+
+						
+						//....................................
+						//Check of the vertex is within range of the bone
+						b.vLength.scale(t, tPos).add( b.vStart );			// BoneVecLen * t + BoneOriginPos
+						lenSqr = Vec3.sub( v, tPos, lenVec).lengthSqr();	// dot(VertexPos - BoneTPos)
+						//console.log(lenSqr, maxLen);
+						if(lenSqr > maxLen) continue;
+
+						DVao.vecPoint(ePoints, tPos, 1);
+						DVao.vecLine(eLines, v, tPos, 4);
+
+						//....................................
+						//Calc Weight
+						if(b.nextIdx == -1){	// No next bone to share weight
+							nextIdx		= 0;
+							nextWeight	= 0;
+							thisWeight	= 1;
+						}else{					// Share Weight with next Bone
+							nextIdx		= b.nextIdx;
+							nextWeight	= t;
+							thisWeight	= 1 - t;
+						}
+
+						v	.initJoints( i, nextIdx, 0, 0 )
+							.initJointWeights( thisWeight, nextWeight, 0, 0 );
+
+						console.log(i, thisWeight, nextIdx, nextWeight);
+					}
+				}
+			}
+
+
+			////////////////////////////////////////////////////////////////
+			// 
+			////////////////////////////////////////////////////////////////
+			function getBoneInfo(e){
+				let arm	= (e instanceof Armature)? e : e.com.Armature,
+					v	= new Vec3(),
+					b0	= new Vec3(),
+					b1	= new Vec3(),
+					lenSqr;
+
+				//Precalculate all the bones from Joint Data
+				let bones = new Array();
+				for(let j of arm.orderedJoints){
+					//..................................
+					//Calc the 2 points of a bone.
+					DualQuat.getTranslation(b0, j.dqWorld);	// Get World Space Position of Joint from DQ
+					v.copy(Vec3.UP).scale(j.length);		// Vector Length of the Bone
+					Quat.rotateVec3(j.dqWorld, v, v)		// Rotate the direction based on World Rotation from DQ	
+					b0.add(v, b1);							// Add Vector Length to Joint Position
+
+					//DVao.vecPoint(ePoints, b0, 0);
+					//DVao.vecPoint(ePoints, b1, 1);
+					//break;
+					lenSqr = v.lengthSqr();
+					bones.push({
+						joint		: j,
+						vStart		: new Vec3(b0),
+						vEnd		: new Vec3(b1),
+						vLength		: new Vec3(v),
+						fLenSqr		: lenSqr,
+						fLenSqrInv	: 1 / lenSqr,
+						nextIdx		: findSingleNextJoint( arm.orderedJoints, j)
+					});
+				}
+				return bones;
+			}
+
+			function findSingleNextJoint(ary, j){
+				let i, itm = -1;
+				for(i=0; i < ary.length; i++){
+					if(ary[i].parent === j){
+						if(itm != -1) return -1; //If another child joint found, exit with -1
+						itm = i;
+					}
+				}
+				return itm;
+			}
+
+
+			////////////////////////////////////////////////////////////////
+			// 
+			////////////////////////////////////////////////////////////////
+			function test1(){
+				let line = { start: new Vec3(0,0,0), end: new Vec3(0,1,0) };
+				let pnt = new Vec3(-1, 0.2, 0);
+
+				DVao.vecPoint(ePoints, pnt, 4);
+				DVao.vecLine(eLines, line.start, line.end, 6);
+
+				project_pnt_on_line(line.start, line.end, pnt);
+			}
+
+			function project_pnt_on_line(a, b, p){
+				//let ab = Vec3.sub(b, a);
+				let ab = b.sub(a, new Vec3() );
+				let ap = p.sub(a, new Vec3() );
+
+				let dotAB = ab.lengthSqr();
+				let dotAB_AP = Vec3.dot(ab,ap);
+
+				let t = dotAB_AP / dotAB; // dot(A, B) / dot(A, A) : Projection
+
+				let pos = new Vec3();
+				ab.scale(t, pos).add(a);
+
+				console.log(t, pos);
+				DVao.vecPoint(ePoints, pos, 4);
+				DVao.vecLine(eLines, p, pos, 4);
+
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
