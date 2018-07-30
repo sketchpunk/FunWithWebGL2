@@ -1,0 +1,56 @@
+<shader>{
+	"name":"TextureUV",
+	"ubo":[ "UBOTransform", "UBOModel" ],
+	"options": { "modelMatrix":true },
+	"uniforms":[
+		{ "name":"u_tex01", "type":"sampler2D" },
+		{ "name":"u_texScale", "type":"vec2" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"TextureUV","useBlending":true,"useSampleAlphaCoverage":false, 
+		"uniforms":[ 
+			{ "name":"u_tex01",		"value":"tex01", "type":"tex" },
+			{ "name":"u_texScale",	"value":[1,1] }
+		]
+	}
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+	layout(location=2) in vec2 a_uv;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform vec2 u_texScale;
+
+	out vec2 v_uv;
+
+	void main(void){
+		v_uv		= a_uv * u_texScale;
+		gl_Position	= projViewMatrix * modelMatrix * vec4(a_position, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+	
+	in vec2 v_uv;
+	uniform sampler2D u_tex01;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = texture( u_tex01, v_uv ); }
+<\fragment>

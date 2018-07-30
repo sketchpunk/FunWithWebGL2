@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import App		from "./fungi/App.js";
+			import Api		from "./fungi/Api.js";
+			
+			import Vao 		from "./fungi/Vao.js";
+
+			import Geometry	from "./fungi/data/Geometry.js";
+			import DVao 	from "./fungi/components/DynamicVao.js";
+
+			import Armature			from "./fungi.mod/armature/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature/ArmaturePreview.js";
+			import ArmatureSystem	from "./fungi.mod/armature/ArmatureSystem.js";
+			import Weights			from "./fungi.mod/armature/Weights.js";
+
+			import Maths, { Vec3,Quat }	from "./fungi/Maths.js";
+			import DualQuat from "./fungi/maths/DualQuat.js";
+
+			import {Components, System} from "./fungi/Ecs.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreview.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreviewPhong.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.useMovement() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>{
+						FollowCamSystem.init();
+						ArmatureSystem.init();
+						onInit();
+					}).catch( err=>console.log("err", err) );
+			});
+
+			var ePoints, eArm, cRig, proAnim;
+			function onRender(dt, ss){
+				//walkCycle_Proto();
+				proAnim.update();
+				//test();
+				eArm.com.FootMovement.update();
+
+				Fungi.ecs.updateSystems();
+			}
+
+			function onInit(){
+				//........................
+				Fungi.camera.com.Transform
+					.setPosition(2.265470504760742, 1.3729207515716553, 0.6337335705757141)
+					.setAxisAngle([-0.20595040151966496,0.9666954756840095,0.1519354451390953], 1.3037212835020944);
+					//.setPosition(4.084217071533203, 2.8654966354370117, 2.2222039699554443)
+					//.setAxisAngle([-0.35292381447679255,0.9116472414942444,0.21058002892945554], 1.1590637728352209);
+					//.setPosition(0,2,5).setDegrees(-20,"x");
+				/**/
+				ePoints	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				//DVao.rawPoint(ePoints, 0, 1, 0, 0);
+				
+
+				//........................
+				eArm = Armature.init( Api.newDraw("Bones", "ArmaturePreviewPhong") ); //ArmaturePreviewPhong
+				eArm.addByName("Movement");
+				eArm.addByName("FootMovement");
+				Armature.finalize( HumanRig.init(eArm, true) ); //Bind Pose, prep for use
+				cRig = eArm.com.HumanRig;
+
+
+				//Setup Preview
+				ArmaturePreview.init( eArm );
+				ArmaturePreview.useDiamond(eArm, "armPreview");
+				//ArmaturePreview.useDiamondWire(eArm, "armPreview");
+
+
+				let rotPerSec = Maths.PI_H + 3.5; //Speed
+				proAnim = new ProceduralAnimator();
+				//proAnim.addRot(cRig.legLeft[0], rotPerSec, ["x",0], ["x",45], 0, "sin");
+
+				/*Walk*/
+				rotPerSec = 1.57 + 1.8; //Speed
+				proAnim.load(eArm, [ 
+					{ type:0,	jname:"thigh.L",	speed:rotPerSec,	start:["x",0],	end:["x",25],	cycleOffset:0,			curve:"sin"		},
+					{ type:0,	jname:"shin.L",		speed:rotPerSec,	start:["x",0],	end:["x",-55],	cycleOffset:0.9,		curve:"sin01"	},
+					{ type:0,	jname:"thigh.R",	speed:rotPerSec,	start:["x",0],	end:["x",25],	cycleOffset:3.14,		curve:"sin"		},
+					{ type:0,	jname:"shin.R",		speed:rotPerSec,	start:["x",0],	end:["x",-50],	cycleOffset:3.14+0.9,	curve:"sin01"	},
+				]);
+				
+
+				/*
+				let pos = new Vec3();
+				for(let i of cRig.legLeft){
+					DualQuat.transformVec3(i.parent.dqWorld, i.bindPosition, pos);
+					DVao.vecPoint(ePoints, pos, 0);
+				}
+				console.log(pos.nearZero());
+				*/
+
+				/*Jog
+				rotPerSec = Maths.PI_H + 3.5;
+				proAnim.load(eArm, [ 
+					{ type:0,	jname:"thigh.L",	speed:rotPerSec,	start:["x",0],	end:["x",45],	cycleOffset:0,			curve:"sin"		},
+					{ type:0,	jname:"shin.L",		speed:rotPerSec,	start:["x",0],	end:["x",-90],	cycleOffset:1.2,		curve:"sin01"	},
+					{ type:0,	jname:"thigh.R",	speed:rotPerSec,	start:["x",0],	end:["x",45],	cycleOffset:3.14,		curve:"sin"		},
+					{ type:0,	jname:"shin.R",		speed:rotPerSec,	start:["x",0],	end:["x",-90],	cycleOffset:3.14+1.2,	curve:"sin01"	},
+
+					{ type:0,	jname:"upper_arm.L",speed:rotPerSec,	start:["x",-45],end:["x",45],	cycleOffset:3.14	},
+					{ type:0,	jname:"forearm.L",	speed:rotPerSec,	start:["x",0], 	end:["x",90],	cycleOffset:3.14	},
+					{ type:0,	jname:"upper_arm.R",speed:rotPerSec,	start:["x",-45],end:["x",45],	cycleOffset:0	},
+					{ type:0,	jname:"forearm.R",	speed:rotPerSec,	start:["x",0], 	end:["x",90],	cycleOffset:0	},
+
+					{ jname:"chest",	speed:rotPerSec, start:["y",-15], 	end:["y",15]	},
+					{ jname:"neck",		speed:rotPerSec, start:["x",0], 	end:["x",20],	cycleOffset:3.14 },
+				]);
+				*/
+
+				/*Ninja Walk
+				var q = new Quat();
+				cRig.root.setRot( q.setAxisAngle([1,0,0], Maths.toRad(40)) );
+				cRig.spine[1].mulRot( q.setAxisAngle([1,0,0], Maths.toRad(20)) );
+				cRig.spine[2].mulRot( q.setAxisAngle([1,0,0], Maths.toRad(-30)) );
+				cRig.spine[3].mulRot( q.setAxisAngle([1,0,0], Maths.toRad(-20)) );
+
+				rotPerSec = 2.2;
+				let rotPerSec2 = rotPerSec * 2;
+				proAnim.load(eArm, [ 
+					{ type:0,	jname:"thigh.L",	speed:rotPerSec,	start:["x",130],	end:["x",-20]	},
+					{ type:0,	jname:"shin.L",		speed:rotPerSec,	start:["x",-140],	end:["x",0],	cycleOffset:1.2	},
+					{ type:0,	jname:"thigh.R",	speed:rotPerSec,	start:["x",130],	end:["x",-20],	cycleOffset:3.14 },
+					{ type:0,	jname:"shin.R",		speed:rotPerSec,	start:["x",-140],	end:["x",0],	cycleOffset:3.14+1.2	},
+
+					{ type:0,	jname:"upper_arm.L",speed:rotPerSec2,	start:["x",-15],	end:["x",-10],	cycleOffset:0.6, 	curve:"sin"},
+					{ type:0,	jname:"upper_arm.R",speed:rotPerSec2,	start:["x",-15],	end:["x",-10],	cycleOffset:0.6, 	curve:"sin"},
+
+					{ type:0,	jname:"spine",		speed:rotPerSec2,	start:["x",0],		end:["x",-5],	cycleOffset:0.6},
+
+					{ type:1,	jname:"hip",		speed:rotPerSec2,	start:new Vec3(0,-0.1,0),	end:new Vec3(0,0.1,0),	cycleOffset:0},
+				]);
+				
+				proAnim.speed = 1;
+				*/
+				//proAnim.speed = 2.5;
+				//........................
+				Fungi.loop.start();
+				//Fungi.ecs.updateSystems();
+			}
+
+			var prevPos1 = new Vec3();
+			var prevPos2 = new Vec3();
+			function test(){
+				var pos		= new Vec3();
+				var foot	= cRig.legLeft[2];
+				var perSecondMultiplier = 1 / Fungi.deltaTime;
+
+				//this.useFriction
+
+				DualQuat.transformVec3(foot.parent.dqWorld, foot.bindPosition, pos);
+				if(pos.y < 0.015){
+					var vel = Vec3.sub(pos,prevPos1);
+
+					//eArm.com.Transform._position.z += -vel.z;
+					//eArm.com.Transform._isModified = true;
+
+					eArm.com.Movement.velocity.z = -vel.z * perSecondMultiplier;
+					//console.log("Left", -vel.z);
+				}
+				prevPos1.copy(pos);
+
+				foot	= cRig.legRight[2];
+				DualQuat.transformVec3(foot.parent.dqWorld, foot.bindPosition, pos);
+				if(pos.y < 0.015){
+					var vel = Vec3.sub(pos,prevPos2);
+
+					//eArm.com.Transform._position.z += -vel.z;
+					//eArm.com.Transform._isModified = true;
+
+					eArm.com.Movement.velocity.z = -vel.z * perSecondMultiplier;
+
+					//console.log("Right", -vel.z);
+				}
+				prevPos2.copy(pos);
+			}
+
+
+			function walkCycle_Proto(){
+				let qt = new Quat;
+				let itm = null;
+				let speed = 2.1;
+
+				let a = Math.sin(Fungi.sinceStart * speed) ;
+				qt.setAxisAngle(Vec3.LEFT, a* Maths.PI_Q);
+				itm = cRig.legLeft[0];
+				Quat.mul(itm.rotation, itm.bindRotation, qt);
+				itm.isModified = true;
+
+				a = Math.sin(Fungi.sinceStart * speed - 1.2);
+				qt.setAxisAngle(Vec3.LEFT, -Maths.PI_Q + a * Maths.PI_Q);
+				itm = cRig.legLeft[1];
+				Quat.mul(itm.rotation, itm.bindRotation, qt);
+				itm.isModified = true;
+
+
+				a = Math.sin(Fungi.sinceStart * speed + Math.PI);
+				qt.setAxisAngle(Vec3.LEFT, a* Maths.PI_Q);
+				itm = cRig.legRight[0];
+				Quat.mul(itm.rotation, itm.bindRotation, qt);
+				itm.isModified = true;
+
+				a = Math.sin(Fungi.sinceStart * speed + Math.PI - 1.2);
+				qt.setAxisAngle(Vec3.LEFT, -Maths.PI_Q + a * Maths.PI_Q);
+				itm = cRig.legRight[1];
+				Quat.mul(itm.rotation, itm.bindRotation, qt);
+				itm.isModified = true;
+
+				//console.log(itm);
+				eArm.com.Armature.isModified = true;
+			}
+
+			//Based on Rigify Bone names and Order.
+			class HumanRig{
+				constructor(){
+					this.root		= null;
+					this.legLeft	= new Array(3);
+					this.legRight	= new Array(3);
+					this.spine		= new Array(4);
+					this.armLeft	= new Array(3);
+					this.armRight	= new Array(3);
+				}
+				static init(e, justLegs = false){
+					const qZ_180N	= new Quat().setAxisAngle([0,0,1],-180 * Maths.DEG2RAD);
+					const qX_90		= new Quat().setAxisAngle([1,0,0], 90 * Maths.DEG2RAD);
+
+					let arm = e.com.Armature,
+						rig = (!e.com.HumanRig)? e.addByName("HumanRig") :  e.com.HumanRig;
+
+					//..........................................
+					//ROOT
+					rig.root = Armature.addJoint(arm, "hip", 0.2);
+					rig.root.setPos(0,1.1,0);
+
+					//..........................................
+					//LEGS
+					rig.legLeft[0] = Armature.addJoint(arm, "thigh.L", 0.6, rig.root);
+					rig.legLeft[1] = Armature.addJoint(arm, "shin.L", 0.6, rig.legLeft[0]);
+					rig.legLeft[2] = Armature.addJoint(arm, "foot.L", 0.2, rig.legLeft[1]);
+					rig.legLeft[0].setPos(0.2, 0.1, 0).rotation.copy(qZ_180N);
+					rig.legLeft[2].rotation.copy(qX_90);
+
+					rig.legRight[0] = Armature.addJoint(arm, "thigh.R", 0.6, rig.root);
+					rig.legRight[1] = Armature.addJoint(arm, "shin.R", 0.6, rig.legRight[0]);
+					rig.legRight[2] = Armature.addJoint(arm, "foot.R", 0.2, rig.legRight[1]);
+					rig.legRight[0].setPos(-0.2, 0.1, 0).rotation.copy(qZ_180N);
+					rig.legRight[2].rotation.copy(qX_90);
+
+					if(justLegs) return e;
+
+					//..........................................
+					//SPINE
+					rig.spine[0] = Armature.addJoint(arm, "spine", 0.4, rig.root);
+					rig.spine[1] = Armature.addJoint(arm, "chest", 0.4, rig.spine[0]);
+					rig.spine[2] = Armature.addJoint(arm, "neck", 0.1, rig.spine[1]);
+					rig.spine[3] = Armature.addJoint(arm, "head", 0.4, rig.spine[2]);
+
+					//..........................................
+					//ARMS
+					rig.armLeft[0] = Armature.addJoint(arm, "upper_arm.L", 0.5, rig.spine[1]);
+					rig.armLeft[1] = Armature.addJoint(arm, "forearm.L", 0.5, rig.armLeft[0]);
+					rig.armLeft[2] = Armature.addJoint(arm, "hand.L", 0.2, rig.armLeft[1]);
+					rig.armLeft[0].setPos(0.4, rig.spine[1].length, 0).rotation.copy(qZ_180N);
+
+					rig.armRight[0] = Armature.addJoint(arm, "upper_arm.R", 0.5, rig.spine[1]);
+					rig.armRight[1] = Armature.addJoint(arm, "forearm.R", 0.5, rig.armRight[0]);
+					rig.armRight[2] = Armature.addJoint(arm, "hand.R", 0.2, rig.armRight[1]);
+					rig.armRight[0].setPos(-0.4, rig.spine[1].length, 0).rotation.copy(qZ_180N);
+
+					return e;
+				}
+			} Components( HumanRig );
+
+
+			class FootMovement{
+				constructor(){
+					this.footPosL		= new Vec3();
+					this.footPosR		= new Vec3();
+					this.minDistance	= 0.01;
+				}
+
+				update(){
+					let m		= this.entity.com.Movement,
+						rig		= this.entity.com.HumanRig,
+						posL	= new Vec3(),
+						posR	= new Vec3(),
+						fwdVelL = 0,
+						fwdVelR = 0,
+						fv = 0,
+						foot;
+
+					DualQuat.transformVec3(rig.legLeft[2].parent.dqWorld, rig.legLeft[2].bindPosition, posL);
+					DualQuat.transformVec3(rig.legRight[2].parent.dqWorld, rig.legRight[2].bindPosition, posR);
+
+					if(posL.y <= this.minDistance) fwdVelL = -Vec3.sub(posL, this.footPosL).z;
+					if(posR.y <= this.minDistance) fwdVelR = -Vec3.sub(posR, this.footPosR).z;
+
+					//console.log(fwdVelR, fwdVelL)
+
+					fv = fwdVelR+fwdVelL; //Math.max(fwdVelR, fwdVelL);
+					if(fv != 0){
+						eArm.com.Movement.velocity.z = fv * (1 / Fungi.deltaTime);
+						m.useFriction = false;
+					}else m.useFriction = true;
+			
+					this.footPosL.copy( posL );
+					this.footPosR.copy( posR );
+				}
+			} Components(FootMovement);
+
+			class ProceduralAnimator{
+				constructor(){
+					this.items = new Array();
+					this.speed = 1;
+				}
+
+				///////////////////////////////////////////////////////////////////
+				// 
+				///////////////////////////////////////////////////////////////////
+				load(e, ary){
+					let j, i, arm = (e instanceof Armature)? e : e.com.Armature;
+					for(i of ary){
+						if( (j = Armature.getJoint(arm, i.jname)) == null ){
+							console.log("Load ProceduralAnimator : Joint Not Found : ", i.jname);
+							continue;
+						}
+
+						if(i.type == 1)	this.addPos(j, i.speed, i.start, i.end, i.cycleOffset, i.curve);
+						else			this.addRot(j, i.speed, i.start, i.end, i.cycleOffset, i.curve);
+					}
+					return this;
+				}
+
+				update(){
+					let i, t,
+						v = new Vec3(),
+						q = new Quat();
+
+					for(i of this.items){
+						i.cycle	+= this.speed * i.speed * Fungi.deltaTime;
+						t		=  ProceduralAnimator.curves[ i.curve ]( i.cycle + i.cycleOffset );
+
+						if(i.type == 0){
+							//Quat.slerp(i.startRot, i.endRot, t, q);
+							Quat.lerp(i.startValue, i.endValue, t, q);
+							Quat.mul(i.joint.rotation, i.joint.bindRotation, q); //static mul(out,a,b){
+							//Quat.mul(i.joint.rotation, q, i.joint.bindRotation); //Not sure if I have the order of quaternions correct, if there is a problem try this line.
+						}else{
+							Vec3.lerp(i.startValue, i.endValue, t, v);
+							Vec3.add(i.joint.bindPosition, v, i.joint.position);
+						}
+
+						i.joint.isModified = true;
+					}
+					eArm.com.Armature.isModified = true;
+					return this;
+				}
+
+				///////////////////////////////////////////////////////////////////
+				// 
+				///////////////////////////////////////////////////////////////////
+				addRot(joint, speed, vStart, vEnd, cycleOffset=0, curve="sin01"){
+					let a, q0 = new Quat(), q1 = new Quat();
+
+					//...............................................
+					//Allow to pass data as ["x",45] or [1,0,0,45]
+					if(vStart.length == 2){
+						a = vStart[1] * Maths.DEG2RAD;
+						switch(vStart[0]){
+							case "x": q0.setAxisAngle(Vec3.LEFT,	a); break;
+							case "y": q0.setAxisAngle(Vec3.UP,		a); break;
+							case "z": q0.setAxisAngle(Vec3.FORWARD,	a); break;
+						}
+					} else q0.setAxisAngle(vStart, vStart[3] * Maths.DEG2RAD);
+
+					if(vEnd.length == 2){
+						a = vEnd[1] * Maths.DEG2RAD;
+						switch(vEnd[0]){
+							case "x": q1.setAxisAngle(Vec3.LEFT,	a); break;
+							case "y": q1.setAxisAngle(Vec3.UP,		a); break;
+							case "z": q1.setAxisAngle(Vec3.FORWARD,	a); break;
+						}
+					} else q1.setAxisAngle(vEnd, vEnd[3] * Maths.DEG2RAD);
+
+					//...............................................
+					this.items.push({ speed, joint, curve, type:0, startValue:q0, endValue:q1, cycleOffset, cycle:0 });
+					return this
+				}
+
+				addPos(joint, speed, vStart, vEnd, cycleOffset=0, curve="sin01"){
+					this.items.push({ speed, joint, curve, type:1,
+						startValue	: new Vec3(vStart),
+						endValue	: new Vec3(vEnd), 
+						cycleOffset, cycle:0
+					});
+					return this
+				}
+			}
+			ProceduralAnimator.curves = { 
+				sin		: Math.sin,
+				sin01	: (t)=>{ return Math.sin(t) * 0.5 + 0.5; },
+				sinAbs	: (t)=>{ return Math.abs( Math.sin(t) ); }
+			};
+
+			class FollowCamSystem extends System{ //99
+				constructor(){ super(); }
+				update(ecs){
+					let cp = Fungi.camera.com.Transform._position;
+					let ep = eArm.com.Transform._position;
+					cp[0] = ep[0] + 2.265470504760742;
+					cp[1] = ep[1] + 1.3729207515716553;
+					cp[2] = ep[2] + 0.6337335705757141;
+					Fungi.camera.com.Transform._isModified = true;
+				}
+
+				static init(){ Fungi.ecs.addSystem(new FollowCamSystem, 99); }
+			}
+
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

@@ -1,10 +1,9 @@
-# Fun with WebGL 2.0 - 106 - Procedural Animation
+# Fun with WebGL 2.0 - 107 - Rotation Movement
 **Description**:
 
 
 ### Links of Interest
-
-https://www.youtube.com/watch?v=4oCo1j8xGew
+https://andreashackel.de/tech-art/stripes-shader-1/
 
 https://www.youtube.com/watch?v=KLjTU0yKS00
 
