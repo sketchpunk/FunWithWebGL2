@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import App		from "./fungi/App.js";
+			import Api		from "./fungi/Api.js";
+
+			import DVao 	from "./fungi/components/DynamicVao.js";
+
+			import Armature			from "./fungi.mod/armature/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature/ArmaturePreview.js";
+			import ArmatureSystem	from "./fungi.mod/armature/ArmatureSystem.js";
+
+			import Maths, { Vec3, Quat }	from "./fungi/Maths.js";
+			import DualQuat from "./fungi/maths/DualQuat.js";
+
+			import {Components, System} from "./fungi/Ecs.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreview.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreviewPhong.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>{
+						ArmatureSystem.init();
+						onInit();
+					}).catch( err=>console.log("err", err) );
+			});
+
+			var ePoints,eLines,  eArm, cRig, pntTarget;
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+
+			function onInit(){
+				//........................
+				Fungi.camera.com.Transform
+					//.setPosition(0,2,5).setDegrees(-20,"x");
+					.setPosition(-1.697100281715393, 1.4279539585113525, 2.5617966651916504)
+					.setAxisAngle([-0.5824114845009671,-0.7937424922244297,-0.1754138597792517], 0.725332282411677);
+				
+				ePoints	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				eLines	= DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+
+				pntTarget = new Vec3(1,0.2,0.5);
+				//pntTarget = new Vec3(0.1,0.2,0.2);
+				DVao.vecPoint(ePoints, pntTarget, 6);
+				
+
+				//........................
+				eArm = Armature.init( Api.newDraw("Bones", "ArmaturePreviewPhong") ); //ArmaturePreviewPhong
+				Armature.finalize( TenticleRig.init(eArm, 3) ); //Bind Pose, prep for use
+				cRig = eArm.com.TenticleRig;
+
+				//Setup Preview
+				ArmaturePreview.init( eArm );
+				ArmaturePreview.useDiamondWire(eArm, "armPreview");
+
+
+				//for(var i=0; i < 4; i++){
+					var aryPos = inverseChain(cRig.chain);
+					forwardChain( cRig.chain, aryPos );
+				//}
+				
+				//........................
+				Fungi.loop.start();
+				//Fungi.ecs.updateSystems();
+			}
+
+			//Joints point up but up is not forward, So we need to multiple our lookRotation results by an offset rotation of how to make fwd as up.
+			const QUAT_FWD2UP = new Quat().setAxisAngle(Vec3.LEFT, Maths.toRad(90));
+
+
+			function inverseChain(chain){
+				let wPos	= new Vec3(),
+					newPos	= new Vec3(),
+					cnt		= chain.count,
+					rtn		= Vec3.createArray(cnt),
+					i, j, dqWorld;
+
+				rtn[cnt-1].copy( pntTarget ); //Save target as the end point for the last joint to point to.
+
+				for(i=cnt-1; i > 0; i--){
+					j = chain.links[i];
+
+					//...............................
+					//Figure out World Position of Joint
+					dqWorld = (j.parent)? j.parent.dqWorld : j.dqWorld; //Use parent DQ to get correct world space.
+					DualQuat.transformVec3(dqWorld, j.position, wPos);
+
+					//DVao.vecLine( eLines, vPos, rtn[i], 0 );
+					DVao.vecPoint( ePoints, wPos, 0 );
+					
+					//...............................
+					//Figure out new joint position looking at the direction of the end point and touching it by length's end.
+					Vec3.sub(wPos, rtn[i], newPos)	// Get Direction from End Point to Joint Position
+						.normalize()				// Normalize so its a unit vector
+						.scale(j.length)			// Scale it by the size of the joint bone
+						.add(rtn[i]);				// Add End point so the position is as the bone was moved to touch end point
+
+					DVao.vecPoint( ePoints, newPos, 4 );
+					DVao.vecLine( eLines, wPos, newPos, 4 );
+
+					rtn[i-1].copy(newPos);	// Save this, next joint will look at this point
+
+					//if(i < 2) return;
+				}
+
+				return rtn;
+			}
+
+			function forwardChain( chain, aryPos ){
+				let j, i, len		= chain.count;
+
+				let wPos	= new Vec3(),
+					vDir	= new Vec3(),
+					rot		= new Quat(),
+					qInv	= new Quat();
+
+
+				for(i=0; i < len; i++){
+					j = chain.links[i];
+
+					if(j.parent)	DualQuat.transformVec3(j.parent.dqWorld, j.position, wPos); //Use parent DQ to get correct world space.
+					else 			DualQuat.transformVec3(j.dqWorld, j.position, wPos);
+
+					//DVao.vecPoint(ePoints, wPos, 1);
+					//DVao.vecPoint(ePoints, aryPos[i], 8);
+					DVao.vecLine( eLines, wPos, aryPos[i], 2);
+
+					Vec3.sub( aryPos[i], wPos, vDir );		// Get Direction between current position and projected position.
+					Quat.lookRotation(vDir, Vec3.UP, rot);	// Get Forward Rotation at that specifc Direction
+					Quat.mul(j.rotation, rot, QUAT_FWD2UP);	// Convert Forward to Up rotation
+
+					//if parent exists, need to get an offset / difference of rotation.
+					//like if the parent is halfway pointing in that direction, then only need to point halfway not all the way.
+					if(j.parent){
+						Quat.invert(j.parent.dqWorld, qInv);	//Get the inverse rotation of parent
+						Quat.mul(j.rotation, qInv, j.rotation);	//Then use it as a way to "subtract" rotations to get the difference.
+					}
+
+					j.isModified = true;
+					Armature.forceUpdateJoint( j ); //Need to force update the joint, to use dqWorld for the next joint to get worldPosition/rotation
+				}
+			}
+
+			class IKChain{
+				constructor(cnt){
+					this.links		= new Array(cnt);	// Link of Joints
+					this.length		= 0;				// Length of chain, Length of all Links Added Together
+					this.count		= cnt;				// How many Links (Joints) in the chain.
+				}
+			}
+
+			//Based on Rigify Bone names and Order.
+			class TenticleRig{
+				constructor(){
+					this.chain		= null;
+				}
+				static init(e, cnt=2, len=0.4){
+					let arm		= e.com.Armature,
+						rig		= (!e.com.TenticleRig)? e.addByName("TenticleRig") :  e.com.TenticleRig,
+						parent	= null, j;
+
+					//..........................................
+					//rig.chain = new Array(cnt);
+					rig.chain = new IKChain(cnt);
+					for(let i=0; i < cnt; i++){
+						j = Armature.addJoint(arm, "link" + i, len , parent); // * (i+1)
+						rig.chain.links[i]	= j;
+						rig.chain.length	+= j.length;
+						parent = j;
+					}
+
+					//rig.lengthSqr = rig.length * rig.length;
+					return e;
+				}
+			} Components( TenticleRig );
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
