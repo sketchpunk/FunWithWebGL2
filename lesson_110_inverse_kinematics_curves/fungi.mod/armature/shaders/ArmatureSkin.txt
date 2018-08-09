@@ -1,0 +1,103 @@
+<shader>{
+	"name"		: "ArmatureSkin",
+	"ubo"		: [ "UBOTransform", "UBOModel" ],
+	"options"	: { "modelMatrix":true },
+	"uniforms"	: [
+		{ "name":"u_joints", "type":"mat2x4" },
+		{ "name":"u_jointCount", "type":"int" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"ArmatureSkin" }
+]<\materials> "useBlending":false
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_norm;
+	layout(location=2) in vec2 a_uv;
+
+	layout(location=8) in vec4 a_jointIdx;
+	layout(location=9) in vec4 a_jointWeight;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform int u_jointCount;
+	uniform mat2x4[80] u_joints;
+
+	vec3 dqBoneTransform(vec3 vpos,int iJointCnt, mat2x4[80] aryJoint, vec4 jointIdx, vec4 jointWeight){
+		/* NORMALIZE DATA 
+		float t = 1.0 / (a_jointWeight.x + a_jointWeight.y + a_jointWeight.z + a_jointWeight.w);
+		float jw0 = a_jointWeight[0] * t;
+		float jw1 = a_jointWeight[1] * t;
+		float jw2 = a_jointWeight[2] * t;
+		float jw3 = a_jointWeight[3] * t;
+
+		mat2x4 mJoint =	u_joints[ int(a_jointIdx[0]) ] * jw0 +
+						u_joints[ int(a_jointIdx[1]) ] * jw1 +
+						u_joints[ int(a_jointIdx[2]) ] * jw2 +
+						u_joints[ int(a_jointIdx[3]) ] * jw3;
+*/
+		/* RAW DATA - May Not be Normalized  
+		mat2x4 mJoint =	u_joints[ int(a_jointIdx[0]) ] * a_jointWeight[0] +
+						u_joints[ int(a_jointIdx[1]) ] * a_jointWeight[1] +
+						u_joints[ int(a_jointIdx[2]) ] * a_jointWeight[2] +
+						u_joints[ int(a_jointIdx[3]) ] * a_jointWeight[3];
+						*/
+
+		/* NORMALIZE DATA First */
+		float t = 0.0;
+		if(iJointCnt == 2)		t = 1.0 / (jointWeight.x + jointWeight.y);
+		else if(iJointCnt == 3)	t = 1.0 / (jointWeight.x + jointWeight.y + jointWeight.z);
+		else if(iJointCnt == 4)	t = 1.0 / (jointWeight.x + jointWeight.y + jointWeight.z + jointWeight.w);
+
+		mat2x4 dqSum;
+		for(int i=0; i < iJointCnt; i++){
+			dqSum += aryJoint[ int(jointIdx[i]) ] * jointWeight[i] * t;
+		}
+
+		/*RAW DATA - May Not be Normalized  
+		mat2x4 dqSum;
+		for(int i=0; i < iJointCnt; i++){
+			dqSum += aryJoint[ int(jointIdx[i]) ] * jointWeight[i];
+		} */
+		
+
+		//vec3 v		= a_position.xyz;
+		vec4 Qr 	= dqSum[0].xyzw; //real (rot)
+		vec4 Qd 	= dqSum[1].xyzw; //dual (trans)
+
+		vec3 pos	= vpos + cross(2.0 * Qr.xyz, cross(Qr.xyz, vpos) + Qr.w * vpos);	//Rotate Vector
+		vec3 tran	= 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+		return pos + tran;
+	}
+
+	void main(void){
+		gl_PointSize = 5.0;
+		
+		vec3 pos = dqBoneTransform(a_position.xyz, u_jointCount, u_joints, a_jointIdx, a_jointWeight);
+
+		gl_Position = projViewMatrix * modelMatrix * vec4(pos, 1.0);
+		//gl_Position = projViewMatrix * modelMatrix * vec4(a_position.xyz, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+<\fragment>

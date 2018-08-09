@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi	from "./fungi/Fungi.js";
+			import App		from "./fungi/App.js";
+			import Api		from "./fungi/Api.js";
+			
+			import DVao 	from "./fungi/components/DynamicVao.js";
+
+			import Armature			from "./fungi.mod/armature/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature/ArmaturePreview.js";
+			import ArmatureSystem	from "./fungi.mod/armature/ArmatureSystem.js";
+
+			import Maths, { Vec3, Quat }	from "./fungi/Maths.js";
+			import DualQuat from "./fungi/maths/DualQuat.js";
+
+			import Catenary from "./lib/Catenary.js";
+
+			import {Components, System} from "./fungi/Ecs.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					//{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreview.txt" },
+					{ type:"shader", file:"./fungi.mod/armature/shaders/ArmaturePreviewPhong.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>{
+						ArmatureSystem.init();
+						onInit();
+					}).catch( err=>console.log("err", err) );
+			});
+
+			var ePoints,eLines,  eArm, cRig, pntTarget, isDebug = false;
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+
+			function onInit(){
+				//........................
+				Fungi.camera.com.Transform
+					.setPosition(-1.608352541923523, 0.8433414697647095, 0.3252723515033722)
+					.setAxisAngle([-0.13554984951355517,-0.9816890812281199,-0.13383900853371064], 1.5765751199328621);
+				
+				ePoints	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				eLines	= DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+				
+
+				//........................
+				eArm = Armature.init( Api.newDraw("Bones", "ArmaturePreviewPhong") ); //ArmaturePreviewPhong
+				Armature.finalize( TenticleRig.init(eArm, 8, 0.4) ); //Bind Pose, prep for use
+				cRig = eArm.com.TenticleRig;
+
+				//Setup Preview
+				ArmaturePreview.init( eArm );
+				ArmaturePreview.useDiamondWire(eArm, "armPreview");
+
+
+				/* ===========================================
+					Basic FABRIK (Forward And Backward Reaching Inverse Kinematics) 	
+				pntTarget = new Vec3(0.0,0.0,1.9);
+				DVao.vecPoint(ePoints, pntTarget, 6);
+
+				var aryPos = Kinematics.backwardProjectedPoints(cRig.chain, pntTarget);
+				Kinematics.applyProjectedPoints(cRig.chain, aryPos);
+				*/
+				
+
+				/* ===========================================
+					Two Joints - Elbow / Knees  
+				pntTarget = new Vec3(0.0,0.0,0.5);
+				var aryProj = Kinematics.twoJointProjectionPoints( cRig.chain, pntTarget );
+				Kinematics.applyProjectedPoints(cRig.chain, aryProj);
+				*/
+
+
+				/* ===========================================
+					Catenary Curve   
+				pntTarget = new Vec3(0.0,0.0,2.9);
+				var aryProj = Kinematics.catenaryProjectedPoints( cRig.chain, pntTarget );
+				Kinematics.applyProjectedPoints(cRig.chain, aryProj);
+				*/
+
+
+				/* ===========================================
+					Circle Curve   
+
+				pntTarget = new Vec3(0.0,0.0,1.9);
+				var aryProj = Kinematics.circleProjectedPoints( cRig.chain, pntTarget );
+				Kinematics.applyProjectedPoints(cRig.chain, aryProj);
+				*/
+
+
+				/* ===========================================
+					Sine Wave  */
+				pntTarget = new Vec3(0.0,0.0,1.9);
+
+				var aryProj = Kinematics.sineProjectionPoints( cRig.chain, pntTarget );
+				Kinematics.applyProjectedPoints(cRig.chain, aryProj);
+
+				for(var i=0; i < cRig.chain.count; i++) Armature.forceUpdateJoint( cRig.chain.links[i] ); 
+				
+				aryProj = Kinematics.backwardProjectedPoints(cRig.chain, pntTarget);
+				Kinematics.applyProjectedPoints(cRig.chain, aryProj);
+				
+				//........................
+				Fungi.loop.start();
+			}
+
+			//Based on Rigify Bone names and Order.
+			class TenticleRig{
+				constructor(){
+					this.chain		= null;
+					//this.length		= 0;
+					//this.lengthSqr	= 0;
+				}
+				static init(e, cnt=2, len=0.4){
+					let arm		= e.com.Armature,
+						rig		= (!e.com.TenticleRig)? e.addByName("TenticleRig") :  e.com.TenticleRig,
+						parent	= null, j;
+
+					//..........................................
+					//rig.chain = new Array(cnt);
+					rig.chain = new IKChain(cnt);
+					for(let i=0; i < cnt; i++){
+						j = Armature.addJoint(arm, "link" + i, len, parent); //  * (i+1)
+						rig.chain.links[i]	= j;
+						rig.chain.length	+= j.length;
+						parent = j;
+					}
+
+					//rig.lengthSqr = rig.length * rig.length;
+					return e;
+				}
+			} Components( TenticleRig );
+
+
+			class IKChain{
+				constructor(cnt){
+					this.links		= new Array(cnt);	// Link of Joints
+					this.length		= 0;				// Length of chain, Length of all Links Added Together
+					this.count		= cnt;				// How many Links (Joints) in the chain.
+				}
+			}
+
+			//Joints point up but up is not forward, So we need to multiple our lookRotation results by an offset rotation of how to make fwd as up.
+			const QUAT_FWD2UP = new Quat().setAxisAngle(Vec3.LEFT, Maths.toRad(90));
+
+
+			class Kinematics{
+				static chainLine(chain, vecTarget){
+					let vStart		= chain.links[0].getWorldPos(),	// Start of Line
+						vEnd		= new Vec3(vecTarget),			// End of Line
+						vSELen 		= Vec3.sub(vEnd, vStart),		// Vec Length of Line
+						iSELen		= vSELen.length();				// Interger of the Length of the line
+
+					if(iSELen >= chain.length){
+						console.log("TODO : Too far, Undo all rotation and only rotate chain root.");
+						return null;
+					}
+
+					//..............................................
+					//Figure out Axis for the chain
+					let xAxis	= Vec3.cross( Vec3.UP, vSELen ).normalize(),	// LEFT : TODO, THIS CAN BE AN ISSUE IF VLEN IS UP
+						yAxis	= Vec3.cross( vSELen, xAxis ).normalize(),		// UP
+						zAxis	= Vec3.norm(vSELen);							// FORWARD
+
+					DVao.vecPoint(ePoints, vStart, 0);
+					DVao.vecPoint(ePoints, vEnd, 0);
+					DVao.vecLine(eLines, vStart, vEnd, 0);
+
+					return { start:vStart, end:vEnd, vecLength: vSELen, intLength:iSELen, xAxis, yAxis, zAxis };
+				}
+
+				static backwardProjectedPoints(chain, vecTarget){
+					let wPos	= new Vec3(),
+						newPos	= new Vec3(),
+						cnt		= chain.count,
+						rtn		= Vec3.createArray(cnt),
+						i, j, dqWorld;
+
+					rtn[cnt-1].copy( vecTarget ); // Save target as the end point for the last joint to point to.
+
+					for(i=cnt-1; i > 0; i--){
+						j = chain.links[i];
+
+						//...............................
+						// Figure out World Position of Joint
+						dqWorld = (j.parent)? j.parent.dqWorld : j.dqWorld; //Use parent DQ to get correct world space.
+						DualQuat.transformVec3(dqWorld, j.position, wPos);
+
+						//DVao.vecPoint( ePoints, wPos, 2);
+						//console.log(wPos);
+
+						//...............................
+						// Figure out new joint position looking at the direction of the end point and touching it by length's end.
+						Vec3.sub(wPos, rtn[i], newPos)	// Get Direction from End Point to Joint Position
+							.normalize()				// Normalize so its a unit vector
+							.scale(j.length)			// Scale it by the size of the joint bone
+							.add(rtn[i]);				// Add End point so the position is as the bone was moved to touch end point
+
+						//...............................
+						rtn[i-1].copy(newPos);	// Save this, next joint will look at this point
+
+						//DVao.vecPoint( ePoints, newPos, 6);
+
+						//if(i < 8) return;
+					}
+					return rtn;
+				}
+
+				static catenaryProjectedPoints(chain, vecTarget){
+					let cLine = Kinematics.chainLine( chain, vecTarget );
+					if(cLine == null) return;
+
+					//..............................................
+					let linkCnt		= chain.count,
+						aryIK		= new Array(linkCnt),
+						vDir		= new Vec3(),
+						vTarget		= new Vec3(),
+						vLastTarget	= new Vec3(cLine.Start),
+						linkLen, dirLen, i;
+
+					let curveAry	= Catenary.getByLengths(cLine.intLength, chain.length, linkCnt),
+						curveCnt	= curveAry.length,
+						idxMid		= Math.floor(curveAry.length / 2);
+
+					for(let ii=0; ii < curveCnt; ii++){
+						//..........................
+						//Do first half forward, then do second half backwards 0->Mid then Max->Mid
+						i = (ii < idxMid)? ii : curveCnt - ii + idxMid - 1;
+						if(ii == idxMid) vLastTarget.copy(cLine.end); //When hitting the middle, switch last Point to end point
+
+						//..........................
+						Vec3.lerp(cLine.start, cLine.end, (i+1) / linkCnt, vTarget); 	// Get Point on Line
+						Vec3.scale(cLine.yAxis, curveAry[i], vDir);			// Up direction at the length of the Curve Value
+						vTarget.add(vDir);									// Final Target Position
+
+						DVao.vecPoint(ePoints, vTarget, 4);
+
+						//..........................
+						linkLen	= chain.links[i].length
+						dirLen 	= vTarget.sub(vLastTarget, vDir).length();	// Get Direction and Length between last target and current target.
+
+						if(dirLen > linkLen){
+							vDir.normalize().scale( linkLen );
+							Vec3.add(vLastTarget, vDir, vTarget);
+							DVao.vecPoint(ePoints, vTarget, 6);
+						}
+
+						//..........................
+						vLastTarget.copy(vTarget);
+						aryIK[i] = new Vec3(vTarget);
+					}
+
+					aryIK[linkCnt-1] = cLine.end;
+					return aryIK;
+				}
+
+				static circleProjectedPoints(chain, vecTarget){
+					let cLine = Kinematics.chainLine( chain, vecTarget );
+					if(cLine == null) return;
+
+					//..............................................
+					let linkCnt		= chain.count,
+						aryIK		= new Array(linkCnt),
+						vMid 		= Vec3.lerp(cLine.start, cLine.end, 0.5),
+						vDir		= new Vec3(),
+						vTarget		= new Vec3(),
+						vLastTarget	= new Vec3(cLine.end),
+						linkLen, dirLen, i;
+
+					let radOffset	= -Maths.PI_H,
+						radInc		= Math.PI / linkCnt;
+
+					let dot, 
+						rB, rC, rA, 		//Angles of the Triangle in Radians
+						aLen, bLen, cLen;	//Length of the sides of the triangle
+
+					aryIK[linkCnt-1] = cLine.end;
+					for(i=linkCnt-1; i > 0; i--){
+						//..........................
+						Maths.planeCircle(vMid, cLine.yAxis, cLine.zAxis, i * radInc + radOffset, cLine.intLength * 0.5, vTarget);
+						DVao.vecPoint(ePoints, vTarget, 4).vecLine(eLines, vMid, vTarget, 4);
+
+						//..........................................
+						//Define the two static lengths of the triangle
+						aLen = Vec3.sub( vLastTarget, vMid, vDir ).length();	// Length of the bottom of the base of the triangle
+						bLen = chain.links[i].length;							// bone length as one static length side of the triangle
+
+						vDir.normalize(); //Normalize the vectors to use in Dot Product and get the angle between them.
+						vTarget.sub(vMid).normalize();
+
+						//Calculate all the angles of the triangle
+						dot = Vec3.dot(vDir, vTarget);
+						rB = Math.acos( Maths.clamp( dot, -1, 1) ); //Clamp values else get NaN
+						rC = Math.asin( Maths.clamp( (aLen * Math.sin(rB)) / bLen, -1, 1) );   //Law of Sines : SSA : find Angle of C
+						rA = Math.PI - rB - rC;
+
+						//Two lengths of th triangle is static, so we need the third length found to make those two possible
+						//Get the distance from middle of the circle, in the known angle that will make the bone fit.
+						//cLen = Math.sqrt( (aLen*aLen) + (bLen*bLen) - (2 * aLen * bLen * Math.cos(rA)) ); //Law of Cosines, Works
+						cLen = (Math.sin(rA) * bLen) / Math.sin(rB); //Law of Sines, Works
+
+						vTarget.scale( cLen ).add( vMid );	//Once the length is known set target to the correct spot
+						DVao.vecPoint(ePoints, vTarget, 6).vecLine(eLines, vMid, vTarget, 6);
+
+
+						//..........................
+						// Double check the length, if over the threshold, try to move the bone closer
+						dirLen 	= vTarget.sub(vLastTarget, vDir).length();	// Get Direction and Length between last target and current target.
+						if(Math.abs(bLen-dirLen) > 0.01){
+							vDir.normalize().scale( bLen );
+							Vec3.add(vLastTarget, vDir, vTarget);
+							DVao.vecPoint(ePoints, vTarget, 8);
+						}
+
+						//..........................
+						vLastTarget.copy(vTarget);
+						aryIK[i-1] = new Vec3(vTarget);
+					}
+
+					return aryIK;
+				}
+
+				static twoJointProjectionPoints(chain, vecTarget){
+					let cLine = Kinematics.chainLine( chain, vecTarget );
+					if(cLine == null) return;
+
+					//..............................................
+					//cos(A) = (b^2 + c^2 - a^2) / 2bc  Law of Cosines
+					let vTarget		= new Vec3(),
+						link0Len	= chain.links[0].length,
+						link1Len	= chain.links[1].length,
+						rA			= Math.acos( (link0Len * link0Len + cLine.intLength * cLine.intLength - link1Len * link1Len) / ( 2 * link0Len * cLine.intLength ) );
+
+					Maths.planeCircle(cLine.start, cLine.zAxis, cLine.yAxis, rA, link0Len, vTarget);
+
+					DVao.vecPoint(ePoints, vTarget, 2);
+					return [vTarget, cLine.end];
+				}
+
+				static sineProjectionPoints( chain, vecTarget ){
+					let cLine = Kinematics.chainLine( chain, vecTarget );
+					if(cLine == null) return;
+
+					let linkCnt 	= chain.count,
+						aryIK		= new Array(linkCnt),
+						vLastTarget	= new Vec3(cLine.end),
+						vPos 		= new Vec3(),
+						vTarget 	= new Vec3(),
+						n, s;
+
+					aryIK[linkCnt-1] = cLine.end;
+					for(var i=linkCnt-1; i > 0; i--){
+						n = i / linkCnt;								// Normlized Value, 0:1
+						s = Math.sin( Maths.lerp(0, Maths.PI_2, n) );	// Lerp 0-360 degrees, get sin theta results
+
+						Vec3.lerp( cLine.start, cLine.end, n, vPos);	// Get specific spot on the line
+
+						DVao.vecPoint( ePoints, vPos, 4);
+
+						cLine.yAxis.scale(s, vTarget).add(vPos);		// Update direction at sine length plus point on line
+
+						DVao.vecLine( eLines, vPos, vTarget, 0).vecPoint( ePoints, vTarget, 0);
+						aryIK[i-1] = new Vec3(vTarget);					// Save as return data;
+					}
+					return aryIK;
+				}
+
+				static applyProjectedPoints(chain, aryPnt){
+					let wPos		= new Vec3(),	
+						vDir		= new Vec3(),
+						rot			= new Quat(),
+						qInv		= new Quat(),
+						linkCnt		= chain.count,
+						j, i;
+
+					//..............................
+					//Get starting world transform for joint chain
+					let dqWorld = new DualQuat(),
+						dqLocal = new DualQuat();
+
+					if(chain.links[0].parent) 	dqWorld.copy( chain.links[0].parent.dqWorld );
+					else 						dqWorld.copy( chain.links[0].dqWorld );
+
+
+					//..............................
+					for(i=0; i < linkCnt; i++){
+						j = chain.links[i];
+
+						//......................................
+						DualQuat.transformVec3(dqWorld, j.position, wPos); // Calc World Position of the Joint
+
+						Vec3.sub( aryPnt[i], wPos, vDir );		// Get Direction from Joint Position to Projection position
+						Quat.lookRotation(vDir, Vec3.UP, rot);	// Turn that direction to a rotation
+						Quat.mul(j.rotation, rot, QUAT_FWD2UP);	// Convert results of Forward to an Up rotation
+
+
+						//......................................
+						// if parent exists, need to get an offset / difference of rotation.
+						// like if the parent is halfway pointing in that direction, then only need to point halfway not all the way.
+						if(j.parent){
+							Quat.invert(dqWorld, qInv);	// Get the inverse rotation of parent
+							Quat.mul(j.rotation, qInv, j.rotation);	// Then use it as a way to "subtract" rotations to get the difference.
+						} // Quat mul(out,a,b)
+
+
+						//......................................
+						//if not the last link in the chain, add onto world dq transform.
+						if(i+1 < linkCnt){
+							if(j.parent){
+								dqLocal.set(j.rotation, j.position);
+								DualQuat.mul(dqWorld, dqLocal, dqWorld);	// parent.world * child.local = child.world
+							}else{
+								dqWorld.set(j.rotation, j.position); //if no parent, then world should be local.
+							}
+						} //DualQuat mul(a, b, out){
+
+						//......................................
+						j.isModified = true;
+					}
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
