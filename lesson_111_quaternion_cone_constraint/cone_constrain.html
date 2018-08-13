@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+
+			import DVao 		from "./fungi/components/DynamicVao.js";
+
+			import Maths, { Vec3, Quat } from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+			//https://gdcvault.com/play/1023558/Math-for-Game-Programmers-Rotational
+			//https://github.com/dtecta/motion-toolkit
+			//http://www.root-motion.com/finalikdox/html/page12.html
+			//https://assetstore.unity.com/packages/tools/animation/final-ik-14290
+			//https://www.youtube.com/watch?v=MvuO9ZHGr6k
+			//http://robloxdev.com/articles/Inverse-Kinematics-for-Animation
+			var ePoint, eLine;
+
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+				eLine	= DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+				ePoint	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+
+				//........................	
+				//code();
+				var bindRot		= new Quat().rx( Maths.toRad(-10)).ry( Maths.toRad(20) );
+				var constraint	= new BallJointContraint();
+				constraint
+					.setAxisByQuat( bindRot )  //.setAxisByLook( new Vec3(0, 0.5, 1) );
+					.setLimit(25); 
+
+				debugAxis(constraint);
+				debugCone(constraint);
+
+
+				var newRot = new Quat().rx( Maths.toRad(25) ).ry( Maths.toRad(-10) ),  //
+					vecRot = Vec3.transformQuat(Vec3.FORWARD, newRot);
+
+				DVao.vecLine( eLine, Vec3.ZERO, vecRot, 6);
+
+				if( constraint.apply( newRot ) ){
+					Vec3.transformQuat(Vec3.FORWARD, newRot, vecRot);
+					DVao.vecLine( eLine, Vec3.ZERO, vecRot, 8);
+				}else console.log("In Range, no clamping");
+
+				//........................
+				Fungi.loop.start();
+			}
+
+			//======================================================================
+			//Prototype Version
+
+			function code(){ //Original Prototype
+				//........................	
+				var vLook	= new Vec3(0.0, 1.0, 2.0);
+				var vTarget	= new Vec3(1.3, -0.5, 2.0);
+				//var vTarget	= new Vec3(-0.4, 1.1, 2.0);
+
+				//DVao.vecPoint(ePoint, vLook, 8);  //LookAt Position
+				
+				//---------------------
+				//Using lookAt Direction as Forward axis, Calc Up and Left Axis
+				var dir = getAxis( vLook );
+
+
+				//---------------------
+				//Using our angle limit, figure out position in world space
+				var radLimit	= Maths.toRad(25);
+				var vLimit		= new Vec3();
+				Maths.planeCircle(Vec3.ZERO, dir.zAxis, dir.xAxis, radLimit, 1.5, vLimit);
+				originToPlaneProjection(vLimit, dir.zAxis, vLimit);
+
+				DVao.vecPoint( ePoint, vLimit, 4).vecLine(eLine, Vec3.ZERO, vLimit, 4);
+
+
+				//---------------------
+				//Figure out the radius of the base of the cone limit
+				var vConeRadius = Vec3.sub(vLimit, dir.zAxis);
+				var iConeRadius = vConeRadius.length();
+				drawCircle(dir.zAxis, dir.xAxis, dir.yAxis, iConeRadius);
+
+
+				//---------------------
+				//Project target onto the plane of the cone base.
+				var projTarget = originToPlaneProjection(vTarget, dir.zAxis);
+				DVao.vecLine( eLine, Vec3.ZERO, vTarget, 6);
+				DVao.vecPoint(ePoint, projTarget, 6).vecLine(eLine, projTarget, dir.zAxis, 6);
+
+				var vProjLength = Vec3.sub( projTarget, dir.zAxis );
+				var iProjRadius = vProjLength.length();
+
+				console.log("radius", iProjRadius, iConeRadius);
+
+				var vProjDir 	= Vec3.norm( vProjLength );
+				var vConeDir 	= Vec3.norm( vConeRadius );
+				var dot 		= Vec3.dot(vProjDir,vConeDir);
+				var rad 		= Math.acos( dot );
+
+				var signTest	= Vec3.dot(vProjDir,dir.yAxis); //Using Up make the bottom half the the circle negative, if Neg then Sub from PI2
+				if(signTest < 0) rad = Maths.PI_2 - rad;
+
+
+				console.log("Dot", dot, rad );
+				console.log("check", signTest);
+
+
+				var test = new Vec3();
+				Maths.planeCircle(dir.zAxis, dir.xAxis, dir.yAxis, rad, iConeRadius, test);
+				DVao.vecPoint( ePoint, test, 8);
+			}
+
+			function originToPlaneProjection(rayLen, planeNorm, vec){
+				let denom = Vec3.dot(rayLen, planeNorm);
+				if(denom <= 0.000001 && denom >= -0.000001) return null;
+
+				// dot( planePos-rayOrigin, planeNorm ) / dot(rayVecLen, planeNorm);
+				let t = Vec3.dot(planeNorm, planeNorm) / denom; 
+				vec = vec || new Vec3();
+				return Vec3.scale(rayLen, t, vec);
+			}
+
+			function getAxis(target){
+				let q		= Quat.lookRotation(target, Vec3.UP),
+					zAxis	= new Vec3(),
+					xAxis	= new Vec3(),
+					yAxis	= new Vec3();
+
+				Vec3.transformQuat(Vec3.FORWARD, q, zAxis).normalize();
+				Vec3.cross(Vec3.UP, zAxis, xAxis).normalize();
+				Vec3.cross(zAxis, xAxis, yAxis).normalize();
+
+				DVao.vecPoint(ePoint, zAxis, 1).vecLine( eLine, Vec3.ZERO, zAxis, 1);
+				DVao.vecPoint(ePoint, xAxis, 0).vecLine( eLine, Vec3.ZERO, xAxis, 0);
+				DVao.vecPoint(ePoint, yAxis, 2).vecLine( eLine, Vec3.ZERO, yAxis, 2);
+
+				return { xAxis, yAxis, zAxis };
+			}
+
+			function drawCircle(planePos, xAxis, yAxis, radius, segCnt = 14, color=4){
+				let inc		= Maths.PI_2 / segCnt,
+					ppos	= new Vec3(),
+					pos		= new Vec3();
+
+				Maths.planeCircle(planePos, xAxis, yAxis, 0, radius, ppos);
+
+				for(let i=1; i <= segCnt; i++){
+					Maths.planeCircle(planePos, xAxis, yAxis, i*inc, radius, pos);
+					DVao.vecLine( eLine, ppos, pos, color);
+					ppos.copy(pos);
+				}
+				//planeCircle(vecCenter, xAxis, yAxis, angle, radius, out)
+			}
+
+
+			//======================================================================
+			//Final Version
+
+			class Constraint{
+				//used to  Project to a plane using unit vectors mostly.
+				static originToPlaneProj(rayLen, planeNorm, vec){
+					let denom = Vec3.dot(rayLen, planeNorm);
+					if(denom <= 0.000001 && denom >= -0.000001) return null;
+
+					// dot( planePos-rayOrigin, planeNorm ) / dot(rayVecLen, planeNorm);
+					let t = Vec3.dot(planeNorm, planeNorm) / denom; 
+					vec = vec || new Vec3();
+					return Vec3.scale(rayLen, t, vec);
+				}
+
+				//When using lookRotation,  if the direction  is UP, can not use UP as UP, use Back Instead.
+				static getLookRotationUp(target){
+					let v = Vec3.nearZero(target);
+					return (v[0] != 0 && v[2] != 0)? Vec3.UP : Vec3.BACK;
+				}
+			}
+
+			class BallJointContraint{
+				constructor(){
+					this.zAxis = new Vec3();			// Need to know 3 axis direction to determine plane
+					this.xAxis = new Vec3();
+					this.yAxis = new Vec3();
+
+					this.limitRad		= 0;			//	Range of Clone
+					this.limitRadius	= 0;			//	Radius of cone base based on Angle  Limit
+					this.limitRadiusSqr	= 0;			//	Cache Value for testing
+					this.limitDir		= new Vec3();	//	Limit Direction  vector, its the vector angle from  z-axis that defines the clone
+
+				}
+
+				setAxisByLook(target){
+					let //v	= Vec3.nearZero(target),
+						vUp	= Constraint.getLookRotationUp(target),//(v[0] != 0 && v[2] != 0)? Vec3.UP : Vec3.BACK,
+						q	= Quat.lookRotation(target, vUp);
+
+					Vec3.transformQuat(Vec3.FORWARD, q, this.zAxis).normalize();	// Forward
+					Vec3.cross(vUp, this.zAxis, this.xAxis).normalize();			// Left
+					Vec3.cross(this.zAxis, this.xAxis, this.yAxis).normalize();		// Up
+
+					return this;
+				}
+
+				setAxisByQuat(q){
+					Vec3.transformQuat(Vec3.FORWARD, q, this.zAxis).normalize();	// Forward
+					let v	= Vec3.nearZero(this.zAxis),
+						vUp	= (v[0] != 0 && v[2] != 0)? Vec3.UP : Vec3.BACK;
+					
+					Vec3.cross(vUp, this.zAxis, this.xAxis).normalize();			// Left
+					Vec3.cross(this.zAxis, this.xAxis, this.yAxis).normalize();		// Up
+
+					return this;
+				}
+
+				setLimit(deg){
+					var v = new Vec3();
+					this.limit = Maths.toRad(deg);	//Pass in degrees, need to conver to radians
+
+					Maths.planeCircle(Vec3.ZERO, this.zAxis, this.xAxis, this.limit, 1.5, v);	//Get Angle Around circle based on angle
+					Constraint.originToPlaneProj(v, this.zAxis, v);								//Stretch line to reach plane
+
+					Vec3.sub(v, this.zAxis, this.limitDir);					// With Position on plane, The distance is the radius of the base.
+
+					this.limitRadiusSqr	= this.limitDir.lengthSqr();		// Save SQR version for fast testing
+					this.limitRadius 	= Math.sqrt( this.limitRadiusSqr );	// Save real size for resizing unit vectors to snap back to cone.
+					return this;
+				}
+
+				apply( q ){
+					var dir			= Vec3.transformQuat(Vec3.FORWARD, q),				// Get Vector direction of rotation
+						proj 		= Constraint.originToPlaneProj(dir, this.zAxis), 	// Project direction onto clone plane
+						projRadius	= Vec3.sub(proj, this.zAxis),						// distance from center of plane
+						lenSqr		= projRadius.lengthSqr();							// Just test for Length Squared
+
+
+					if(lenSqr <= this.limitRadiusSqr) return false;	
+
+					DVao.vecPoint(ePoint, proj, 6)
+						.vecLine( eLine, Vec3.ZERO, proj, 6)
+						.vecLine( eLine, this.zAxis, proj, 6);
+
+					//Since the rotation is outside cone, snap to the closests point on the cone base.
+					projRadius.normalize().scale( this.limitRadius ).add( this.zAxis );
+					DVao.vecPoint(ePoint, projRadius, 8);
+
+					//Use point as a Look at Direction to reset the rotation to constraint
+					let vUp = Constraint.getLookRotationUp( projRadius );
+					Quat.lookRotation(projRadius, vUp, q);
+					return true;
+				}
+			}
+
+			function debugAxis(bjc){
+				DVao.vecPoint(ePoint, bjc.zAxis, 1).vecLine( eLine, Vec3.ZERO, bjc.zAxis, 1);
+				DVao.vecPoint(ePoint, bjc.xAxis, 0).vecLine( eLine, Vec3.ZERO, bjc.xAxis, 0);
+				DVao.vecPoint(ePoint, bjc.yAxis, 2).vecLine( eLine, Vec3.ZERO, bjc.yAxis, 2);
+			}
+
+			function debugCone(bjc, segCnt = 14, color=4){
+				let inc		= Maths.PI_2 / segCnt,
+					ppos	= new Vec3(),
+					pos		= new Vec3();
+
+				Maths.planeCircle(bjc.zAxis, bjc.xAxis, bjc.yAxis, 0, bjc.limitRadius, ppos);
+
+				for(let i=1; i <= segCnt; i++){
+					Maths.planeCircle(bjc.zAxis, bjc.xAxis, bjc.yAxis, i*inc, bjc.limitRadius, pos);
+					DVao.vecLine( eLine, ppos, pos, color);
+					ppos.copy(pos);
+				}
+				
+				var v = Vec3.add(bjc.zAxis, bjc.limitDir);
+				DVao.vecPoint(ePoint, v, 4).vecLine( eLine, Vec3.ZERO, v, 4);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
+
+<!---
+	https://github.com/libgdx/libgdx/blob/master/gdx/src/com/badlogic/gdx/math/Quaternion.java
+	/** Get the swing rotation and twist rotation for the specified axis. The twist rotation represents the rotation around the
+	 * specified axis. The swing rotation represents the rotation of the specified axis itself, which is the rotation around an
+	 * axis perpendicular to the specified axis. </p> The swing and twist rotation can be used to reconstruct the original
+	 * quaternion: this = swing * twist
+	 * 
+	 * @param axisX the X component of the normalized axis for which to get the swing and twist rotation
+	 * @param axisY the Y component of the normalized axis for which to get the swing and twist rotation
+	 * @param axisZ the Z component of the normalized axis for which to get the swing and twist rotation
+	 * @param swing will receive the swing rotation: the rotation around an axis perpendicular to the specified axis
+	 * @param twist will receive the twist rotation: the rotation around the specified axis
+	 * @see <a href="http://www.euclideanspace.com/maths/geometry/rotations/for/decomposition">calculation</a> */
+	public void getSwingTwist (final float axisX, final float axisY, final float axisZ, final Quaternion swing,
+		final Quaternion twist) {
+		final float d = Vector3.dot(this.x, this.y, this.z, axisX, axisY, axisZ);
+		twist.set(axisX * d, axisY * d, axisZ * d, this.w).nor();
+		if (d < 0) twist.mul(-1f);
+		swing.set(twist).conjugate().mulLeft(this);
+	}
+
+--->
