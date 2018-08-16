@@ -45,7 +45,7 @@
 				//........................	
 				//code();
 				var bindRot		= new Quat().rx( Maths.toRad(-10)).ry( Maths.toRad(20) );
-				var constraint	= new BallJointContraint();
+				var constraint	= new ConeJointContraint();
 				constraint
 					.setAxisByQuat( bindRot )  //.setAxisByLook( new Vec3(0, 0.5, 1) );
 					.setLimit(25); 
@@ -195,7 +195,7 @@
 				}
 			}
 
-			class BallJointContraint{
+			class ConeJointContraint{
 				constructor(){
 					this.zAxis = new Vec3();			// Need to know 3 axis direction to determine plane
 					this.xAxis = new Vec3();
