@@ -233,7 +233,7 @@ class Ecs{
 			let e = this.Entities.get(eID);
 			if(e){
 				Entity.dispose( e );
-				this.Entities.remove( eID );
+				this.Entities.delete( eID );
 			}else console.log("Entity does not exist when trying to remove : ", eID);
 
 			return this;
