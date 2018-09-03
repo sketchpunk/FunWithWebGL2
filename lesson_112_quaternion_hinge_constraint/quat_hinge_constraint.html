@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+
+			import DVao 		from "./fungi/components/DynamicVao.js";
+
+			import Maths, { Vec3, Quat } from "./fungi/Maths.js";
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+				])	.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var ePoint, eLine;
+
+			function onRender(dt, ss){ Fungi.ecs.updateSystems(); }
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+				eLine	= DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+				ePoint	= DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+
+				//........................	
+				var bindRot		= new Quat().rx( Maths.toRad(-45));//.ry( Maths.toRad(20) );
+				//var bindRot		= new Quat().ry( Maths.toRad(20) ).rx( Maths.toRad(-85));
+				var constraint	= new HingeJointContraint();
+				constraint
+					.setAxisByQuat( bindRot )  //.setAxisByLook( new Vec3(0, 0.5, 1) );
+					.setLimit(45,-45); 
+
+				debugAxis(constraint);
+				debugPlane(constraint);
+				debugLimits(constraint);
+
+				var //newRot = new Quat().rx( Maths.toRad(-91) ).ry( Maths.toRad(-30) ),  //Over Top
+					//newRot = new Quat().rx( Maths.toRad(5) ).ry( Maths.toRad(-30) ),  //Over Bottom
+					//newRot = new Quat().rx( Maths.toRad(-20) ).ry( Maths.toRad(-20) ),  //Axis is off
+					newRot = new Quat().rx( Maths.toRad(-20) ),
+					vecRot = Vec3.transformQuat(Vec3.FORWARD, newRot);
+
+
+				if( constraint.apply( newRot ) ){
+					Vec3.transformQuat(Vec3.FORWARD, newRot, vecRot).scale(1.5);
+					DVao.vecLine( eLine, Vec3.ZERO, vecRot, 7).vecPoint( ePoint, vecRot, 7);
+				}else console.log("In Range, no clamping");
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			//======================================================================
+			class Constraint{
+				//used to  Project to a plane using unit vectors mostly.
+				//This is a Ray to Plane Intersection
+				static originToPlaneProj(rayLen, planeNorm, vec){
+					let denom = Vec3.dot(rayLen, planeNorm);
+					if(denom <= 0.000001 && denom >= -0.000001) return null;
+
+					// dot( planePos-rayOrigin, planeNorm ) / dot(rayVecLen, planeNorm);
+					let t = Vec3.dot(planeNorm, planeNorm) / denom; 
+					vec = vec || new Vec3();
+					return Vec3.scale(rayLen, t, vec);
+				}
+
+				//When using lookRotation,  if the direction  is UP, can not use UP as UP, use Back Instead.
+				static getLookRotationUp(target){
+					let v = Vec3.nearZero(target);
+					return (v[0] != 0 && v[2] != 0)? Vec3.UP : Vec3.BACK;
+				}
+			}
+
+			class HingeJointContraint{
+				constructor(){
+					this.zAxis = new Vec3();			// Need to know 3 axis direction to determine plane
+					this.xAxis = new Vec3();
+					this.yAxis = new Vec3();
+
+					this.maxQuatUp		= new Quat();	// Cache Limit rotation for up
+					this.maxQuatDown	= new Quat();	// Cache limit rotation for down
+
+					this.radLimitUp 	= 0;			// Angle going up
+					this.radLimitDown	= 0;			// Angle going down
+
+					this.mapLimitUp		= 0;			// 0-1 Map value limit dot product
+					this.mapLimitDown	= 0;			
+				}
+
+				setAxisByLook(target){
+					let //v	= Vec3.nearZero(target),
+						vUp	= Constraint.getLookRotationUp(target),//(v[0] != 0 && v[2] != 0)? Vec3.UP : Vec3.BACK,
+						q	= Quat.lookRotation(target, vUp);
+
+					Vec3.transformQuat(Vec3.FORWARD, q, this.zAxis).normalize();	// Forward
+					Vec3.cross(vUp, this.zAxis, this.xAxis).normalize();			// Left
+					Vec3.cross(this.zAxis, this.xAxis, this.yAxis).normalize();		// Up
+
+					return this;
+				}
+
+				setAxisByQuat(q){
+					Vec3.transformQuat(Vec3.FORWARD, q, this.zAxis).normalize();	// Forward
+					let v	= Vec3.nearZero(this.zAxis),
+						vUp	= (v[0] != 0 && v[2] != 0)? Vec3.UP : Vec3.BACK;
+					
+					Vec3.cross(vUp, this.zAxis, this.xAxis).normalize();			// Left
+					Vec3.cross(this.zAxis, this.xAxis, this.yAxis).normalize();		// Up
+
+					return this;
+				}
+
+				setLimit(upDeg=20, downDeg=20){
+					if(upDeg > 180)		upDeg	= 180;
+					if(downDeg > 180)	downDeg	= 180;
+
+					this.radLimitUp		= Maths.toRad(upDeg);
+					this.radLimitDown	= Maths.toRad(downDeg);
+
+					//Set Upper Limit
+					let v = new Vec3();
+					Maths.planeCircle(Vec3.ZERO, this.zAxis, this.yAxis, this.radLimitUp, 1, v).normalize();
+					Quat.lookRotation(v, this.yAxis, this.maxQuatUp);
+					this.mapLimitUp	= 1 - (Vec3.dot(v, this.zAxis) * 0.5 + 0.5);
+
+					//Set Lower Limit
+					Maths.planeCircle(Vec3.ZERO, this.zAxis, this.yAxis, this.radLimitDown, 1, v).normalize();
+					Quat.lookRotation(v, this.yAxis, this.maxQuatDown);
+					this.mapLimitDown = 1.0 - (Vec3.dot(v, this.zAxis) * 0.5 + 0.5);
+
+					return this;
+				}
+
+				apply( q ){
+					//...........................................
+					//Get the point of rotation
+					let dir	= Vec3.transformQuat(Vec3.FORWARD, q);
+					DVao.vecLine( eLine, dir, Vec3.ZERO, 4).vecPoint( ePoint, dir, 4);
+
+					//...........................................
+					//Get Closet point to the rotation plane
+					let len		= Vec3.dot(dir, this.xAxis),	// Length Square between Rotation point and X Axis Direction
+						vLen	= Vec3.scale(this.xAxis, len),	// Shortest Vector Length of rotation point to the plane
+						vPos	= Vec3.sub(dir, vLen),			// Rotation point minus vec length gets point on the plane
+						nPos 	= Vec3.norm(vPos);
+
+					DVao.vecPoint( ePoint, vPos, 6).vecLine( eLine, dir, vPos, 6);
+					DVao.vecPoint( ePoint, nPos, 6).vecLine( eLine, vPos, nPos, 6);
+
+
+					//...........................................
+					let ang 	= Vec3.dot(nPos, this.zAxis),	// Angle of rotation point in relation to zAxis,
+						angMap 	= 1.0 - (ang * 0.5 + 0.5),		// Map angle between 0 and 1, where PI = 1 and 0 = 0
+						side 	= Vec3.dot(this.yAxis, nPos);	// ... relation to yAxis, to determine if top or bottom half of circle.
+
+					if(side >= 0 && angMap > this.mapLimitUp){
+						console.log("Over Up Limit");
+						q.copy( this.maxQuatUp );
+						return true;
+					}else if(side < 0 && angMap > this.mapLimitDown){
+						console.log("Over Down Limit");
+						q.copy( this.maxQuatDown );
+						return true;
+					}else if(vLen.lengthSqr() > 0.00007){ //more then a half a degree off
+						console.log("Axis is off.");
+						Quat.lookRotation(nPos, this.yAxis, q);
+						return true;
+					}
+					//console.log("lengthSre", vLen.lengthSqr());
+					//console.log("side", side);
+					//console.log("n", ang, angMap, this.mapLimitDown);
+					//console.log("x", Maths.dotToDeg(ang) );
+					return false;
+				}
+			}
+
+			function debugAxis(bjc){
+				DVao.vecPoint(ePoint, bjc.zAxis, 1).vecLine( eLine, Vec3.ZERO, bjc.zAxis, 1);
+				DVao.vecPoint(ePoint, bjc.xAxis, 0).vecLine( eLine, Vec3.ZERO, bjc.xAxis, 0);
+				DVao.vecPoint(ePoint, bjc.yAxis, 2).vecLine( eLine, Vec3.ZERO, bjc.yAxis, 2);
+			}
+
+			function debugPlane(bjc, segCnt = 14, color=4){
+				let radius 	= 1,
+					inc		= Maths.PI_2 / segCnt,
+					ppos	= new Vec3(),
+					pos		= new Vec3();
+
+				Maths.planeCircle(Vec3.ZERO, bjc.zAxis, bjc.yAxis, 0, radius, ppos);
+
+				for(let i=1; i <= segCnt; i++){
+					Maths.planeCircle(Vec3.ZERO, bjc.zAxis, bjc.yAxis, i*inc, radius, pos);
+					DVao.vecLine( eLine, ppos, pos, color);
+					ppos.copy(pos);
+				}
+				
+				//var v = Vec3.add(bjc.zAxis, bjc.limitDir);
+				//DVao.vecPoint(ePoint, v, 4).vecLine( eLine, Vec3.ZERO, v, 4);
+			}
+
+			function debugLimits(bjc){
+					let v = new Vec3();
+
+					Maths.planeCircle(Vec3.ZERO, bjc.zAxis, bjc.yAxis, bjc.radLimitUp, 1, v);
+					DVao.vecLine( eLine, Vec3.ZERO, v, 9);
+					DVao.vecPoint( ePoint, v, 9);
+
+					//var x =Vec3.dot(v.normalize(), bjc.zAxis)
+					//console.log("x",x, 1 - (x * 0.5 + 0.5));
+
+					Maths.planeCircle(Vec3.ZERO, bjc.zAxis, bjc.yAxis, bjc.radLimitDown, 1, v);
+					DVao.vecLine( eLine, Vec3.ZERO, v, 8);
+					DVao.vecPoint( ePoint, v, 8);
+
+					//let vv = Vec3.transformQuat(Vec3.FORWARD, bjc.maxQuatDown);
+					//DVao.vecPoint( ePoint, vv, 6);
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
