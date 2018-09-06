@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+
+			//import DVao 		from "/fungi/components/DynamicVao.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import TNode 		from "./fungi/components/TransformNode.js";
+			import TNodeSys		from "./fungi/systems/TransformNodeSystem.js";
+
+
+
+			//http://gabormakesgames.com/blog_transforms_transforms.html
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+				])	//.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var ePoint, eLine, eCube01, eCube02;
+
+			function onRender(dt, ss){ 
+				let a = 30 * dt * Math.PI / 180;
+				eCube01.com.Transform.rotation.ry( a );
+				eCube01.com.Transform.isModified = true;
+
+				let b = -50 * dt * Math.PI / 180;
+				eCube02.com.Transform.rotation.ry( b );
+				eCube02.com.Transform.isModified = true;
+
+				//..................................
+				Fungi.ecs.updateSystems();
+			}
+
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+				Fungi.ecs.addSystem(new TNodeSys(), 99); 
+
+				//........................
+				//eLine = DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+				//DVao.rawLine(eLine, 0,0,0, 0,1,0, 6);
+
+				//ePoint = DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				//DVao.rawPoint(ePoint, 0,1,0, 0);
+
+				eCube01 = FacedCube();
+				eCube01.addByName("TransformNode");
+				eCube01.com.Transform.position.set(0, 0.5, 0);
+				eCube01.com.Transform.rotation.ry( 45 * Math.PI / 180 );
+				//eCube01.com.Transform.rotation.rx( 45 * Math.PI / 180 );
+				eCube01.com.Transform.scale.set( 1, 1.2, 1 );
+
+				eCube02 = Api.cloneDraw("Cube2", eCube01);
+				eCube02.addByName("TransformNode");
+				eCube02.com.Transform.position.set(0, 1.0, 0);
+				eCube02.com.Transform.scale.set( 0.5, 0.5, 0.5 );
+
+				TNode.addChild(eCube01, eCube02);
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>

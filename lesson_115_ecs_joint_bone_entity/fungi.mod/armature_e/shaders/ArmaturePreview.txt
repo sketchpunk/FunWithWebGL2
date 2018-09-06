@@ -1,0 +1,65 @@
+<shader>{
+	"name"		: "ArmaturePreview",
+	"ubo"		: [ "UBOTransform", "UBOModel" ],
+	"options"	: { "modelMatrix":true },
+	"uniforms"	: []
+}<\shader>
+	
+<materials>[
+	{ "name":"ArmaturePreview", "options": { "depthTest":false } }
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	layout(location=8) in vec4 a_boneRotation; //Rotation
+	layout(location=9) in vec3 a_bonePosition; //Position
+	layout(location=10) in float a_length;
+	layout(location=11) in vec3 a_boneScale;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	out vec3 v_color;
+
+	vec3 vecQuatRotation(vec4 q, vec3 v){ return v + cross(2.0 * q.xyz, cross(q.xyz, v) + q.w * v); }
+
+	void main(void){
+		//......................................
+		gl_PointSize = 5.0;
+		
+		if(a_position.w == 0.0)			v_color = vec3(1.0,0.0,0.0);
+		else if(a_position.w == 1.0)	v_color = vec3(0.0,1.0,0.0);
+		else if(a_position.w == 2.0)	v_color = vec3(0.0,0.0,1.0);
+		else 							v_color = vec3(0.6,0.6,0.6);
+
+		//......................................
+		vec3 pos = a_position.xyz;
+		if(a_position.w == 1.0) pos.y = a_length;
+
+		pos = vecQuatRotation(a_boneRotation, pos * a_boneScale) + a_bonePosition;
+
+		//......................................
+		gl_Position = projViewMatrix * vec4(pos, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec3 v_color;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = vec4(v_color, 1.0); }
+<\fragment>

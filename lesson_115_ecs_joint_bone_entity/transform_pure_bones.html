@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import {Vec3}			from "./fungi/Maths.js";
+
+			//import DVao 		from "/fungi/components/DynamicVao.js";
+			import FacedCube	from "./fungi/primitives/FacedCube.js";
+			import TNode 		from "./fungi/components/TransformNode.js";
+			import TNodeSys		from "./fungi/systems/TransformNodeSystem.js";
+
+			import Armature			from "./fungi.mod/armature_e/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature_e/ArmaturePreview.js";
+			import ArmatureSystem	from "./fungi.mod/armature_e/ArmatureSystem.js";
+
+			import Geometry	from "./fungi/data/Geometry.js";
+
+
+
+			//http://gabormakesgames.com/blog_transforms_transforms.html
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature_e/shaders/ArmaturePreview.txt" },
+					{ type:"shader", file:"./fungi.mod/armature_e/shaders/ArmatureSkin.txt" },
+				])	//.then( ()=>App.useDynamicVao() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			var ePoint, eLine, cArm, eRoot, eBone1, eBone2;
+
+			function onRender(dt, ss){ 
+				/* */
+				var a = 45 * Math.sin(ss) * Math.PI / 180;
+				eRoot.com.Transform.rotation.setAxisAngle( Vec3.LEFT, a );
+				eBone1.com.Transform.rotation.setAxisAngle( Vec3.LEFT, a );
+				eBone2.com.Transform.rotation.setAxisAngle( Vec3.LEFT, a );
+				eRoot.com.Transform.isModified = true;
+				cArm.isModified = true;
+
+				var s = Math.sin(ss) * 1.5 + 2.5;
+				eBone2.com.Transform.scale.set(s,1,s);
+				eBone2.com.Transform.isModified = true;
+				
+
+				Fungi.ecs.updateSystems();
+
+			}
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform
+					//.setPosition(5.350240230560303, 0.6099188327789307, -0.05409877002239227)
+					//.setAxisAngle([-0.056061921055663946,0.9968199256052558,0.0566316540365186], 1.5840924145419912);
+					.setPosition(0,2,5).setDegrees(-20,"x");
+				TNodeSys.init();
+				ArmatureSystem.init();
+
+				//........................
+				//eLine = DVao.initLine( Api.newDraw("eLine", "VecWColor") );
+				//DVao.rawLine(eLine, 0,0,0, 0,1,0, 6);
+
+				//ePoint = DVao.initPoint( Api.newDraw("ePoint", "VecWColor") );
+				//DVao.rawPoint(ePoint, 0,1,0, 0);
+
+				cArm	= new Armature();
+				eRoot	= Armature.newBone(cArm, "root", 0.6);
+				eBone1	= Armature.newBone(cArm, "b1", 0.6, eRoot);
+				eBone2	= Armature.newBone(cArm, "b2", 0.6, eBone1);
+				Armature.finalize( cArm ); //Sort and Bind Pose
+
+
+				let ePreview = Api.newDraw("Preview", "ArmaturePreview");
+				ePreview.addCom( cArm );
+
+
+				ArmaturePreview.init( ePreview );
+				ArmaturePreview.useDiamondWire( ePreview, "armPreview",);
+
+//eRoot.com.Transform.rotation.rx(45 * Math.PI / 180);
+//eRoot.com.Transform.isModified = true;
+//cArm.isModified = true;
+
+
+				eRoot.com.Transform.rotation.rx(45 * Math.PI / 180);
+				eBone1.com.Transform.rotation.rx(45 * Math.PI / 180);
+				eBone2.com.Transform.rotation.rx(45 * Math.PI / 180);
+
+				eRoot.com.Transform.scale.set(2,1,2);
+				eBone1.com.Transform.scale.set(0.5,1,0.5);
+				eBone2.com.Transform.scale.set(2,1,2);
+
+				eRoot.com.Transform.isModified = true;
+				eBone1.com.Transform.isModified = true;
+				eBone2.com.Transform.isModified = true;
+				cArm.isModified = true;
+/**/
+
+				//........................
+				let geo = new Geometry();
+				buildShape(geo, 6, 0.3);
+
+				let eShape = geo.applyDraw( Api.newDraw("skin", "ArmatureSkin"), "skinMesh", false, 2, Fungi.LINE_STRIP); //LINE_STRIP
+				eShape.addCom( cArm ); //Kind of a Hack
+
+				eShape.com.Drawable.draw = function( rend, entity, cDraw ){
+					rend.loadMaterial( cDraw.material );
+
+					var ubo = Fungi.getUBO( "UBOArmature" );
+					ubo.updateItem("joints", entity.com.Armature.flatOffset);
+					ubo.updateItem("scale", entity.com.Armature.flatScale);
+					ubo.updateGL();
+
+					//console.log(entity.com.Armature.flatScale);
+
+					//rend.shader.setUniform("u_joints", entity.com.Armature.flatOffset);
+					//rend.shader.setUniform("u_jointCount", 2);
+
+					rend.loadEntity( entity );
+					rend.draw( cDraw );
+				}
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			function buildShape(geo, cnt=3, inc=0.3){
+				let idxAry = [0,1,2,3];
+
+				geo.addVerts( 
+					-0.2, 0,  0.2,  0.2, 0,  0.2,
+					 0.2, 0, -0.2,  -0.2, 0, -0.2
+				);
+
+				for(var j=0; j < 4; j++){
+					var v = geo.verts[ j ];
+					v.initJoints( 0, 0, 0, 0).initJointWeights( 1, 0, 0, 0);
+				}
+
+
+				var idx;
+				for(var i=1; i < cnt; i++){
+					idx = geo.extrude(idxAry, [ 0, inc * i, 0 ]);
+
+
+					//if(i % 2 == 0 || i == 5)
+					//		console.log(i, Math.ceil((i-1)/2), 0, 1, 0);
+					//	else
+					//		console.log(i, (i-1)/2, ((i-1)/2)+1,  0.5, 0.5);
+							
+
+					for(var j=0; j < idx.length; j++){
+						var v = geo.verts[ idx[j] ];
+						if(i % 2 == 0 || i == 5)
+							v.initJoints( Math.ceil((i-1)/2), 0, 0, 0).initJointWeights(  1, 0, 0, 0);
+						else
+							v.initJoints( (i-1)/2, ((i-1)/2)+1, 0, 0).initJointWeights(  0.5, 0.5, 0, 0);						
+					}
+
+				}
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
