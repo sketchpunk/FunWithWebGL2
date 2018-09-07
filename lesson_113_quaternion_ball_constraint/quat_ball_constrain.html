@@ -43,24 +43,25 @@
 				var constraint	= new BallJointContraint();
 				constraint
 					.setAxisByQuat( bindRot )  //.setAxisByLook( new Vec3(0, 0.5, 1) );
-					.setLimit(45); 
+					.setLimit(30); 
 
 				debugAxis(constraint);
 				debugSphere(constraint);
 				debugPlane(constraint);
-				//debugLimits(constraint);
 
-				var //newRot = new Quat().rx( Maths.toRad(-91) ).ry( Maths.toRad(-30) ),  //Over Top
+				var newRot = new Quat().rx( Maths.toRad(-91) ).ry( Maths.toRad(-30) ),  //Over Top
 					//newRot = new Quat().rx( Maths.toRad(5) ).ry( Maths.toRad(-30) ),  //Over Bottom
 					//newRot = new Quat().rx( Maths.toRad(-20) ).ry( Maths.toRad(-20) ),  //Axis is off
-					newRot = new Quat().rx( Maths.toRad(10) ), //-13
+					//newRot = new Quat().rx( Maths.toRad(12) ), //-13
 					vecRot = Vec3.transformQuat(Vec3.FORWARD, newRot);
 
-				
+				/**/
 				if( constraint.apply( newRot ) ){
 					Vec3.transformQuat(Vec3.FORWARD, newRot, vecRot).scale(1.5);
 					DVao.vecLine( eLine, Vec3.ZERO, vecRot, 7).vecPoint( ePoint, vecRot, 7);
+					console.log("Over ball limit");
 				}else console.log("In Range, no clamping");
+				
 
 				//........................
 				Fungi.loop.start();
@@ -122,8 +123,8 @@
 					return this;
 				}
 
-				setLimit(deg=20){ deg=20;
-					if(deg > 180)		upDeg	= 180;
+				setLimit(deg=20){ //deg=20;
+					if(deg > 179)		upDeg	= 179;
 
 					this.radLimit = Maths.toRad(deg);
 
@@ -133,6 +134,8 @@
 
 					//DVao.vecPoint(ePoint, v, 3).vecLine( eLine, Vec3.ZERO, v, 3);
 
+					//return this;
+
 					//Project this point on the zAxis Line to find the closets point which becomes the plane's origin point
 					//From there use the plane's point and angle point to determine a radius. This will give us a limited range
 					//of movement
@@ -140,7 +143,7 @@
 					Vec3.scale(this.zAxis, len, this.planePos);
 					this.planeRadius = Vec3.sub(v, this.planePos).length();
 
-					DVao.vecPoint( ePoint, this.planePos, 6).vecLine( eLine, v, this.planePos, 6);
+					//DVao.vecPoint( ePoint, this.planePos, 6).vecLine( eLine, v, this.planePos, 6);
 
 					return this;
 				}
@@ -151,19 +154,40 @@
 					let dir	= Vec3.transformQuat(Vec3.FORWARD, q);
 					DVao.vecLine( eLine, dir, Vec3.ZERO, 4).vecPoint( ePoint, dir, 4);
 
+					//return false;
+
 					//...........................................
+					//Get Direction in relation to plane position
 					var dirLen = Vec3.sub(dir, this.planePos);
 					//DVao.vecPoint( ePoint, dirLen, 6).vecLine( eLine, Vec3.ZERO, dirLen, 6);
 
+					//Direction is a length vector at origin, use zAxis Unit vector to test if its in the
+					//positive side of the plane.
 					var dot = Vec3.dot(dirLen, this.zAxis);
 					//console.log(dot);
 
+					//return false;
 
 					if(dot < 0){
-
 						//Find closest point to plane to keep angle, then limit its range to the plane's radius.
-						let vLen = Vec3.scale(this.zAxis, dot),
-							vPos = Vec3.sub(dir, vLen).sub(this.planePos).normalize().scale(this.planeRadius).add(this.planePos);
+						//Can use the dot product as length between two points.
+						let vLen = Vec3.scale(this.zAxis, dot), //Closet point on zAxis
+							vPos = Vec3.sub(dir, vLen);			//Get get Point to Plane
+
+						DVao.vecPoint( ePoint, Vec3.add(this.planePos,vLen), 8)
+							.vecLine( eLine, Vec3.add(this.planePos,vLen), dir, 8); //Closet point on zAxis
+						DVao.vecPoint( ePoint, vPos, 8)
+							.vecLine( eLine, vPos, dir, 8); 
+
+						//return false;
+
+						//Now with position on plane, get distance from plane origin and normalize.
+						//Then scale it by the plane radius limit, then add it to plane position
+						//to get the snap rotation to the closest position.
+						vPos.sub(this.planePos)
+							.normalize()
+							.scale(this.planeRadius)
+							.add(this.planePos);
 
 						DVao.vecPoint( ePoint, vPos, 6).vecLine( eLine, dir, vPos, 6).vecLine( eLine, this.planePos, vPos, 6);
 
@@ -224,6 +248,8 @@
 				
 				//var v = Vec3.add(bjc.zAxis, bjc.limitDir);
 				//DVao.vecPoint(ePoint, v, 4).vecLine( eLine, Vec3.ZERO, v, 4);
+
+				DVao.vecPoint(ePoint, bjc.planePos, 0);
 			}
 
 			function debugLimits(bjc){
