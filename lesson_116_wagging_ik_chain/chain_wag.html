@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import Maths, {Vec3, Quat}		from "./fungi/Maths.js";
+
+			import TNode 			from "./fungi/components/TransformNode.js";
+
+			import Armature			from "./fungi.mod/armature_e/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature_e/ArmaturePreview.js";
+
+			import IKChain, { IKChainState, IKChainPose }	from "./fungi.mod/armature_e/IKChain.js";
+
+
+			//import DVao from "/fungi/components/DynamicVao.js";
+			//let ePoint, eLine;
+			let gRig, gPoseA, gPoseB;
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature_e/shaders/ArmaturePreview.txt" },
+					//{ type:"shader", file:"/fungi.mod/armature_e/shaders/ArmatureSkin.txt" },
+				])	//.then( ()=>App.useDynamicVao(true, true).then(function(rtn){ ePoint = rtn.point; eLine = rtn.line; }) ) 
+					.then( ()=>App.useTransformNode() )
+					.then( ()=>App.useArmature() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			function onRender(dt, ss){
+				/* */
+				paChain_Wag( gRig.chain, ss, Maths.toRad(35), 2,  0.6);
+				//paChain_Wag( gRig.chain, ss, Maths.toRad(35), 2,  0.6);
+				//paChain_Wag( gRig.chain, ss, Maths.toRad(35), 2,  -0.6); //10 Chains, snake like moovement
+				gRig.armature.isModified = true;
+				
+
+				/*
+				var t = Math.sin( ss ) * 0.5 + 0.5;
+				IKChainPose.applyLerp( gRig.chain, gPoseA, gPoseB, t);
+				gRig.armature.isModified = true;
+				*/
+
+				Fungi.ecs.updateSystems();
+			}
+
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+
+				//........................
+				gRig = new TentacleRig(3, 0.3);
+				//paChain_Wag(gRig.chain, 0.1, 0.2, 1, 0);
+
+				//........................
+				/*
+				gPoseA = new IKChainPose(gRig.chain, false); IKChainState.create(gRig.chain, false);
+				gPoseB = new IKChainPose(gRig.chain, false); IKChainState.create(gRig.chain, false);
+
+				gPoseA.links[1].rotation.setAxisAngle( Vec3.FORWARD, Maths.toRad(90) );
+				gPoseA.links[1].useRotation = true;
+				gPoseA.links[2].rotation.copy( gPoseA.links[1].rotation );
+				gPoseA.links[2].useRotation = true;
+
+				gPoseA.invert( gPoseB );
+
+				IKChainPose.applyTransform( gRig.chain, gPoseA );
+				*/
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			function paChain_Wag(chain, t, range=0.7, speed=1, incOffset=0){
+				let s, et, eb, q = new Quat();
+				for(let i=0; i < chain.count; i++){
+					et	= chain.links[ i ].com.Transform;				// Transform Reference
+					eb	= chain.links[ i ].com.Bone;					// Bone Reference
+
+					// Scalar for Angle range, The further down the chain, we can add an
+					// offset so the rotation can be slower or faster then its parent rotation.
+					s	= Math.sin(  (t * speed) - i * incOffset );		
+
+					q.setAxisAngle( Vec3.FORWARD,  s * range);			// Set Rotation by axis and a scaled value of the Rnage Angle
+					Quat.mul(  et.rotation, q, eb.initRotation );		// "Add" rotation to binding rotation.
+					et.isModified = true;								// set that transform has be updated.
+				}
+			}
+
+
+			class TentacleRig{
+				constructor(bCnt = 4, bLen = 0.3){
+					//...................................
+					// Build Armature Component
+					this.armature = new Armature();
+
+					let bPrev = null;
+					for(let i=0; i < bCnt; i++) bPrev = Armature.newBone(this.armature, "b"+i, bLen, bPrev);
+
+					this.armature.isActive		= false;
+					this.armature.isModified	= true;
+					Armature.finalize( this.armature ); //Sort and Bind Pose
+					
+					//...................................
+					// Build Bone Chain
+					this.chain = IKChain.createFromArmature( this.armature );
+
+					//...................................
+					// Build Preview Rendering Entity
+					this.preview = Api.newDraw("TentacleRig", "ArmaturePreview");
+					this.preview.addCom( this.armature );	// Add Armature Component to Preview Rig.
+					ArmaturePreview.init( this.preview );	// Setup
+					ArmaturePreview.useDiamondWire( this.preview, "armPreview" );
+				}
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
