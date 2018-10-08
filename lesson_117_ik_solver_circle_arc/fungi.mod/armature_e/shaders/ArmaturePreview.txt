@@ -1,0 +1,83 @@
+<shader>{
+	"name"		: "ArmaturePreview",
+	"ubo"		: [ "UBOTransform", "UBOModel" ],
+	"options"	: { "modelMatrix":true },
+	"uniforms"	: []
+}<\shader>
+	
+<materials>[
+	{ "name":"ArmaturePreview", "options": { "depthTest":false } }
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	layout(location=8) in vec4 a_boneRotation; //Rotation
+	layout(location=9) in vec3 a_bonePosition; //Position
+	layout(location=10) in float a_length;
+	layout(location=11) in vec3 a_boneScale;
+
+	uniform UBOTransform{
+		mat4 	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	out vec3 v_color;
+
+/*
+	//https://github.com/robertsdionne/animus/blob/master/src/animus.htm
+	//https://www.cs.utah.edu/~ladislav/dq/dqs.cg
+	//http://donw.io/post/dual-quaternion-skinning/
+	vec3 dqTransform(vec4 Qr, vec4 Qd, vec3 v){
+		//Normalize - For my data I dont really need it but keep the src incase I do.
+		//float len = 1.0 / length(Qr);
+		//Qr *= len;
+		//Qd *= len;
+
+		//dqsFast example from dqs.cg has v + 2.0 * cross which allows rotation to work but translation fails
+		//but thanks to a shader written by robertsdionne, he changed it to v + cross(2.0 *
+		//Moving the 2.0 multiplication into the first cross makes it works correctly in webgl - SketchpunkLabs
+		vec3 pos	= v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);			//Rotate Vector
+		vec3 tran	= 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+		return pos + tran;
+	}
+*/
+	vec3 vecQuatRotation(vec4 q, vec3 v){ return v + cross(2.0 * q.xyz, cross(q.xyz, v) + q.w * v); }
+
+	void main(void){
+		//......................................
+		gl_PointSize = 5.0;
+		
+		if(a_position.w == 0.0)			v_color = vec3(1.0,0.0,0.0);
+		else if(a_position.w == 1.0)	v_color = vec3(0.0,1.0,0.0);
+		else if(a_position.w == 2.0)	v_color = vec3(0.0,0.0,1.0);
+		else 							v_color = vec3(0.6,0.6,0.6);
+
+		//......................................
+		vec3 pos = a_position.xyz;
+		if(a_position.w == 1.0) pos.y = a_length;
+
+		pos = vecQuatRotation(a_boneRotation, pos * a_boneScale) + a_bonePosition;
+
+		//......................................
+		gl_Position = projViewMatrix * modelMatrix * vec4(pos, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec3 v_color;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = vec4(v_color, 1.0); }
+<\fragment>

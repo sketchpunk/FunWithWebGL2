@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import Maths, {Vec3, Quat}		from "./fungi/Maths.js";
+
+			import TNode 			from "./fungi/components/TransformNode.js";
+
+			import Armature			from "./fungi.mod/armature_e/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature_e/ArmaturePreview.js";
+
+			import IKChain, { IKChainState, IKChainPose }		from "./fungi.mod/armature_e/IKChain.js";
+			import IKChainSolver, { IKTarget, TransformData }	from "./fungi.mod/armature_e/IKChainSolver.js";
+			import IKChainAnimator								from "./fungi.mod/armature_e/IKChainAnimator.js";
+			
+
+			import DVao from "./fungi/components/DynamicVao.js";
+			let ePoint, eLine;
+			let gRig_Arc, gRig_Limb, gTarget, gAnim;
+
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature_e/shaders/ArmaturePreview.txt" },
+					//{ type:"shader", file:"/fungi.mod/armature_e/shaders/ArmatureSkin.txt" },
+				])	.then( ()=>App.useDynamicVao(true, true).then(function(rtn){ ePoint = rtn.point; eLine = rtn.line; }) ) 
+					.then( ()=>App.useTransformNode() )
+					.then( ()=>App.useArmature() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+
+			function onRender(dt, ss){
+				animate();
+
+				Fungi.ecs.updateSystems();
+			}
+
+			function animate(){
+				DVao.reset( ePoint, eLine );
+
+				//....................................................
+				// ANIMATION DATA
+				gAnim.updateTarget( gTarget );
+				IKTarget.debug(DVao, eLine, ePoint, gTarget, [0, 1, 0] );
+
+
+				/*....................................................
+				  LIMB SOLVER */
+				IKChainSolver.twoBone( gRig_Limb.chain, gTarget, gRig_Limb.pose );
+				IKChainPose.applyTransform( gRig_Limb.chain, gRig_Limb.pose );
+				gRig_Limb.armature.isModified = true;
+
+
+				/*....................................................
+				  CIRCLE ARC SOLVER */
+				IKChainSolver.circleArc( gRig_Arc.chain, gTarget, gRig_Arc.pose );
+				IKChainPose.applyTransform( gRig_Arc.chain, gRig_Arc.pose );
+				gRig_Arc.armature.isModified = true;
+
+			}
+
+
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+				//........................
+				gTarget	= new IKTarget();
+
+				//........................
+				// Setup Leg Walking Animation.
+				var json = { 
+					cyclePerSec:3,
+					dir:[0,-1,0], bendDir:[0,0,1],
+					rotateCurve:"sin01", rotateCycleOffset:0,
+					axis:[1,0,0], axisFrom:-45, axisTo:70,
+					scaleFrom: 0.5, scaleTo: 1.0, scaleCycleOffset: 1.95, scaleCurve: "sin01"
+				};
+				gAnim = new IKChainAnimator( json );
+				gAnim.cycle.cycle = 2.9;
+
+				//........................
+				//Setup Legs
+
+				gRig_Limb 	= new LegRig(2, 0.5, [0.5,0,0]);
+				gRig_Arc	= new LegRig(8, 0.125, [1.0,0,0]);
+
+				
+				//........................
+				animate();
+				Fungi.loop.start();
+			}
+
+
+
+			class LegRig{
+				constructor(bCnt = 4, bLen = 0.3, previewOffset = null){
+					//...................................
+					// Build Armature Component
+					this.armature = new Armature();
+
+					let bPrev = null;
+					for(let i=0; i < bCnt; i++) bPrev = Armature.newBone(this.armature, "b"+i, bLen, bPrev);
+
+					//Move Left up and rotate to point down.
+					let b = Armature.getBone(this.armature, "b0");
+					b.com.Transform.setPosition( 0, 1, 0 ).rotation.rx( Maths.toRad(180) );
+
+					this.armature.isActive		= false;
+					this.armature.isModified	= true;
+					Armature.finalize( this.armature ); //Sort and Bind Pose
+					
+					//...................................
+					// Build Bone Chain
+					this.chain	= IKChain.createFromArmature( this.armature );
+					this.pose	= new IKChainPose( this.chain, false );
+
+					//...................................
+					// Build Preview Rendering Entity
+					this.preview = Api.newDraw("TentacleRig", "ArmaturePreview");
+					this.preview.addCom( this.armature );	// Add Armature Component to Preview Rig.
+					ArmaturePreview.init( this.preview );	// Setup
+					ArmaturePreview.useDiamondWire( this.preview, "armPreview" );
+
+					if(previewOffset) this.preview.com.Transform.position.copy( previewOffset );
+				}
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
