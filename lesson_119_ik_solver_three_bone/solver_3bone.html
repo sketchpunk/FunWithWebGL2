@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import Maths, {Vec3, Quat}		from "./fungi/Maths.js";
+
+			import TNode 			from "./fungi/components/TransformNode.js";
+
+			import Armature			from "./fungi.mod/armature_e/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature_e/ArmaturePreview.js";
+
+			import IKChain, { IKChainState, IKChainPose }	from "./fungi.mod/armature_e/IKChain.js";
+			import IKChainSolver, { IKTarget, TransformData }	from "./fungi.mod/armature_e/IKChainSolver.js";
+			
+
+			import DVao from "./fungi/components/DynamicVao.js";
+			let ePoint, eLine;
+			let gRig, gPose, gTarget;
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature_e/shaders/ArmaturePreview.txt" },
+					//{ type:"shader", file:"/fungi.mod/armature_e/shaders/ArmatureSkin.txt" },
+				])	.then( ()=>App.useDynamicVao(true, true).then(function(rtn){ ePoint = rtn.point; eLine = rtn.line; }) ) 
+					.then( ()=>App.useTransformNode() )
+					.then( ()=>App.useArmature() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+
+			function onRender(dt, ss){
+				/* */
+				DVao.reset( eLine, ePoint );
+
+				var t = (Math.sin( ss ) * 0.5 + 0.5) * gRig.chain.length - 0.86; //.35
+				gTarget.setEndPoints(Vec3.UP, [0, t, 0]);
+				IKTarget.debug( DVao, eLine, ePoint, gTarget, [0.5, 1, 0] );
+
+				threeBone( gRig.chain, gTarget, gPose );
+				IKChainPose.applyTransform( gRig.chain, gPose );
+				gRig.armature.isModified = true;
+				
+
+				Fungi.ecs.updateSystems();
+			}
+
+
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+				//........................
+				gRig	= new TentacleRig(3, 0.3333);
+				gPose	= new IKChainPose(gRig.chain, false);
+
+				//........................
+				gTarget	= new IKTarget();
+				gTarget.setEndPoints(Vec3.UP, [0.0, 0.2, 0.0]);
+
+				IKTarget.debug( DVao, eLine, ePoint, gTarget, [0.5, 1, 0] );
+
+				threeBone( gRig.chain, gTarget, gPose );
+				IKChainPose.applyTransform( gRig.chain, gPose );
+
+				gRig.armature.isModified = true;
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			class TentacleRig{
+				constructor(bCnt = 4, bLen = 0.3){
+					//...................................
+					// Build Armature Component
+					this.armature = new Armature();
+
+					let bPrev = null;
+					for(let i=0; i < bCnt; i++) bPrev = Armature.newBone(this.armature, "b"+i , bLen+ (i * 0.1), bPrev); //  
+
+					//Move Left up and rotate to point down.
+					let b = Armature.getBone(this.armature, "b0");
+					b.com.Transform.setPosition( 0, 1, 0 ).rotation.rx( Maths.toRad(180) );
+
+					this.armature.isActive		= false;
+					this.armature.isModified	= true;
+					Armature.finalize( this.armature ); //Sort and Bind Pose
+					
+					//...................................
+					// Build Bone Chain
+					this.chain = IKChain.createFromArmature( this.armature );
+
+					//...................................
+					// Build Preview Rendering Entity
+					this.preview = Api.newDraw("TentacleRig", "ArmaturePreview");
+					this.preview.addCom( this.armature );	// Add Armature Component to Preview Rig.
+					ArmaturePreview.init( this.preview );	// Setup
+					ArmaturePreview.useDiamondWire( this.preview, "armPreview" );
+				}
+			}
+
+
+			function threeBone(chain, target, pose){
+				//------------------------------------
+				//If the scale is near or over 1, do full extenction of chain.
+				if(target.scale > 0.9999){ IKChainSolver.fullDirection( chain, target, pose, true ); return; }
+
+
+				//------------------------------------
+				let chainPosition 	= TNode.getWorldPosition( chain.links[0] ),
+					scale			= target.scale;
+
+				if(!scale){
+					scale = chainPosition.length( target.position ) / chain.length;
+
+					//Check scale, if over length of chain, then straighten it out.
+					if(scale > 0.9999){ IKChainSolver.fullDirection(chain, target, pose); return; }
+				}
+				
+				//------------------------------------
+				// TODO, Need a Target Length Limit Check. Possible Idea, use the longest bone as the min length.
+
+
+				//------------------------------------
+				// Get the length of the bones, the calculate the ratio length for the bones based on the chain length
+				// The 3 bones when placed in a zig-zag pattern creates a Parallelogram shape. We can break the shape down into two triangles
+				// By using the ratio of the Target length divided between the 2 triangles, then using the first bone + half of the second bound
+				// to solve for the top 2 joiints, then uing the half of the second bone + 3rd bone to solve for the bottom joint.
+				// If all bones are equal length,  then we only need to use half of the target length and only test one triangle and use that for
+				// both triangles, but if bones are uneven, then we need to solve an angle for each triangle which this function does.
+
+				let b0Len = chain.links[0].com.Bone.length,
+					b1Len = chain.links[1].com.Bone.length,
+					b2Len = chain.links[2].com.Bone.length,
+						// How much of target length to use for the first 2 bones
+						// For the 2nd and 3rd bone we can use 1-ratio.
+					ratio = ( b0Len + b1Len * 0.5 ) / ( b0Len + b1Len + b2Len ),
+
+					targetLength = chain.length * scale;
+
+				//------------------------------------
+				// Law of Cosines - SSS
+				// cos(C) = (a^2 + b^2 - c^2) / 2ab
+				// Angle for B0 B1
+				let bLen	= b1Len * 0.5,
+					aLen	= b0Len,
+					cLen	= targetLength * ratio,
+					n 		= Maths.clamp( (aLen*aLen + bLen*bLen - cLen*cLen) / (2 * aLen * bLen), -1, 1 ), // Prevent NaN Error
+					angleA	= Math.PI - Math.acos( n );
+
+				// Angle for B1 B2
+				aLen	= b2Len;
+				cLen	= targetLength * (1 - ratio);
+				n		= Maths.clamp( (aLen*aLen + bLen*bLen - cLen*cLen) / (2 * aLen * bLen), -1, 1 );  // Prevent NaN Error
+				let angleB	= Math.PI - Math.acos( n );
+
+
+				//------------------------------------
+				//Apply the angle
+				IKChainSolver.aimDirection(chain, target, pose); //Align root bone in the direction of target z axis
+
+				pose.links[1].rotation.setAxisAngle(Vec3.LEFT, angleA);		//.pmul( q.setAxisAngle(Vec3.LEFT, angleA) );
+				pose.links[1].useRotation = true;
+
+				pose.links[2].rotation.setAxisAngle(Vec3.LEFT, -angleB);	//.pmul( q.setAxisAngle(Vec3.LEFT, -angleB) );
+				pose.links[2].useRotation = true;
+
+
+				//------------------------------------
+				//The end position usually doesn't line up with the target, so try to align it
+				let endPosition = IKChainSolver.chainEndPosition( chain, pose, chainPosition );	// world position of end of chain
+				IKChainSolver.alignFwdRotation(chain, target, pose, endPosition.sub(chainPosition).normalize());
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
