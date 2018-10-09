@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import Maths, {Vec3, Quat}		from "./fungi/Maths.js";
+
+			import TNode 			from "./fungi/components/TransformNode.js";
+
+			import Armature			from "./fungi.mod/armature_e/Armature.js";
+			import ArmaturePreview	from "./fungi.mod/armature_e/ArmaturePreview.js";
+
+			import IKChain, { IKChainState, IKChainPose }	from "./fungi.mod/armature_e/IKChain.js";
+			import IKChainSolver, { IKTarget, TransformData }	from "./fungi.mod/armature_e/IKChainSolver.js";
+			
+
+			import DVao from "./fungi/components/DynamicVao.js";
+			let ePoint, eLine;
+			let gRig, gPose, gTarget;
+
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi.mod/armature_e/shaders/ArmaturePreview.txt" },
+					//{ type:"shader", file:"/fungi.mod/armature_e/shaders/ArmatureSkin.txt" },
+				])	.then( ()=>App.useDynamicVao(true, true).then(function(rtn){ ePoint = rtn.point; eLine = rtn.line; }) ) 
+					.then( ()=>App.useTransformNode() )
+					.then( ()=>App.useArmature() )
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			function onRender(dt, ss){
+				/* */
+				DVao.reset( eLine, ePoint );
+
+				var t = (Math.sin( ss ) * 0.5 + 0.5) * gRig.chain.length + 0.01;
+				gTarget.setEndPoints(Vec3.ZERO, [t, 0, 0]);
+				IKTarget.debug( DVao, eLine, ePoint, gTarget );
+
+				piston( gRig.chain, gTarget, gPose );
+				IKChainPose.applyTransform( gRig.chain, gPose );
+				gRig.armature.isModified = true;
+				
+
+				Fungi.ecs.updateSystems();
+			}
+
+
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform.setPosition(0,2,5).setDegrees(-20,"x");
+
+				//........................
+				gRig	= new TentacleRig(3, 0.5);
+				gPose	= new IKChainPose(gRig.chain, false);
+
+				//........................
+				gTarget	= new IKTarget();
+				gTarget.setEndPoints(Vec3.ZERO, [1.3, 0.0, 0.0]);
+
+				IKTarget.debug( DVao, eLine, ePoint, gTarget );
+
+				piston( gRig.chain, gTarget, gPose );
+				IKChainPose.applyTransform( gRig.chain, gPose );
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+			class TentacleRig{
+				constructor(bCnt = 4, bLen = 0.3){
+					//...................................
+					// Build Armature Component
+					this.armature = new Armature();
+
+					let bPrev = null;
+					for(let i=0; i < bCnt; i++) bPrev = Armature.newBone(this.armature, "b"+i , bLen, bPrev); //  + (i * 0.3)
+
+					this.armature.isActive		= false;
+					this.armature.isModified	= true;
+					Armature.finalize( this.armature ); //Sort and Bind Pose
+					
+					//...................................
+					// Build Bone Chain
+					this.chain = IKChain.createFromArmature( this.armature );
+
+					//...................................
+					// Build Preview Rendering Entity
+					this.preview = Api.newDraw("TentacleRig", "ArmaturePreview");
+					this.preview.addCom( this.armature );	// Add Armature Component to Preview Rig.
+					ArmaturePreview.init( this.preview );	// Setup
+					ArmaturePreview.useDiamondWire( this.preview, "armPreview" );
+				}
+			}
+
+
+			function piston(chain, target, pose){
+				//...........................................
+				//If the scale is near or over 1, do full extenction of chain.
+				if(target.scale > 0.9999){ IKChainSolver.fullDirection( chain, target, pose, true ); return; }
+
+
+				//------------------------------------
+				let chainPosition 	= TNode.getWorldPosition( chain.links[0] ),
+					scale			= target.scale;
+
+				if(!scale){
+					scale = chainPosition.length( target.position ) / chain.length;
+
+					//Check scale, if over length of chain, then straighten it out.
+					if(scale > 0.9999){ IKChainSolver.fullDirection(chain, target, pose); return; }
+				}
+
+
+				//...........................................
+				//Aim the chain to the direction of the z axis of the target.
+				IKChainSolver.aimDirection(chain, target, pose, true);
+				
+
+				//...........................................
+				// Check if target length is less then any bone,
+				// If so, compress all bones down.
+				let doCompress		= false,
+					targetLength	= chain.length * scale,
+					i;
+
+				for(i=0; i < chain.count; i++){
+					if(chain.links[i].com.Bone.length >= targetLength){ doCompress = true; break; }
+				}
+
+				if(doCompress){
+					for(i=1; i < chain.count; i++){
+						pose.links[i].position.set( 0, 0, 0 );
+						pose.links[i].usePosition = true;
+					} return;
+				}
+
+
+				//...........................................
+				// Bones can only shift into their parent bone. So the final bone's length in the chain isn't needed.
+				// So we get the acount of space we need to retract, then divide it evenly based on the ratio of bone
+				// lengths. So if Bone0 = 2 and Bone1 = 8, that means Bone0 only needs to travel 20% of the total retraction 
+				// length where bone1 does 80%. 
+				// Keep in mind, we travel based on parent length BUT apply change to child.
+
+				var lastIdx	= chain.count - 1,												
+					rmLen	= chain.length - targetLength,	// How much distance we need to move
+					nLenInv = 1 / (chain.length - chain.links[ lastIdx ].com.Bone.length),	//Get chain length minus final bone, then invert to avoid division in loop.
+					c;
+
+				//Scale the bone length to make it more even movement between bones if varing bone lengths
+				for(i=0; i < lastIdx; i++){
+					c = chain.links[i].com;
+					pose.links[ i+1 ].position.y	= c.Bone.length - rmLen * c.Bone.length * nLenInv;
+					pose.links[ i+1 ].usePosition	= true;
+				}
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+</body>
+</html>
