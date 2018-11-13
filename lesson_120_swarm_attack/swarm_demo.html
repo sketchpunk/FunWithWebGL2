@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Fungi		from "./fungi/Fungi.js";
+			import App			from "./fungi/App.js";
+			import Api			from "./fungi/Api.js";
+			import DVao 		from "./fungi/components/DynamicVao.js";
+			
+			import Maths, {Vec3, Quat}	from "./fungi/Maths.js";
+			import { LoadInlineShader }	from "./fungi/Shader.js";
+
+			import { Cycle }			from "./fungi.mod/Timing.js";
+			import Curves 				from "./fungi.mod/Curves.js";
+
+			import {Particles, ParticleState, ParticleSystem} from "./Particles.js";
+
+
+			var ePoint, eLine;
+			window.addEventListener("load",function(){
+				App.launch(onRender, [
+					{ type:"shader", file:"./fungi/shaders/VecWColor.txt" },
+					{ type:"shader", file:"./fungi/shaders/LowPolyPhong.txt" },
+				])	.then( ()=>{ 
+						LoadInlineShader("inline_shader");
+						ParticleSystem.init();
+					})
+					.then( ()=>App.useDynamicVao(true, true).then(function(rtn){ ePoint = rtn.point; eLine = rtn.line; }) ) 
+					.then( ()=>App.loadScene() )
+					.then( ()=>onInit() )
+					.catch( err=>console.log("err", err) );
+			});
+
+			//=============================================
+			function randomTarget( v=null){
+				var i = 4;
+				v = v || new Vec3( Maths.rnd(-i,i), Maths.rnd(-i,i), Maths.rnd(-i,i) );
+
+				eParticles.com.Particles.position.copy( v );
+				ePoint.com.Transform.position.copy( v );
+				ePoint.com.Transform.isModified = true;
+			}
+
+
+			window.addEventListener("keyup", function(e){
+				//console.log(e.keyCode);
+				if(e.keyCode == 32) randomTarget();
+			});
+
+
+			//=============================================
+			var eParticles, gPState, gPS_Shape, gPS_Follow;
+
+			function onRender(dt, ss){
+				/* */
+				gPS_Shape.apply( eParticles, gPState );
+				gPS_Follow.apply( eParticles, gPState );
+				gPState.apply( eParticles );
+				
+				Fungi.ecs.updateSystems(); 
+			}
+	
+
+			function onInit(){
+				//........................				
+				Fungi.camera.com.Transform
+					.setPosition(0, 3.6074962615966797, 9.416558265686035)
+					.setAxisAngle([-0.9999992445646765,0,0], 0.34906611865540826);
+					//.setPosition(0,2,5).setDegrees(-20,"x");
+
+				//........................
+				DVao.rawPoint(ePoint, 0,0,0, 0);
+
+				//----------------
+				let pCnt = 13;
+				eParticles	= Particles.init( Api.newDraw("Particles", "LowPolyPart"), "Particles", pCnt);
+				gPState		= new ParticleState( eParticles );
+
+				//----------------
+				gPS_Shape	= new PState_Circle(3);
+				//gPS_Shape 	= new PState_Sphere();
+				//gPS_Shape	= new PState_lissajous(8);
+				gPS_Follow	= new PState_Follow( gPS_Shape.cycle.speed + 0.1, 0.2 );
+
+				//----------------
+				gPS_Shape.apply( eParticles, gPState );
+				gPState.apply( eParticles );
+
+				//........................
+				Fungi.loop.start();
+			}
+
+
+
+			//=============================================
+			class PState_Circle{
+				constructor( sec=2, radius=1 ){
+					this.cycle	= new Cycle( sec );
+					this.radius	= radius;
+				}
+				apply(e, state){
+					let i, ang,
+						com	= e.com.Particles,
+						cnt	= com.itemCount,
+						inc	= Maths.PI_2 / cnt;
+
+					this.cycle.next();
+					//var v = new Vec3();
+					//var vv = new Vec3();
+
+					for(i=0; i < state.items.length; i++){
+						ang = i * inc + this.cycle.value;
+						//v.copy( state.items[ i ].position );
+						state.items[ i ].position.set(
+							com.position.x + this.radius * Math.cos( ang ),
+							com.position.y,
+							com.position.z + this.radius * Math.sin( ang )
+						);
+
+						//console.log(i, Vec3.sub(state.items[ i ].position,v,vv) );
+					}
+				}
+			}
+
+			class PState_Sphere{
+				constructor( sec=1, radius=0.5 ){
+					this.cycle	= new Cycle( sec );
+					this.radius	= radius;
+				}
+				apply(e, state){
+					let com			= e.com.Particles,
+						cnt			= com.itemCount,
+						ringCnt		= 3,
+						ringCntH 	= ringCnt / 2,
+						ringInc 	= Math.PI / (ringCnt+1),
+						vertCnt 	= cnt / ringCnt,
+						offset 		= 0,
+						dir 		= 1,
+						ring 		= null,
+						i, ang, grad, r, rf, radius, y;
+
+					this.cycle.next();
+					for(i=0; i < state.items.length; i++){
+						r	= i / vertCnt;		
+						rf	= Math.floor( r );	// Current Ring particle belongs to. 
+
+						//.......................................
+						// Calc values only once per ring
+						if(rf != ring){
+							ring 	= rf;
+							ang 	= Maths.PI_H - (ring+1) * ringInc;
+							radius 	= this.radius * Math.cos(ang);
+							y 		= this.radius * Math.sin(ang);
+
+							dir 	*= -1;
+							//grad	= Math.min( 0.4, Maths.gradient010( ring / (ringCnt-1) ) );
+							//offset	= 0.1 + (this.cycle.value - 0.1) * this.cycle.value * dir * Fungi.deltaTime;
+							//console.log(rf, grad );
+						}
+
+						//.......................................
+						// put particle in the correct ring
+						ang = dir * this.cycle.value + Maths.PI_2 * ( r - rf ); // 360 * fract( r )
+						state.items[ i ].position.set(
+							com.position.x + radius * Math.cos( ang ),
+							com.position.y + y,
+							com.position.z + radius * Math.sin( ang )
+						);
+					}
+				}
+			}
+
+			class PState_lissajous{
+				//Curves.lissajous_2(1, 5,1,5,1,2, 0, i/cnt, v);
+				constructor( sec=2, a=5, b=1, c=5, d=1, e=2 ){
+					this.cycle	= new Cycle( sec );
+					this.a = a;
+					this.b = b;
+					this.c = c;
+					this.d = d;
+					this.e = e;
+					this.inc = 0.15;
+				}
+				apply(e, state){
+					let com	= e.com.Particles,
+						cnt	= com.itemCount,
+						t = this.cycle.next(true);
+
+					for(let i=0; i < state.items.length; i++){
+						Curves.lissajous_2(1,
+							this.a,
+							this.b,
+							this.c,
+							this.d,
+							this.e,
+							i * this.inc, 
+							t, 
+							state.items[ i ].position
+						);
+						state.items[ i ].position.add( com.position );
+					}
+
+				}
+			}
+
+
+			//=============================================
+			const PARTICLE_FOLLOW_MIN = 0.001;
+			const PARTICLE_FOLLOW_MIN_SQR = PARTICLE_FOLLOW_MIN * PARTICLE_FOLLOW_MIN;
+
+			// This class takes whatever is set in a ParticleState as the final location that the particles need to be at
+			// Take the current position from the Particle Component, then inches the particles toward the end position
+			// then updates the state with some position between its current position and final position.
+			class PState_Follow{
+				constructor(sMin=0.1, sInc=0.2){
+					this.speedMin = sMin;
+					this.speedInc = sInc;
+				}
+
+				setSpeed( sMin, sInc ){ 
+					this.speedMin = sMin;
+					this.speedInc = sInc;
+					return this;
+				}
+
+				apply(e, state){
+					const SPEED_SCALE = 0.7;
+
+					let i, ii, si, oi, speed, lenSqr,
+						v	= new Vec3(),
+						com	= e.com.Particles,
+						cnt	= com.itemCount;
+
+					for(i=0; i < cnt; i++){
+						si		= state.items[i];
+						oi		= com.items[i];
+						ii		= com.order[i];
+						speed	= (this.speedMin + ii * this.speedInc) * Fungi.deltaTime;
+
+						//.............................................
+						Vec3.sub( si.position, oi.position, v);
+						lenSqr = v.lengthSqr();
+						
+						//checking for a distance
+						if(lenSqr > PARTICLE_FOLLOW_MIN_SQR){
+							// Try to prevent over shooting target, it adds jitter to the animation.
+							if(lenSqr > speed * speed){
+								v.normalize().scale(speed);
+							}else{
+								v.scale( SPEED_SCALE );
+							}
+
+							Vec3.add( oi.position, v, si.position );
+						}
+
+					}
+
+					return this;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+	<span id="lblFPS">0</div>
+
+
+	<script id="inline_shader" type="plain/text">
+		<shader>{
+			"name":"LowPolyPart",
+			"ubo":[ "UBOTransform", "UBOLighting", "UBOModel" ],
+			"options": { "modelMatrix":true },
+			"uniforms":[
+				{ "name":"u_basecolor", "type":"vec3" }
+			]
+		}<\shader>
+
+		<materials> [ 
+			{ "name":"LowPolyPart",	"uniforms":[
+				{ "name":"u_basecolor", "type":"rgb", "value": "ff7f7f" }
+			]}
+	 	]<\materials>
+		<vertex>
+			#version 300 es
+			layout(location=0) in vec3 a_position;
+			layout(location=10) in vec3 a_pos;
+
+			uniform UBOTransform{
+				mat4 	projViewMatrix;
+				vec3	cameraPos;
+				float	globalTime;
+				vec2	screenSize;
+			};
+
+			uniform UBOModel{
+				mat4 	modelMatrix;
+				mat3	normalMatrix;
+			};
+
+			out vec3 v_cameraPos;
+			out vec3 v_worldPos;
+
+			void main(void){
+				//Need to pass Camera pos turned to WorldSpace avoid inverse
+				//vCameraPos 	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz;  
+
+				v_cameraPos = cameraPos;
+
+				vec4 wpos	= modelMatrix * vec4(a_position + a_pos,1.0);
+				v_worldPos	= wpos.xyz;
+
+				gl_Position	= projViewMatrix * wpos;
+			}
+		<\vertex>
+
+		<fragment>
+			#version 300 es
+			precision mediump float;
+
+			uniform UBOLighting{
+				vec3 lightPosition;
+				vec3 lightDirection;
+				vec3 lightColor;
+			};
+
+			uniform vec3 u_basecolor;
+			
+			in vec3 v_cameraPos;
+			in vec3 v_worldPos;
+
+			out vec4 oFragColor;
+
+			//const vec3 uLightPos			= vec3(1.0, 6.0, -4.0);
+			//const vec3 uLightColor			= vec3(1.0, 1.0, 1.0);
+
+			const float uAmbientStrength	= 0.5;
+			const float uDiffuseStrength	= 0.5;
+			const float uSpecularStrength	= 0.2f;	//0.15
+			const float uSpecularShininess	= 1.0f; //256.0
+
+			void main(void){
+				vec3 pixelNorm = normalize( cross( dFdx(v_worldPos), dFdy(v_worldPos) ) ); //Calc the Normal of the Rasterizing Pixel
+
+				//Ambient Lighting
+				vec3 cAmbient		= lightColor * uAmbientStrength;
+				
+				//Diffuse Lighting
+				vec3 lightVector	= normalize(lightPosition - v_worldPos);		//light direction based on pixel world position
+				float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0);	//Angle between Light Direction and Pixel Direction (1==90d)
+				vec3 cDiffuse		= lightColor * diffuseAngle * uDiffuseStrength;
+
+				//Specular Lighting
+				vec3 camVector		= normalize(v_cameraPos - v_worldPos);	//Camera Direction based on pixel world position
+				vec3 reflectVector	= reflect(-lightVector, pixelNorm);		//Reflective direction of line from pixel direction as pivot.
+				float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+				vec3 cSpecular		= lightColor * specular * uSpecularStrength;
+
+				//Final Color
+				oFragColor = vec4(u_basecolor * (cAmbient + cDiffuse + cSpecular), 1.0);
+				//oFragColor = vec4(1.0, 0.0, 0.0, 1.0);
+			}
+		<\fragment>
+	</script>
+
+</body>
+</html>
