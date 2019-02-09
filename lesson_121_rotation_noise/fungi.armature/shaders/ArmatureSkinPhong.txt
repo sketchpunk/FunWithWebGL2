@@ -1,0 +1,130 @@
+<shader>{
+	"name"		: "ArmatureSkinPhong",
+	"ubo"		: [ "UBOGlobal", "UBOModel", "UBOArmature", "UBOLighting" ],
+	"uniforms"	: [ ]
+}<\shader>
+
+<materials>[
+	{ "name":"ArmatureSkinPhong" }
+]<\materials> "useBlending":false
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_norm;
+	layout(location=2) in vec2 a_uv;
+
+	layout(location=8) in vec4 a_boneIndex;
+	layout(location=9) in vec4 a_boneWeight;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform UBOArmature{
+		mat2x4[70]	bones;
+		vec3[70]	scale;
+		int 		boneCount;
+	} Arm;
+
+	out vec3 v_worldPos;
+	out vec3 v_cameraPos;
+
+	vec3 dqVecTransform(mat2x4 dq, vec3 v){
+		vec4 Qr 	= dq[0].xyzw; //real (rot)
+		vec4 Qd 	= dq[1].xyzw; //dual (trans)
+		vec3 pos	= v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);	//Rotate Vector
+		vec3 tran	= 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+		return pos + tran;
+	}
+
+	vec3 dqBoneTransform_4(vec3 pos, mat2x4[70] bDQ, vec4 bIndex, vec4 bWeight, vec3[70] bScale){
+		/* NORMALIZE DATA FIRST */
+		int a = int( bIndex.x ),
+			b = int( bIndex.y ),
+			c = int( bIndex.z ),
+			d = int( bIndex.w );
+		bWeight *= 1.0 / (bWeight.x + bWeight.y + bWeight.z + bWeight.w); // 1 Div, 4 Mul, instead of 4 Div.
+
+		/* APPLY WEIGHTS */
+		mat2x4 dqSum 	=	bDQ[ a ] * bWeight.x +  
+							bDQ[ b ] * bWeight.y +
+							bDQ[ c ] * bWeight.z +
+							bDQ[ d ] * bWeight.w;
+
+		vec3 wScale 	=	bScale[ a ]	* bWeight.x +
+							bScale[ b ]	* bWeight.y +
+							bScale[ c ]	* bWeight.z +
+							bScale[ d ]	* bWeight.w;
+
+		/* SCALE, ROTATE - TRANSLATE */
+		return dqVecTransform(dqSum, pos * wScale);
+	}
+
+	void main(void){
+		vec3 pos	= dqBoneTransform_4(a_position.xyz, Arm.bones, a_boneIndex, a_boneWeight, Arm.scale);
+		vec4 wpos	= modelMatrix * vec4( pos, 1.0 );
+
+		v_worldPos	= wpos.xyz;
+		v_cameraPos	= cameraPos;
+		gl_Position = projViewMatrix * wpos;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform UBOLighting{
+		vec3 lightPosition;
+		vec3 lightDirection;
+		vec3 lightColor;
+	};
+
+	in vec3 v_cameraPos;
+	in vec3 v_worldPos;
+
+	out vec4 oFragColor;
+
+	const vec3 uBaseColor			= vec3(1.0, 0.498, 0.498); //ff 7f 7f
+	const float uAmbientStrength	= 0.5;
+	const float uDiffuseStrength	= 0.5;
+	const float uSpecularStrength	= 0.2f;	//0.15
+	const float uSpecularShininess	= 1.0f; //256.0
+
+	vec4 phongLight(vec3 norm, vec3 vertPos, vec3 camPos){
+		//Ambient Lighting
+		vec3 cAmbient		= lightColor * uAmbientStrength;
+		
+		//Diffuse Lighting
+		vec3 lightVector	= normalize(lightPosition - vertPos);	//light direction based on pixel world position
+		float diffuseAngle	= max( dot(norm,lightVector) ,0.0);		//Angle between Light Direction and Pixel Direction (1==90d)
+		vec3 cDiffuse		= lightColor * diffuseAngle * uDiffuseStrength;
+
+		//Specular Lighting
+		vec3 camVector		= normalize(camPos - vertPos);		//Camera Direction based on pixel world position
+		vec3 reflectVector	= reflect(-lightVector, norm);		//Reflective direction of line from pixel direction as pivot.
+		float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+		vec3 cSpecular		= lightColor * specular * uSpecularStrength;
+
+		//Final Color
+		return vec4(uBaseColor * (cAmbient + cDiffuse + cSpecular), 1.0);
+	}
+
+	vec3 lowPolyNormal(vec3 vertPos){  //Calc the Normal of the Rasterizing Pixel
+		return normalize( cross( dFdx(vertPos), dFdy(vertPos) ) );
+	}
+
+	void main(void){
+		oFragColor = phongLight( lowPolyNormal(v_worldPos) , v_worldPos, v_cameraPos);
+		//oFragColor = vec4(0.0, 0.0, 0.0, 1.0);
+	}
+<\fragment>

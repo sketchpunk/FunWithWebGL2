@@ -1,0 +1,51 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App					from "./fungi/engine/App.js";
+import Maths, {Vec3, Quat}	from "./fungi/maths/Maths.js";
+import FacedCube			from "./fungi/primitives/FacedCube.js";
+import Noise 				from "./lib/Noise.js";
+//import { Perlin }			from "../../../lib/Noise1D.js";
+
+//#############################################################################
+App	.launch( onDraw, true )
+	.then( dl=>dl
+		.add( "shader", "./fungi/shaders/VecWColor.txt" )
+		.start() )
+	.then( ()=>		App.loadScene( true, false ) )
+	.then( ()=>		init() )
+	.catch( err=>	console.error( err ) );
+
+//#############################################################################
+
+let gCube
+//let gPerlin;
+
+function onDraw(dt, ss){
+	let t = ss * 0.9;
+	let x = Noise.perlin2(t,0) * Maths.PI_H,
+		y = Noise.perlin2(t * 1.3,0) * Maths.PI_H,
+		z = Noise.perlin2(t * 1.7,0) * Maths.PI_H;
+
+	//let x = gPerlin.get(t,0) * Maths.PI_H,
+	//	y = gPerlin.get(t * 1.3,0) * Maths.PI_H,
+	//	z = gPerlin.get(t * 1.7,0) * Maths.PI_H;
+
+	Quat.fromEuler( gCube.Node.local.rot, x, y, z );
+	gCube.Node.isModified = true;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+	App.ecs.updateSystems();
+}
+
+function init(){
+	App.camera.Node
+		.setPos( 0, 1.5, 4 )
+		.setRotAxis( [1,0,0], -15 * Math.PI / 180 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//gPerlin = new Perlin();
+	gCube = FacedCube();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+</script><body></body></html>

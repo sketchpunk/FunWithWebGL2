@@ -1,0 +1,62 @@
+
+== ARMATURE ECS DATA UPDATE PIPELINE
+======================================
+
+NodeSystem ( Update World Transforms )
+	>> BoneSystem ( Create Offset DQ and Scale based on which World Transforms have been updated )
+		>> ArmatureSystem ( Flattens all the Offset DQs / Scales from the Bones )
+		>> ArmaturePreviewSystem ( Flattens the WorldTransform to Rotation / Position / Scale Buffers )
+
+		Note:: After Bones have been updated, Bone Data will be read only at that point
+		That means you can run ArmatureSystem and ArmaturePreviewSystem in parallel.
+		Both are depended on BoneSystem completing first, Which who depends on NodeSystem finishing first.
+
+
+DrawSystem ( Renders Frame )1
+	>> ArmatureCleanupSystem ( sets isModified to false on all Armature Components )
+	>> NodeCleanupSystem ( sets isModified to false on all Node Components )
+
+
+[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]
+[[ Armature.js ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]
+
+== Armature and Bone ECS Components.
+======================================
+
+Each bone is an Entity thats made up of the Bone and Node Components. Root bone should not be parented to any other entity because its important to keep The transform Hierarchy in its own World/Local Space. The senario I would like to make sure works if I need to instance a Skeletal Animation but each instance	is positioned in different places can only work if the armature's transform is not linked to any instance of the skinned mesh. Now the only draw back is doing inverse kinematics, need to alway take note that I need the Skinned Transform plus the Armature Transform to know the true WorldSpace location of bones when dealing with math for IK Solvers. 
+
+Armature component mainly is used to keep track of all the bone references. It also caches a flat float buffer for the Dual Quaternion Offset which handles the Rotation and Positionion of the vertices in the skinned mesh along with the bone's scale if an animation requires it.
+
+For Development, Its easier to just use the ArmaturePreview, but it requires the Armature Component and its bones to function. To prevent wasted CPU, if no skinned mesh is being used and just preview, set Armature.isActive = false. This will disable the ArmatureSystem from updating the flat data buffers.
+
+BIG REMINDER. When bone transforms are updated, the Armature System will not update the offset unless the Armature.isModified has been set to true. This doesn't get set automaticly, its something that the developer needs to handle after applying some pose to the bone hierarchy.
+
+
+== ArmatureSystem, BoneSystem and ArmatureCleanupSystem
+======================================
+
+The systems are structure in a new way. The main idea is to not set Armature.isModified until rendering is complete. 
+
+In the process pipeline, The NodeSystem will update World Space Transforms. It will no longer set isModified to false, it will actually
+set isModified to any child node that hasn't updated BUT its parent has. This allows for an easier way to cascaded updates down the tree. So with all the transforms updated along with all the nodes that have been modified set to true if their world space data has changed and other system their after can take advantage of that state.
+
+So with Transforms ready, BoneSystem can be run and with any Nodes that have their World Transforms updated, BoneSystem will then generate the Offset Dual Quaternions for each bone based off its bind boise DQ.
+
+Next up the ArmatureSystem can run, with any Armature set as Modified, It will then flatten out all the Offset DQ for all the bone references it contains.
+
+
+[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]
+[[ ArmaturePreview.js ]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]
+
+== ArmaturePreview ECS Component
+=====================================
+Component contains the flatten world transform buffers for Rotation, Position and Scale. Also contains a reference to the VAO it needs to update if Armature.isModified == true
+
+Component is dependent on the Armature and Draw components. Initilizing the preview will generate a bone mesh that will be instanced for each bone. The idea is to have a single bone mesh to handle all the bones in the armature. Because of that, it can not use the offset data from the bones, instead it uses the World Space transform data from the Node. 
+
+
+== ArmaturePreviewSystem
+=====================================
+ArmaturePreviewSystem flattens the data and uploads it to the GPU.

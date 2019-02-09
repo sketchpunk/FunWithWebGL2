@@ -1,0 +1,75 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App					from "./fungi/engine/App.js";
+import Maths, {Vec3, Quat}	from "./fungi/maths/Maths.js";
+import Noise 				from "./lib/Noise.js";
+
+import Armature			from "./fungi.armature/Armature.js";
+import ArmaturePreview	from "./fungi.armature/ArmaturePreview.js";
+
+//#############################################################################
+App.useArmature = 2;
+App	.launch( onDraw, true )
+	.then( dl=>dl
+		.add( "shader", "./fungi/shaders/VecWColor.txt" )
+		.add( "shader", "./fungi.armature/shaders/ArmaturePreview.txt" )
+		.start() )
+	.then( ()=>		App.loadScene( true, false ) )
+	.then( ()=>		init() )
+	.catch( err=>	console.error( err ) );
+
+//#############################################################################
+let gChain
+
+function onDraw(dt, ss){
+	chainNoise( gChain, ss );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+	App.ecs.updateSystems();
+}
+
+function init(){
+	App.camera.Node
+		.setPos( 0, 1.5, 4 )
+		.setRotAxis( [1,0,0], -15 * Math.PI / 180 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	gChain = armatureChain( "test", 3 , 0.2 );
+
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+
+function armatureChain( name, bCnt, bLen=0.4 ){
+	let e 		= Armature.$( App.$Draw( name ) ),
+		arm		= e.Armature,
+		b 		= null;
+
+	for( let i=0; i < bCnt; i++ ){
+		b = Armature.addBone( arm, "b" + i, bLen, b );
+	}
+
+	e.Armature.isActive = false;				// Disable Skinning on Entity
+	Armature.finalize( e );						// Set Bind Pose
+	ArmaturePreview.$( e, "ArmaturePreview" );	// Generate Preview Bones
+	return e;
+}
+
+function chainNoise( e, ss, offset=-0.3 ){
+	let t		= ss * 0.9,
+		bAry	= e.Armature.bones,
+		n, x, z;
+
+	for( let i=0; i < bAry.length; i++){
+		n = bAry[ i ].Node;		
+		x = Noise.perlin2( t + i * offset, 0 ) * Maths.PI_H,
+		z = Noise.perlin2( t + i * offset, 2 ) * Maths.PI_H;
+		
+		Quat.fromEuler( n.local.rot, x, 0, z );
+		n.isModified = true;
+	}
+
+	gChain.Armature.isModified = true;
+}
+
+</script><body></body></html>
