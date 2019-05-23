@@ -1,0 +1,203 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App					from "./fungi/engine/App.js";
+import { IKTarget } 		from "./fungi.ik/Solver.js";
+import IKChain				from "./fungi.ik/IKChain.js";
+
+import Maths, {Vec3,Quat}	from "./fungi/maths/Maths.js";
+import Axis 				from "./fungi/maths/Axis.js";
+import Transform 			from "./fungi/maths/Transform.js";
+import Gltf					from "./fungi.misc/GLTF.js";
+
+//#############################################################################
+App.useArmature = 3;
+App	.launch( onDraw, true )
+	.then( dl	=> dl
+		.addGrp( "shader", 
+			"./fungi/shaders/VecWColor.txt", 
+			"./fungi.armature/shaders/ArmaturePreview.txt", 
+			"./fungi.armature/shaders/ArmatureSkinPhong.txt",
+		)
+		.addGLTF( "Mesh01", "../shared/models/Vegeta", "ArmatureSkinPhong", ["Vegeta"], "Armature", true )
+		.start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+let gEntity, chains = new Array();
+
+//#############################################################################
+function onDraw(dt, ss){ App.ecs.sys_run(); }
+
+function init(){
+	App.cameraCtrl.setTarget( 0, 0.8, 0 ).setOrbit( 10, 15, 2.5 );
+	App.cache.getMaterial( "VecWColor" ).options.depthTest = false;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	/*
+		leg_l: [ "LeftUpLeg","LeftLeg" ],
+		leg_r: [ "RightUpLeg","RightLeg" ],
+		arm_l: [ "LeftArm","LeftForeArm" ],
+		arm_r: [ "RightArm","RightForeArm" ],
+	*/
+
+	gEntity = App.ecs.entity_find( "Mesh01" );
+	left_arm();
+	right_arm();
+	left_leg();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+
+//#############################################################################
+
+function left_arm(){
+	/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	FIRST STEP:
+	Need the World Space Transform of the First Bone of the Chain AND its parent Bone.
+	In the case of the left arm the parentt bone is usually the collar or chest bone.
+	*/	
+	let end_effector = new Vec3( 0.2, 0.9, 0.6 );
+	App.debug.point( end_effector, 6 );
+
+	// Create Chain
+	let chain	= new IKChain( gEntity.Armature, [ "LeftArm","LeftForeArm" ], "x" );
+	let b		= chain.getBone( 0 );	// Get Root Bone ( Bicep / Upper Arm )
+	let pt		= new Transform();		// Parent Transform
+	let ct		= new Transform();		// Child Transform
+
+	App.node.getWorldTransform( b, pt, false );	// Get Bicep's Parent Transtform
+	Transform.add( pt, chain.bind[0], ct );		// Add Bicep's Local Transform to Parent to create World Transform.
+	App.debug.point( ct.pos, 0 );
+
+
+	/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	SECOND STEP:
+	Setup our target with a starting and Ending position. The starting point is the root world position
+	of the first bone in the chain. The ending point is the end effector, basicly the target we want to reach.
+	Having two points allows us to create a direction and start forming a rotation.
+	*/	
+	let elbow_dir	= Vec3.DOWN;
+	let ikt			= new IKTarget();
+	ikt.byPos( ct.pos, end_effector, elbow_dir );
+	IKTarget.debug( App.debug, ikt );
+
+
+	/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	THIRD STEP:
+	Create a rotation by using 3 Unit Vectors that define Up, Left and Forward.
+	First off, we want the bone's UP direction to equal our target's Forward direction. This allows us to setup
+	a proper rotation of forward to Up without the need of doing corrections like how its been done with Quat.LookRotation.
+
+	Next, we want to keep the Bone's Forward direction the same to try to keep its orientation intact as we rotate the arm.
+	From there, we cross apply to get its proper LEFT direction, then again to make sure our forward direction forms
+	an orthogonal axis, if not, rotation will not work right and there might be weird distortions or warping of the mesh.
+	*/
+
+	let v_up	= ikt.axis.z;		// Main Direction, Want the bone UP to point in the same direction as target forward
+	let v_fwd	= Vec3.transformQuat( Vec3.FORWARD, ct.rot );	// Get bone's world space forward direction
+	let v_lft	= Vec3.cross( v_up, v_fwd ).normalize();		// Figure out world space left direction
+
+	Vec3.cross( v_lft, v_up, v_fwd ).normalize();				// Realign Fwd to keep axis orthogonal
+
+	let rot 	= Quat.fromAxis( v_lft, v_up, v_fwd );			// Create rotation based on axis
+
+	// if( Quat.dot( rot, ct.rot ) < 0 ) rot.negate();
+
+	//rot.pmul( Quat.invert( pt.rot ) );							// Convert to Local Space by mul with the parent's invert rotation.
+	//b.Node.setRot( rot );										// Save
+
+
+	/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	FORTH STEP:
+	Apply a twist, by using the Target's Up direction as the direction we want the elbow to be pointing.
+	
+	First we need to know what Axis the limb's bending joint points at. For an arm, the elbow tends to be aligned to the x axis,
+	but a leg's knee is aligned to the z axis.
+
+	Knowing the default bending direction of the chain plus the target's UP direction as our twist to value, we can take
+	the two unit vectors to create a rotation from A to B. Both unit vectors share the same forward direction, so that makes
+	things much easier since the previous section aligned our bone to the targets forward direction.
+	*/
+	let align_dir;
+	switch( chain.ikAlignAxis ){									// Arm/Legs have different Axis to align to Twisting.
+		case "x": align_dir = v_lft.clone(); break;
+		case "z": align_dir = v_fwd.clone(); break;
+	}
+
+	if( Vec3.dot( align_dir, ikt.axis.y ) < 0 ) align_dir.invert();	// Shortest Twisting Direction
+
+	let twist = Quat.rotationTo( align_dir, ikt.axis.y );			// Create and apply twist rotation.
+
+	rot.pmul( twist );												// Apply Twist to the Alignment Rotation
+
+	rot.pmul( Quat.invert( pt.rot ) );								// Convert to Local Space by mul with the parent's invert rotation.
+	b.Node.setRot( rot );											// Save
+}
+
+
+function right_arm(){
+	let chain	= new IKChain( gEntity.Armature, [ "RightArm","RightForeArm" ], "x" ),
+		end_pos	= new Vec3( -0.5, 1.5, 0.6 );
+
+	aim_chain( chain, end_pos, Vec3.RIGHT );
+}
+
+function left_leg(){
+	let chain	= new IKChain( gEntity.Armature, [ "LeftUpLeg","LeftLeg" ], "z" ),
+		end_pos	= new Vec3( 0.2, 0.3, 0.6 );
+
+	aim_chain( chain, end_pos, Vec3.UP );
+}
+
+
+//#############################################################################
+function aim_chain( chain, end_pos, bend_dir ){
+	let pt				= new Transform(),
+		ct				= new Transform();
+
+	App.node.getWorldTransform( chain.getBone(0), pt, false );	// Get Bicep's Parent Transtform
+	Transform.add( pt, chain.bind[0], ct );						// Add Bicep's Local Transform to Parent to create World Transform.
+
+	/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	let ikt			= new IKTarget();
+	ikt.byPos( ct.pos, end_pos, bend_dir );
+	IKTarget.debug( App.debug, ikt );
+	ik_aim( chain, ikt, pt );
+}
+
+function ik_aim( chain, target, wt ){
+	let wrot = Quat.mul( wt.rot, chain.bind[ 0 ].rot ),	// Get World Space Rotation for Bone
+		up	= target.axis.z,							// Main Direction, Point Bone up toward axis forward.
+		fwd	= Vec3.transformQuat( Vec3.FORWARD, wrot ),	// Get Bone's World Space Forward Direction.
+		lft	= Vec3.cross( up, fwd ).normalize(),		// Figure out World Space Left Direction
+		rot = new Quat();
+	
+	Vec3.cross( lft, up, fwd ).normalize();				// Realign forward to keep axis orthogonal for proper rotation
+
+	Quat.fromAxis( lft, up, fwd, rot );					// Final World Space Rotation
+
+	if( Quat.dot( rot, wrot ) < 0 ) rot.negate();		// If axis is point in the opposite direction of the bind rot, flip the signs : Thx @gszauer
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Need to apply a twist rotation to aim the bending joint 
+	// (elbow,knee) in the direction of the IK Target UP Axis.
+	let alignDir;
+	switch( chain.ikAlignAxis ){ // Arm/Legs have different Axis to align to Twisting.
+		case "x": alignDir = lft.clone(); break;
+		case "z": alignDir = fwd.clone(); break;
+	}
+
+	// Shortest Twisting Direction
+	if( Vec3.dot( alignDir, target.axis.y ) < 0 ) alignDir.invert();
+
+	// Create and apply twist rotation.
+	let q = Quat.rotationTo( alignDir, target.axis.y ); 
+	rot	.pmul( q )
+		.pmul( Quat.invert( wt.rot, q )); // Convert to Bone's Local Space by mul invert of parent bone rotation
+
+	chain.updateBone( 0, rot );
+}
+
+//#############################################################################
+</script><body></body></html>
