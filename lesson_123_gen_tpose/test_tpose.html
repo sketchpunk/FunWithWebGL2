@@ -1,0 +1,94 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App		from "./fungi/engine/App.js";
+import Armature from "./fungi.armature/Armature.js";
+import {Quat, Vec3}	from "./fungi/maths/Maths.js";
+//import Gltf		from "./fungi.misc/GLTF.js";
+import _NA		from "./fungi.misc/MeshLoader.js";
+
+
+//#############################################################################
+App.useArmature = 3;
+App	.launch( onDraw, true )
+	.then( dl	=> dl
+		.addGrp( "shader", 
+			"./fungi/shaders/VecWColor.txt",
+			"./fungi.armature/shaders/ArmaturePreview.txt",
+			"./fungi.armature/shaders/ArmatureSkinPhong.txt",
+		)
+		//.addGLTF( "Mesh01", "./files/models/Vegeta", "ArmatureSkinPhong", ["Vegeta"], "Armature" )
+		.addEntity( "Mesh01", "../shared/models/vegeta", "ArmatureSkinPhong", 7, 25 )
+		.start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+
+//#############################################################################
+function onDraw(dt, ss){ App.ecs.sys_run(); }
+
+function init(){
+	App.cameraCtrl.setTarget( 0, 0.75, 0 ).setOrbit( -35, 15, 2.1 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let e = App.ecs.entity_find( "Mesh01" );
+
+	align_dir( [7,8], [26,27], e.Armature, Vec3.LEFT );
+	align_dir( [44,45], [48,49], e.Armature, Vec3.DOWN );
+
+	/*
+	LeftArm: 7
+	LeftForeArm: 8
+	LeftLeg: 45
+	LeftUpLeg: 44
+	RightArm: 26
+	RightForeArm: 27
+	RightLeg: 49
+	RightUpLeg: 48
+	*/
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+
+
+function align_dir( Lc, Rc, arm, up ){
+	let wp 	= new Quat(),				// World Parent
+		wc 	= new Quat(),				// World Child
+		lc	= new Quat(),				// Local Child
+		lft = new Vec3(),
+		fwd = new Vec3(),
+		bb 	= arm.bones,
+		i 	= Lc[0],
+		d, b;
+
+	App.node.getWorldRot( bb[ i ], wp, false );	// Get Chain's parent world space rotation
+
+	for( i=0; i < Lc.length; i++ ){
+		b = bb[ Lc[i] ].Node;			// Get Bone we're working on
+		wc.from_mul( wp, b.local.rot );	// Get Child's WS Rotation
+
+		// Define new rot axis with up pointing in the direction 
+		// we need it to point While trying to keep the bone's 
+		// forward direction in the same general direction
+		fwd.copy( Vec3.FORWARD ).transform_quat( wc );		// Bone's Forward Direction
+		lft.from_cross( up, fwd ).normalize();				// Calc Left Direction
+		fwd.from_cross( lft, up ).normalize();				// Realign Forward
+		
+		wc.from_axis( lft, up, fwd );						// Final Aligned World Space Rotation
+		lc.from_mul( wp.invert(), wc );						// Convert to bone's Local Space
+
+		d = Quat.dot( lc, b.local.rot );					// Check for inverted Axis that can cause issues.
+		if( d < 0 ) lc.negate();
+
+		b.setRot( lc );										// Save Local to Bone
+		bb[ Rc[i] ].Node.setRot( lc.mirror_x() );			// Mirror and save to other bone
+
+		wp.copy( wc );										// World child becomes World Parent for next bone.
+	}
+
+	arm.isModified = true;
+}
+
+
+//#############################################################################
+</script><body></body></html>
