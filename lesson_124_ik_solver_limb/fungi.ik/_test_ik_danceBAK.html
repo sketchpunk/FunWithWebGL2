@@ -1,0 +1,658 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App					from "../fungi/engine/App.js";
+import ArmTest				from "../fungi.armature/ArmTest.js";
+import IKRig_Human			from "./IKRig_Human.js";
+
+import Maths, { Vec3, Quat }	from "../fungi/maths/Maths.js";
+import Transform from "../fungi/maths/Transform.js";
+import { Solver, IKTarget } from "./Solver.js";
+
+import { Perlin }			from "../lib/Noise1D.js";
+
+import IKChain from "./IKChain.js";
+
+import Gltf		from "../fungi.misc/GLTF.js";
+
+//#############################################################################
+App.useArmature = 3;
+App	.launch( onDraw, true )
+	.then( dl	=> dl
+		.addGrp( "shader", 
+			"../fungi/shaders/VecWColor.txt", 
+			"../fungi.armature/shaders/ArmaturePreview.txt", 
+			"../fungi.armature/shaders/ArmatureSkinPhong.txt",
+		)
+		.addGLTF( "Mesh01", "../Vegeta", "ArmatureSkinPhong", ["Vegeta"], "Armature", true )
+		.start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+
+let gEntity, gRig, gDance;
+
+//#############################################################################
+function onDraw(dt, ss){
+	//gDance.update( dt, ss );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+	App.ecs.updateSystems();
+}
+
+function init(){
+	App.cameraCtrl.setTarget( 0, 1.15, 0 ).setOrbit( -35, 35, 1.1 );
+	App.cache.getMaterial( "VecWColor" ).options.depthTest = false;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let json = { 	
+		leg_l: [ "LeftUpLeg","LeftLeg" ],
+		leg_r: [ "RightUpLeg","RightLeg" ],
+		arm_l: [ "LeftArm","LeftForeArm" ],
+		arm_r: [ "RightArm","RightForeArm" ],
+		hand_l: "LeftHand",
+		hand_r: "RightHand",
+		hip:"Hips"
+	};
+
+	//gEntity = ArmTest.previewHuman();
+	//gRig 	= new IKRig_Human( gEntity, json );
+	//TPose.human_rig( gRig );
+
+	let e = App.ecs.getEntityByName( "Mesh01" );
+	gRig 	= new IKRig_Human( e, json );
+	TPose.human_rig( gRig );
+
+	let n = e.Armature.bones[ 0 ].Node;
+	n.local.pos.z = -0.13;
+	n.local.pos.x = -0.1;
+	n.isModified = true;
+
+
+	//let phip = gRig.getPHip();
+	//phip.local.pos.x = 2;
+	//phip.changeState = 2;
+	//console.log( phip );
+
+
+	//gDance	= new IKRig_Human_Dance( gRig );
+
+	//gDance.update( 0.03, 0.1 );
+
+	IKTest( gRig );
+	//TPose();
+	
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+	//onDraw(0.01, 0.1 );
+}
+
+const QUAT_FWD2UP = [0.7071067690849304, 0, 0, 0.7071067690849304];
+class TPose{
+	static human_rig( rig ){
+		this.align_chain( rig.arm_l, Vec3.LEFT );
+		this.align_chain( rig.arm_r, Vec3.RIGHT );
+		this.single_bone( rig.getEBone( rig.hand_l ), Vec3.LEFT );
+		this.single_bone( rig.getEBone( rig.hand_r ), Vec3.RIGHT );
+
+		this.align_chain( rig.leg_l, Vec3.DOWN );
+		this.align_chain( rig.leg_r, Vec3.DOWN );
+	}
+
+	static align_chain( chain, upDir ){
+		let b, lt,
+			rot	= new Quat(),
+			pt	= new Transform(),
+			bt	= new Transform();
+
+		chain.bindt = new Array();
+		//chain.bindw = new Array();
+
+		b = chain.getBone( 0 );						// Start with the chain root bone.
+		App.node.getWorldTransform( b, pt, false );	// Get the starting parent world transform
+
+		let i, iEnd = chain.cnt - 1;
+		for(i=0; i <= iEnd; i++){
+			lt	= b.Bone.bind;						// Original Bind Transform
+			Transform.add( pt, lt, bt );			// Create World Transform for Bone
+
+			this.align_bone( pt, bt, upDir, rot );	// Align Bone to Line
+			b.Node.setRot( rot );					// Set Rotation
+
+			chain.bindt.push( new Transform().set( rot, lt.pos, lt.scl ) );
+			//chain.bindw.push( new Transform( pt ).add( rot, lt.pos, lt.scl ) );
+
+			if( i != iEnd ){
+				pt.add( rot, lt.pos, lt.scl );		// Add bone transform to parent for next loop
+				b = chain.getBone( i+1 );			// Get Bone Reference for next loop
+			}
+		}
+	}
+
+	static align_bone( pWorld, bWorld, u, out ){
+		// Create the final Quaternion
+		// The UP direction is passed in, The final Axis Must match the up
+		// Then we take the bone's forward to calculate a new LEFT direction
+		// With the proper left, we reset the forward using UP and LEFT to make
+		// a usable set of axises to create a rotation from.	
+		let f = Vec3.transformQuat( Vec3.FORWARD, bWorld.rot ),
+			l = Vec3.cross( u, f ).normalize();
+		Vec3.cross( l, u, f ).normalize();
+
+		// With the rotation created, we need the Difference,
+		// to do it we need to subtract the parent rotation 
+		// by PreMul by its inverse.
+		Quat.fromAxis( l, u, f , out )
+			.pmul( Quat.invert( pWorld.rot ) );
+
+		/* 
+		App.debug
+			.line( bWorld.pos, Vec3.add( bWorld.pos, u ), 2 )
+			.line( bWorld.pos, Vec3.add( bWorld.pos, f ), 1 )
+			.line( bWorld.pos, Vec3.add( bWorld.pos, l ), 0 ); */
+	}
+
+	static single_bone( b, upDir ){
+		let rot	= new Quat(),
+			pt	= new Transform(),
+			bt	= new Transform();
+
+		App.node.getWorldTransform( b, pt, false );
+		Transform.add( pt, b.Bone.bind, bt );
+		this.align_bone( pt, bt, upDir, rot );
+		b.Node.setRot( rot );
+	}
+}
+
+
+function IKTest( rig ){
+	// Target Point
+	//let v = new Vec3( 0.3, 1.2, 0.3 );
+	//let v = new Vec3( 0.2, 1.3, 0.2 );
+	let v = new Vec3( 0.2, 1.4, 0.1 );
+	let bendDir = Vec3.LEFT;
+	
+	//let v = new Vec3( 0.4, 1.0, 0.1 );
+	//let bendDir = Vec3.BACK;
+	
+	App.debug.point( v, 2 );
+
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let b = rig.arm_l.getBone( 0 );
+	let wt = App.node.getWorldTransform( b, null, false );
+	let bt = Transform.add( wt, rig.arm_l.bindt[ 0 ] );
+	//let t = App.node.getWorldTransform( b, null, true );
+	
+	//App.debug.point( bt.pos, 0 );//.point( wt.pos, 8 );
+	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let target = new IKTarget();
+	target.byPos( bt.pos, v, bendDir );
+
+	IKTarget.debug( App.debug, target );
+
+	//limb( rig.arm_l, target, null, wt );
+	arm( rig.arm_l, target, null, wt );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//gRig.pose.apply();
+}
+
+function arm( chain, target, pose, wt, doUpFix=true ){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+	// World Splace Rotation for Bone 1
+	let q = new Quat();
+	q.copy( wt.rot )
+		.mul( chain.bindt[ 0 ].rot );
+
+	//Targets Forward becomes Bone's Up
+	//Targets Left becomes the bone's forward
+	//Calc the bone's new Left based on its new Up/Forward directions
+	let xAxis = Vec3.cross( target.axis.z, target.axis.x );
+	let tq = Quat.fromAxis( xAxis, target.axis.z, target.axis.x );
+
+	// Get Difference between current bone rotation and the final rotation
+	let dq = Quat.mul(  tq, Quat.invert( q ) );
+	q.pmul( dq ); //Add that difference to the bone
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Using law of cos SSS, so need the length of all sides of the triangle
+	let aLen	= chain.lens[ 0 ],
+		bLen	= chain.lens[ 1 ],
+		cLen	= Math.sqrt( target.distanceSqr );
+
+		console.log( aLen, bLen, cLen );
+
+	let rad	= Maths.lawcos_sss( aLen, cLen, bLen );
+	let qrot = new Quat().setAxisAngle( target.axis.x, -rad );
+	q.pmul( qrot );
+	console.log( rad * 180 / Math.PI );
+	//console.log( Maths.lawcos_sss( bLen, cLen, aLen ) * 180 / Math.PI );
+
+	let wq = q.clone();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Subtract parent world rotation to get the bone's local space rotation.
+	q.pmul( Quat.invert( wt.rot ) );
+	chain.updateBone( 0, q ); //Save local space to bone.
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let b = chain.bindt[ 0 ];
+	let tran = new Transform( wt ).add( q, b.pos, b.scl ).add( chain.bindt[1] );
+	//let tran2 = new Transform( wt ).add( q, b.pos, b.scl );
+	App.debug.point( tran.pos, 2 );
+	//console.log( Vec3.sub( tran.pos, target.startPos ).length() );
+
+	rad	= Math.PI - Maths.lawcos_sss( aLen, bLen, cLen ); //Need to rotate from Right to Left, So take the angle and subtract it from 180 to rotate from the other direction.
+	qrot = new Quat().setAxisAngle( target.axis.x, rad );
+
+	console.log( rad * 180 / Math.PI );
+
+	q.copy( tran.rot )
+		.pmul( qrot )
+		.pmul( Quat.invert( wq ) );
+
+	chain.updateBone( 1, q ); //Save local space to bone.
+	/**/
+}
+
+
+function limb( chain, target, pose, wt, doUpFix=true ){
+
+	//let qB0 = Quat.mul( wt.rot, chain.getBone( 0 ).Bone.bind.rot ); // Chain Root World Rotation
+	//let qB1 = Quat.mul( qB0, 	chain.getBone( 1 ).Bone.bind.rot )
+	
+	//let q = new Quat().setAxisAngle( target.axis.x, Maths.toRad(90) );
+	//let rot = Quat.mul( q, qB0 );
+	
+	//rot.pmul( Quat.invert( wt.rot ) );
+
+	//chain.updateBone( 0, rot );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Using law of cos SSS, so need the length of all sides of the triangle
+	let aLen	= chain.lens[ 0 ],
+		bLen	= chain.lens[ 1 ],
+		cLen	= Math.sqrt( target.distanceSqr ),
+		q = new Quat();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let x	= Maths.lawcos_sss( aLen, cLen, bLen );
+
+	q.copy( wt.rot )
+		.mul( chain.bindt[ 0 ].rot );
+	
+	
+	let theta = Vec3.angle(  Vec3.LEFT, target.axis.z );
+
+	//q.pmul( new Quat().setAxisAngle( target.axis.x, theta - x ) );
+	//q.pmul( Quat.invert( wt.rot ) );
+
+	//chain.updateBone( 0, q );
+
+
+	let wt2 = new Transform( wt ).add( q, chain.bindt[ 0 ].pos, chain.bindt[ 0 ].scl );
+	x = Math.PI - Maths.lawcos_sss( aLen, bLen, cLen );
+
+	/*
+	q.copy( wt2.rot )
+		.mul( chain.bindt[ 1 ].rot )
+		.pmul( new Quat().setAxisAngle( Vec3.LEFT, -x ) )
+		//.pmul( new Quat().setAxisAngle( target.axis.x, x ) )
+		.pmul( Quat.invert( wt2.rot ) );
+	*/
+
+	q.copy( chain.bindt[ 1 ].rot  )
+		//.mul( chain.bindt[ 1 ].rot )
+		.mul( new Quat().setAxisAngle( Vec3.FORWARD, x ) )
+		//.pmul( new Quat().setAxisAngle( target.axis.x, x ) )
+		//.pmul( Quat.invert( wt2.rot ) )
+	
+	chain.updateBone( 1, q );
+
+
+	/*
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Using law of cos SSS, so need the length of all sides of the triangle
+	let aLen	= chain.lens[ 0 ],
+		bLen	= chain.lens[ 1 ],
+		cLen	= Math.sqrt( target.distanceSqr ),
+		xAxis 	= Vec3.cross( target.axis.z, target.axis.y ), // Flipping z and y, need new X
+		q 		= new Quat();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	q.setAxisAngle( xx, Math.PI - Maths.lawcos_sss( aLen, bLen, cLen ) ); //Up is Forward Fix ( PI - angle )
+	if( pose )	pose.updateBone( chain.idx[ 1 ], q );
+	else		chain.updateBone( chain.idx[ 1 ], q );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let x	= Maths.lawcos_sss( aLen, cLen, bLen ),
+		rot	= Quat.fromAxis( xAxis, target.axis.z, target.axis.y );
+	
+
+	if( pose )	pose.updateBone( chain.idx[ 0 ], rot );
+	else		chain.updateBone( chain.idx[ 0 ], rot );
+	*/
+	return this;
+}
+
+// WORK IN WORLD SPACE ROTATIONS !!!!
+function limbOrg( chain, target, pose, wt, doUpFix=true ){
+
+	let qB0 = Quat.mul( wt.rot, chain.getBone( 0 ).Bone.bind.rot ); // Chain Root World Rotation
+	let qB1 = Quat.mul( qB0, 	chain.getBone( 1 ).Bone.bind.rot )
+	
+	let q = new Quat().setAxisAngle( target.axis.x, Maths.toRad(90) );
+	let rot = Quat.mul( q, qB0 );
+	
+	rot.pmul( Quat.invert( wt.rot ) );
+
+	chain.updateBone( 0, rot );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Using law of cos SSS, so need the length of all sides of the triangle
+	let aLen	= chain.lens[ 0 ],
+		bLen	= chain.lens[ 1 ],
+		cLen	= Math.sqrt( target.distanceSqr );
+
+
+	//Quat.invert( wt.rot )
+	//let rot = new Quat( chain.getBone( 0 ).Bone.initial.rot );
+	//let q = new Quat().setAxisAngle( Vec3.FORWARD, Maths.toRad(90) );
+	//let q = new Quat().setAxisAngle( target.axis.x, Maths.toRad(90) );
+	//rot.setAxisAngle( target.axis.x, Maths.toRad(90) );
+	//console.log( target.axis.x );
+
+	//rot.mul( q );
+	//Quat.mul( wt.rot, chain.getBone( 0 ).Bone.initial.rot, q );
+	//chain.updateBone( 0, rot );
+
+	//let t = new Transform();
+	//Transform.add( wt, pose.bones[ chain.idx[0] ].local, t );
+
+	/*
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Using law of cos SSS, so need the length of all sides of the triangle
+	let aLen	= chain.lens[ 0 ],
+		bLen	= chain.lens[ 1 ],
+		cLen	= Math.sqrt( target.distanceSqr ),
+		xAxis 	= Vec3.cross( target.axis.z, target.axis.y ), // Flipping z and y, need new X
+		q 		= new Quat();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	q.setAxisAngle( xx, Math.PI - Maths.lawcos_sss( aLen, bLen, cLen ) ); //Up is Forward Fix ( PI - angle )
+	if( pose )	pose.updateBone( chain.idx[ 1 ], q );
+	else		chain.updateBone( chain.idx[ 1 ], q );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let x	= Maths.lawcos_sss( aLen, cLen, bLen ),
+		rot	= Quat.fromAxis( xAxis, target.axis.z, target.axis.y );
+	
+
+	if( pose )	pose.updateBone( chain.idx[ 0 ], rot );
+	else		chain.updateBone( chain.idx[ 0 ], rot );
+	*/
+	return this;
+}
+
+class NoiseCycle{
+	constructor( fps = 0.1, ){
+		this.func 		= new Perlin();
+		this.freqPerSec = fps;
+		this.freqPos	= 0;
+	}
+
+	reset(){ this.time = 0; return this; }
+	
+	update( dt = null ){ 
+		this.freqPos += this.freqPerSec * (dt || Fungi.deltaTime); 
+		return this;
+	}
+
+	get( is01 = false, s = 1, a = 0 ){ 
+		if( !is01 ) return this.func.get( this.freqPos * s + a );
+		return this.func.get( this.freqPos * s + a ) * 0.5 + 0.5;
+	}
+}
+
+// Increment a Number at the rate of Frames Per Second.
+// So the value of 1 would take one second to get to.
+class NumberCycle{
+	constructor( nps = 0.2 ){
+		this.numPerSec	= nps;
+		this.value 		= 0.0;
+	}
+	update( dt = null ){ this.value += this.numPerSec * (dt || App.deltaTime); return this; }
+	floor(){ return Math.floor(this.value); }
+	fract(){ return this.value - Math.floor(this.value); }
+}
+
+class IKRig_Human_Dance{
+	constructor( rig ){
+		this.rig = rig;
+		this.hipHeight = rig.getEBone( rig.hip ).Bone.initial.pos.y;
+		this.hipMaxMove = -0.3;
+		this.hipMin		= 0.05;
+
+		this.stepClock = new NumberCycle( 0.5 );	// How long to take a step.
+		//this.stepClock.value = 0.5;
+
+		this.stepAngle		= Maths.toRad( 120 );
+		this.stepHeight		= 0.4;
+		this.footDistance	= 0.4;
+
+		this.feet = [
+			Vec3.scale( Vec3.LEFT, this.footDistance * 0.5 ),
+			Vec3.scale( Vec3.RIGHT, this.footDistance * 0.5 )
+		];
+
+		this.target = new IKTarget();
+
+		this.f = {
+			pivotIdx:0,
+			stepIdxMove:0,
+			stepIdxPivot:0,
+
+			stepNum:0,
+			stepGrad:0,
+			stepGradSm:0,
+
+			stepPos: new Vec3(),
+			stepDir: new Vec3(),
+
+			ikFeet: [ new Vec3(), new Vec3() ],
+			hipDir: new Vec3(),
+		};
+
+		//console.log( "hipHeight", this.hipHeight );
+	}
+
+	update( dt, ss ){
+		App.debug.reset();
+		this.stepClock.update( dt );	// Move Animation Time Forward
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Update Shared values for this frame.
+
+		// Update Step Time values
+		this.f.stepNum		= this.stepClock.floor();
+		this.f.stepGrad		= this.stepClock.fract();
+		this.f.stepGradSm	= Maths.smoothTStep( this.f.stepGrad );
+
+		// Update Foot Indexes
+		this.f.stepIdxMove	= this.f.stepNum & 1;
+		this.f.stepIdxPivot	= (this.f.stepNum + 1) & 1;
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		
+		this.handleFeet();	// figure out where the feet are going to be positioned
+		this.handleHip();	// .. Which helps determine where the hip is going to be.
+		this.ik_hip_feet2();	
+	}
+
+	//////////////////////////////////////////////////////////////////
+	// Animation Functions
+	//////////////////////////////////////////////////////////////////
+	/* [[[ NOTES: handleFeet ]]]
+ 	The way feet works is that you decided which foot is going to be the pivot.
+	This means this is the foot the char stands on while the other foot moves around.
+	From there, when a foot completes its moving cycle, you swop which foot to pivot on
+	then calculate the final position for the new moving foot. Its done this way so
+	when its time to swop, the final position is already set. During the function
+	we save the moving foot's current position in stepPos instead of mFoot to make this
+	works out that when the swop happens, the new pivot is where it needs to be already */
+	handleFeet(){
+		let pFoot	= this.feet[ this.f.stepIdxPivot ],
+			mFoot 	= this.feet[ this.f.stepIdxMove ],
+			pmDir	= new Vec3();
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// SWOP FEET
+		if( this.f.pivotIdx != this.f.stepIdxPivot ){
+			this.f.pivotIdx = this.f.stepIdxPivot;
+			//console.log("switch pivot foot");
+
+			Vec3.sub( mFoot, pFoot, this.f.stepDir ) 	// Get Direction of starting position between pivot and mover
+				.normalize()							
+				.scale( this.footDistance )				// Scale unit vector to use a vector length from pivot for mover.
+				.y = 0;									// We need 2D Direction, so zero out y.
+
+			// Now rotate the direction to determine final position of the moving foot.
+			// this.stepAngle = Random(Min,Max) TODO, Good time to add some randomness ro rotation, ideally something like -120 to 120
+			this.f.stepDir.rotate( this.stepAngle, "y", pmDir );
+			Vec3.add( pFoot, pmDir, mFoot );
+		}
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// MOVE FOOT
+		
+		// First Rotate the direction of where the foot needs to move to
+		this.f.stepDir.rotate( this.stepAngle * this.f.stepGradSm, "y", pmDir );
+
+		// Add Direction to pivot position to move the other foot on X,Z.
+		Vec3.add( pFoot, pmDir, this.f.stepPos );	
+
+		// Y height is based on the Step Time. Remapping grad of 0->1 into 0->1->0
+		this.f.stepPos.y = Math.sin( this.f.stepGradSm * Math.PI ) * this.stepHeight;
+		//this.f.stepPos.y += Noise; //TODO, bit of noise additive to Y for a touch of randomness
+
+
+		this.f.ikFeet[ this.f.stepIdxPivot ].copy( pFoot );
+		this.f.ikFeet[ this.f.stepIdxMove ].copy( this.f.stepPos );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// VISUAL DEBUG
+		App.debug.point( pFoot );
+		App.debug.point( this.f.stepPos );
+	}
+
+
+	handleHip(){
+		let pFoot	= this.feet[ this.f.pivotIdx ],
+			pos		= new Vec3();
+
+		Vec3.lerp( pFoot, this.f.stepPos, 0.5, pos );
+
+		pos.y = this.hipHeight + this.hipMin + this.hipMaxMove 
+					* ( Math.sin( this.f.stepGrad * Maths.PI_2 * 2 ) * 0.5 + 0.5 );
+
+		//TODO another additive of noise might improve things on pos.y;
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~		
+		// Figure out Forward Direction to create rotation
+		// - First we need direction between the two feet, Set y to zero since we need 2D Direction
+		// - Since the pivot foot changes, the direction changes, so need change rotation based on which foot is the piviot
+		// -- The idea is that if the direction is Left or Right, by rotating +/- 90 degrees would make it forward
+		let dir = Vec3.sub( this.f.stepPos, pFoot )			
+					.set( null, 0 )
+					.rotate( ( this.f.pivotIdx == 0 )? Maths.PI_H : -Maths.PI_H, "y" )
+					.normalize(),
+			rot = Quat.lookRotation( dir, Vec3.UP );
+
+		this.rig.pose.updateBone( this.rig.hip, rot, pos );
+
+		this.f.hipDir.copy( dir );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// VISUAL DEBUG
+		//App.debug.point( pos, 2 ).line( pos, Vec3.add( pos, dir.scale(0.2) ), 2 );
+	}
+
+	//////////////////////////////////////////////////////////////////
+	// IK
+	//////////////////////////////////////////////////////////////////
+	ik_hip_feet2(){
+		// Target Point
+		let v = new Vec3( 0.1, 0.2, 0.2 );
+		App.debug.point( v, 2 );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		let wt = new Transform( this.rig.getPHip().local );
+		let t = new Transform();
+		let idx = this.rig.leg_l_chain.idx[ 0 ];
+
+		Transform.add( wt, this.rig.pose.bones[ idx ].local, t );
+		App.debug.point( t.pos, 6 );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.target.byPos( t.pos, v, this.f.hipDir );
+		IKTarget.debug( App.debug, this.target );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.rig.pose.apply();
+	}
+
+
+	ik_hip_feet(){
+		// Find World Transform for Hip, No Need for Entity World Transform.
+		// this.rig.pose.bones[ this ]
+		// Set Let Target
+
+		let wt = new Transform( this.rig.getPHip().local );
+		let t = new Transform();
+		let idx = this.rig.leg_l_chain.idx[ 0 ];
+
+		Transform.add( wt, this.rig.pose.bones[idx].local, t );
+
+		//App.debug.point( t.pos , 6);
+
+		this.target.byPos( t.pos, this.f.ikFeet[0], this.f.hipDir );
+
+		Solver.limb( this.rig.leg_l_chain, this.target, this.rig.pose, wt );
+
+
+		//IKChain.debugAxis( App.debug, this.rig.leg_l_chain, this.rig.pose, wt, 0.3 );
+		//IKChain.debugAxis( App.debug, this.rig.leg_r_chain, this.rig.pose, wt, 0.3 );
+		IKTarget.debug( App.debug, this.target );
+
+		//console.log( this.target );
+
+
+		//console.log( this.f.ikFeet );
+		//this.ik_limb( this.rig.pose, this.rig.leg_l_chain, this.f.ikFeet[0], wt );
+
+		//this.rig.leg_r_chain.targetBendDir.copy( this.f.hipDir );
+
+		//this.ik_limb( this.rig.pose, this.rig.leg_r_chain, this.f.ikFeet[1], wt );
+
+		//console.log( this.rig.getPBone( this.rig.hip ) );
+		//console.log( wt );
+
+		this.rig.pose.apply();
+	}
+
+	ik_limb( pose, chain, pos, wt ){
+		if( !chain.targetPoint( pos, wt ) ){
+			chain.resetPose( pose, 1 );
+			Solver.aim( chain, pose, true );
+			console.log( "aim" );
+		}else{
+			Solver.limb( chain, pose, true );
+			console.log( "limb" );
+		}
+	}
+}
+
+//#############################################################################
+</script><body></body></html>

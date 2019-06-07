@@ -1,0 +1,253 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App					from "../fungi/engine/App.js";
+import Maths, {Vec3, Quat}	from "../fungi/maths/Maths.js";
+
+import ArmTest				from "../fungi.armature/ArmTest.js";
+import Armature			from "../fungi.armature/Armature.js";
+import Pose			from "../fungi.armature/Pose.js";
+//import IKRig_Chain			from "./IKRig_Chain.js";
+
+import Axis 				from "../fungi/maths/Axis.js";
+import Transform			from "../fungi/maths/Transform.js";
+
+import { Solver, IKTarget }	from "./Solver.js";
+import IKChain from "./IKChain.js";
+
+//#############################################################################
+App.useArmature = 2;
+App	.launch( onDraw, true )
+	.then( dl	=> dl.addGrp( "shader", "../fungi/shaders/VecWColor.txt", "../fungi.armature/shaders/ArmaturePreview.txt" ).start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+
+//#############################################################################
+let gEntity, gTarget, gFunc;
+
+function onDraw(dt, ss){
+	gTarget.set(
+		0.6 * Math.cos( ss * 0.5 ),
+		0.5 * (Math.cos( ss * 1.2 ) * 0.5 + 0.5),
+		0.6 * Math.sin( ss * 0.5 ),
+	);
+
+	App.debug.reset();
+	gFunc();
+	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+	App.ecs.updateSystems();
+}
+
+function init(){
+	App.cameraCtrl.setTarget( 0, 0.5, 0 ).setOrbit( -10, 15, 2 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//gTarget	= new Vec3( 0.4070681929588318, 0.19574624300003052, 0.4407896101474762 ); //( 0.8, 0.2, 0.2 )
+	gTarget	= new Vec3( 0.2670681929588318, 0.19574624300003052, 0.3007896101474762 ); //( 0.8, 0.2, 0.2 )
+	gEntity	= ArmTest.previewChain( "limb", 2 , 0.5 );
+	gEntity.Node.setPos( 0, 0.2, -0.5 ).setRotAxis( Vec3.LEFT, Maths.toRad(-20) );
+
+	let chain	= new IKChain( gEntity.Armature, ["b0", "b1"] );
+	let pose	= new Pose( gEntity.Armature, true );
+	let tar 	= new IKTarget();
+	let wt 		= gEntity.Node.local;
+
+	gFunc = ()=>{
+		tar.byPos( wt.pos, gTarget, Vec3.UP );
+
+		//Solver.aim( chain, tar, null, wt );
+		//Solver.aim( chain, tar, pose, wt ); pose.apply();
+
+		//Solver.limb( chain, tar, null, wt );
+		//Solver.limb( chain, tar, pose, wt ); pose.apply();
+		
+		if( tar.distanceSqr > chain.lenSqr ){
+			chain.resetBones( 1, null, null );
+			Solver.aim( chain, tar, null, wt );
+		}else{
+			Solver.limb( chain, tar, null, wt );
+		}
+
+		IKChain.debugAxis( App.debug, chain, null, wt, 0.3 );
+		IKTarget.debug( App.debug, tar );
+	}; gFunc();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+
+
+/*
+class IKTarget{
+	constructor(){
+		this.startPos		= new Vec3();	// World Position start of an IK Chain
+		this.endPos			= new Vec3();	// The End Effector ( Target Position )
+		this.axis 			= new Axis();	// Target Axis, Defines Forward and Up mainly.
+
+		this.distanceSqr	= 0;			// Distance Squared from Start to End, Faster to check lengths by Squared  to avoid using Sqrt to get real lengths.
+	}
+
+	/////////////////////////////////////////////////////////////////////
+	// GETTERS - SETTERS
+	/////////////////////////////////////////////////////////////////////	
+		// Define the target based on a Start and End Position along with
+		//	Up direction or the direction of the bend.
+		byPos( pA, pB, upDir ){
+			this.startPos.copy( pA );
+			this.endPos.copy( pB );
+
+			this.distanceSqr = Vec3.sub( pB, pA, this.axis.z ).lengthSqr();
+			this.axis.fromDir( this.axis.z, upDir );
+
+			return this;
+		}
+
+	/////////////////////////////////////////////////////////////////////
+	// STATIC
+	/////////////////////////////////////////////////////////////////////
+		// Visually see the Target information 
+		static debug( d, t, scl=1.0 ){ 
+			Axis.debug( d, t.axis, t.startPos, scl );
+			d.point( t.startPos, 6 ).point( t.endPos, 0 );
+			return this;
+		}
+}
+*/
+
+/*
+class IKChain{
+	constructor( arm, bNames ){
+		this.arm	= arm;			// Reference to Armature Object
+		this.idx	= new Array();	// List of Index values to the armature Bones that make up a chain
+		this.lens 	= new Array();	// Cache Bone Lengths to make things easier for IK.
+		this.cnt	= 0;			// How many Bones in the chain
+		this.len 	= 0;			// Chain Length
+		this.lenSqr	= 0;			// Chain Length Squared, Cached for Checks without SQRT
+		
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Get The Bone Indices and
+		let e, n;
+		for( n of bNames ){
+			e = Armature.getBone( arm, n );
+			if( !e ){ console.error("Bone not found: ", n ); return; }
+
+			this.len += e.Bone.length;
+			this.idx.push( e.Bone.order );
+			this.lens.push( e.Bone.length );
+		}
+
+		this.lenSqr	= this.len * this.len;
+		this.cnt	= this.idx.length;
+	}
+
+	/////////////////////////////////////////////////////////////////////
+	// GETTERS - SETTERS
+	/////////////////////////////////////////////////////////////////////
+		getBone( i ){ return this.arm.bones[ this.idx[ i ] ]; }
+
+		updateBone( idx, rot=null, pos=null, scl=null ){
+			let n = this.arm.bones[ this.idx[ idx ] ].Node;
+
+			n.local.set( rot, pos, scl );
+			n.isModified = true;
+			return this;
+		}
+
+
+	/////////////////////////////////////////////////////////////////////
+	// METHODS
+	/////////////////////////////////////////////////////////////////////
+		resetBones( ia, ib=null, pose=null ){
+			if( ib == null ) ib = this.cnt-1;
+
+			let i, ary = this.arm.bones;
+			pose = pose || this;
+
+			for( ia; ia <= ib; ia++ ){
+				i = this.idx[ ia ];
+				pose.updateBone( i, ary[ i ].Bone.initial.rot );
+			}
+
+			return this;
+		}
+
+
+	/////////////////////////////////////////////////////////////////////
+	// STATIC FUNCS
+	/////////////////////////////////////////////////////////////////////
+		static debugAxis( d, c, pose=null, wtRoot=null, scl=0.5 ){
+			let wt = new Transform( wtRoot );
+			d.point( wt.pos, 6 );
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Calc all World Transform for each bone in the chain.
+			let i, lt;
+			for( i of c.idx ){
+				lt = ( pose )?	pose.bones[ i ].local :
+								c.arm.bones[ i ].Node.local;
+				wt.add( lt );
+				d.point( wt.pos, 6 ).quat( wt.rot, wt.pos, scl );
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// The tip of the last bone has no transform data,
+			// so use the last bone plus Bone Length as the position.
+			let bLen = c.lens[ c.idx[ c.cnt-1 ] ];
+			wt.add( lt.rot, [ 0, bLen, 0 ], lt.scl );
+			d.point( wt.pos, 2 );
+		}
+}
+*/
+
+/*
+class Solver{
+	static aim( chain, target, pose, wt, doUpFix=true ){
+		let bIdx	= chain.idx[ 0 ],
+			rot 	= target.axis.toQuat(),
+			q		= new Quat();
+
+		// Use Target Axis as the starting rotation Axis.
+		// Then using the AxisX, rotate by 90 degrees to make Forward UP
+		// Then need to preMultiple the inverse parent world rotation to set the proper heirachy offset.
+		if( doUpFix ) rot.pmul( Quat.axisAngle( target.axis.x, Maths.PI_H, q ) )
+		rot.pmul( Quat.invert( wt.rot, q ));
+
+		if( pose )	pose.updateBone( bIdx, rot );
+		else 		chain.updateBone( bIdx, rot);
+	}
+
+
+	static limb( chain, target, pose, wt, doUpFix=true ){
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Using law of cos SSS, so need the length of all sides of the triangle
+		let aLen	= chain.lens[ 0 ],
+			bLen	= chain.lens[ 1 ],
+			cLen	= Math.sqrt( target.distanceSqr ),
+			q 		= new Quat();
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Solve angle for the second bone
+		q.setAxisAngle( Vec3.LEFT, Math.PI - Maths.lawcos_sss( aLen, bLen, cLen ) ); //Up is Forward Fix ( PI - angle )
+		if( pose )	pose.updateBone( chain.idx[ 1 ], q );
+		else		chain.updateBone( chain.idx[ 1 ], q );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Solve for first Bone
+		let x	= -Maths.lawcos_sss( aLen, cLen, bLen ),
+			rot	= target.axis.toQuat();
+
+		rot.pmul( Quat.axisAngle( target.axis.x, Maths.PI_H + x, q ) )
+		rot.pmul( Quat.invert( wt.rot, q ));
+
+		if( pose )	pose.updateBone( chain.idx[ 0 ], rot );
+		else		chain.updateBone( chain.idx[ 0 ], rot );
+
+		return this;
+	}
+}
+*/
+
+
+//#############################################################################
+</script><body></body></html>

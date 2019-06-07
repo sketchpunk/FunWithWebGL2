@@ -1,0 +1,28 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App from "./App.js";
+
+//#############################################################################
+App	.launch( null, true )
+	.then( dl=>dl
+		.add( "shader", "../shaders/VecWColor.txt" )
+		.start() )
+	.then( ()=>		App.loadScene() )
+	.then( ()=>		init() )
+	.catch( err=>	console.error( err ) );
+
+
+//#############################################################################
+function onDraw( dt, ss ){ App.ecs.sys_run(); }
+
+
+//#############################################################################
+function init(){
+	App.camera.Node
+		.setPos( 0, 1.5, 4 )
+		.setRotAxis( [1,0,0], -15 * Math.PI / 180 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.input.onInput = ()=>{ window.requestAnimationFrame( onDraw ); } // App.loop.start();
+	onDraw();
+}
+</script><body></body></html>

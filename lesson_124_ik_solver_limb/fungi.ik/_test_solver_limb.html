@@ -1,0 +1,50 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App					from "../fungi/engine/App.js";
+import Maths, {Vec3, Quat}	from "../fungi/maths/Maths.js";
+import ArmTest				from "../fungi.armature/ArmTest.js";
+import IKRig_Chain			from "./IKRig_Chain.js";
+
+//#############################################################################
+App.useArmature = 2;
+App	.launch( onDraw, true )
+	.then( dl	=> dl.addGrp( "shader", "../fungi/shaders/VecWColor.txt", "../fungi.armature/shaders/ArmaturePreview.txt" ).start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+
+//#############################################################################
+let gChain, gRig, gTarget;
+
+function onDraw(dt, ss){
+	/* */
+	gTarget.x = 0.6 * Math.cos( ss * 0.5 );
+	gTarget.z = 0.6 * Math.sin( ss * 0.5 );
+	gTarget.y = 0.5 * (Math.cos( ss * 1.2 ) * 0.5 + 0.5);
+	App.debug.reset().point( gTarget );
+	
+	gRig.toPoint( gTarget ).update();
+	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+	App.ecs.updateSystems();
+}
+
+function init(){
+	App.cameraCtrl.setTarget( 0, 0.5, 0 ).setOrbit( -10, 15, 2 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	gChain	= ArmTest.previewChain( "limb", 2 , 0.5 );
+	gRig	= new IKRig_Chain( gChain, ["b0", "b1"] );
+	
+	gTarget	= new Vec3( 0.4070681929588318, 0.19574624300003052, 0.4407896101474762 ); //( 0.8, 0.2, 0.2 )
+	gChain.Node.setPos( 0, 0.2, -0.5 ).setRotAxis( Vec3.LEFT, Maths.toRad(-20) );
+
+	//App.debug.point( gTarget );
+	//gRig.toPoint( gTarget ).update();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+
+//#############################################################################
+</script><body></body></html>
