@@ -1,0 +1,357 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App					from "./fungi/engine/App.js";
+import Arm					from "./fungi.armature/Armature.js";
+import Pose 				from "./fungi.armature/Pose.js";
+import Maths,{ Quat, Vec3 } from "./fungi/maths/Maths.js";
+import Transform 			from "./fungi/maths/Transform.js";
+
+import IKChain				from "./fungi.ik/IKChain.js";
+import { Solver, IKTarget }	from "./fungi.ik/Solver.js";
+
+import { Perlin }			from "./lib/Noise1D.js";
+
+import _NA					from "./fungi.misc/MeshLoader.js";
+
+
+//#############################################################################
+App.useArmature = 3;
+App	.launch( onDraw, true ) //
+	.then( dl	=> dl
+		.addGrp( "shader", 
+			"./fungi/shaders/VecWColor.txt", 
+			"./fungi.armature/shaders/ArmaturePreview.txt",
+			"./fungi.armature/shaders/ArmatureSkinPhong.txt" )
+		.addEntity( "Mesh01", "../shared/models/vegeta", "ArmatureSkinPhong", 7, 25 )
+		.start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+//#############################################################################
+function onDraw(dt, ss){
+	gDance.update( dt );
+
+	App.ecs.sys_run();
+}
+
+let gMesh, gDance;
+function init(){
+	App.cameraCtrl.setTarget( 0, 0.75, 0 ).setOrbit( -15, 15, 2.5 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	gMesh	= App.ecs.entity_find( "Mesh01" );
+	gDance	= new DanceIK( gMesh );
+
+	gDance.update( 0.01 );
+	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+	// App.input.onInput = ()=>{ window.requestAnimationFrame( onDraw ); }
+	// onDraw( 0, 0 );
+}
+
+
+//#############################################################################
+
+// Increment a Number at the rate of Frames Per Second.
+// So the value of 1 would take one second to get to.
+class NumberCycle{
+	constructor( nps = 0.2 ){
+		this.num_ps	= nps;
+		this.value 	= 0.0;
+	}
+
+	next( dt = null ){ this.value += this.num_ps * (dt || App.deltaTime); return this; }
+	
+	floor(){ return Math.floor( this.value ); }
+	fract(){ return this.value - Math.floor(this.value); }
+}
+
+function smooth_step(t){ return t * t * (3 - 2 * t); } // Smooth step for values between -1 & 1
+
+
+class NoiseCycle{
+	constructor( fps = 0.1 ){
+		this.func 		= new Perlin();
+		this.freq_ps	= fps;
+		this.freq_pos	= 0;
+	}
+	
+	next( dt = null ){ 
+		this.freq_pos += this.freq_ps * ( dt || Fungi.deltaTime );
+		return this;
+	}
+
+	get( is01 = false, s = 1, a = 0 ){ // Scale, Additive
+		return ( !is01 )?
+			this.func.get( this.freq_pos * s + a ) :
+			this.func.get( this.freq_pos * s + a ) * 0.5 + 0.5;
+	}
+
+	lerp( v0, v1, s=1, a=0 ){
+		let t	= this.func.get( this.freq_pos * s + a ) * 0.5 + 0.5,
+			ti	= 1 - t;
+		return v0 * ti + v1 * t;
+	}
+}
+
+
+class DanceIK{
+	constructor( e ){
+		// Setup some IK Chains
+		let a = e.Armature;
+		this.arm 			= a;
+		this.bHip			= a.get_bone( "Hips" );
+		this.bLeg_L			= new IKChain( a, [ "LeftUpLeg", "LeftLeg" ], "z" );
+		this.bLeg_R			= new IKChain( a, [ "RightUpLeg", "RightLeg" ], "z" );
+
+		this.bSpine 		= new IKChain( a, [ "Spine", "Spine1", "Spine2" ], "z" );
+		this.bArm_L			= new IKChain( a, [ "LeftArm", "LeftForeArm" ], "x" );
+		this.bArm_R			= new IKChain( a, [ "RightArm", "RightForeArm" ], "x" );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.step_clock 	= new NumberCycle( 0.5 );
+		this.noise_clock	= new NoiseCycle( 0.8 );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Spine
+		this.spine_min		= new Vec3( Maths.toRad(-8), Maths.toRad(-12), Maths.toRad(-13) );
+		this.spine_max		= new Vec3( Maths.toRad(20), Maths.toRad(12),  Maths.toRad(13) );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Arms - MinMax is based on Left Arm Limits, Use Rotation Mirroring for Right Arm.
+		this.arm_min		= new Vec3( Maths.toRad(-60), Maths.toRad(-10), Maths.toRad(0) );
+		this.arm_max		= new Vec3( Maths.toRad(60),  Maths.toRad(90),  Maths.toRad(-80) );
+		this.arm_min_scalar = 0.7;	// How much of he chain length to concider the min length
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Hip
+		this.hip_height		= this.bHip.Bone.bind.pos.y * 0.89;
+		this.hip_move		= 0.2;
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Feet
+		this.pivot_idx		= 0;					// Current Foot acting as Pivot
+		this.step_angle		= Maths.toRad( 120 );	// What to rotate at a full step
+		this.step_height	= 0.4;					// Max Height during a step
+		this.feet_distance	= 0.4;					// Distance the feet must be.
+		this.feet			= [						// Feet State for each step cycle
+			Vec3.scale( Vec3.LEFT, this.feet_distance * 0.5 ),
+			Vec3.scale( Vec3.RIGHT, this.feet_distance * 0.5 )
+		];
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Frame State
+		this.feet_ik		= [ this.feet[0].clone(), this.feet[1].clone() ];	// State of feet pos per frame
+		this.hip_ik			= new Vec3();										// Hip Position 
+		this.hip_ik_fwd		= new Vec3();										// Forward Direction
+		this.ik 			= new IKTarget();									// IK Target for reuse
+	}
+
+	update( dt ){
+		App.debug.reset();
+		this.step_clock.next( dt );
+		this.noise_clock.next( dt );
+
+		this.calc_feet();
+		this.calc_hip();
+		this.apply();
+	}
+
+	calc_feet(){
+		let nStep	= this.step_clock.floor();	// How many steps taken already.
+		let pIdx	= nStep & 1;				// Which Foot will be the pivot, the foot sticking to the ground.
+		let mIdx	= (nStep + 1) & 1;			// Which Foot will move.
+
+		// NOTE: Using Bitwise instead of Modulas, When alternating between 0 and 1, can check if the first bit (value 1) is on.
+		// If the bit is on, its an ODD number else its even. We have a foot array of 2 elements with the indexes of 0 and 1...
+		// Sooo, this trick makes it super easy and efficent for alternating between the two feet :)
+		
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Check when pivot foot switches.
+		if( pIdx != this.pivot_idx ){
+			console.log("Pivot Switch");
+
+			// Need to set the final position for our previously moving foot as its not
+			// on the ground and will be the foot that the body pivots on for rotating..
+			this.feet[ pIdx ].from_sub( this.feet[ pIdx ], this.feet[ mIdx ] )
+				.normalize()
+				.rotate( this.step_angle, "y" )
+				.scale( this.feet_distance )
+				.add( this.feet[ mIdx ] )
+				.set(null, 0, null);
+
+			this.feet_ik[ pIdx ].copy( this.feet[ pIdx ] );
+			this.pivot_idx = pIdx;
+		}
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		let tStep	= smooth_step( this.step_clock.fract() );					// Smooth out the fraction part of the clock value.
+		let fHeight	= Math.sin( tStep * Math.PI ) * this.step_height;			// Using Sin to remapping grad of 0->1 into 0->1->0
+		
+		this.feet_ik[ mIdx ].from_sub( this.feet[ mIdx ], this.feet[ pIdx ] )	// Get Distance between the two Feet.		
+			.normalize()														// Turn it into a Direction Vector
+			.rotate( this.step_angle * tStep, "y" )								// Rotate based on the current time step
+			.scale( this.feet_distance )										// Scale it to the distance the 2 feet need to be.
+			.add( this.feet[ pIdx ] )											// Add the pivot foot position, rotating from here.
+			.set(null, fHeight, null);											// Set the height
+
+		App.debug
+			.point( this.feet_ik[ pIdx ], 0 )
+			.point( this.feet_ik[ mIdx ], 1 );
+	}
+
+	calc_hip(){
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Move the Hip so its in the middle of the two feet, then move it up/down to make it look like its dancing
+		let tStep	= this.step_clock.fract();
+		let yPos 	= this.hip_move * (( -Math.sin( tStep * Math.PI * 4 ) + 1 ) * 0.5);
+
+		this.hip_ik
+			.from_lerp( 0.5, this.feet_ik[0], this.feet_ik[1] )	// The the Middle Position between the feet.
+			.set(null, this.hip_height - yPos, null );			// Set the hip's height from the ground
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Calc forward Direction, with the direction we can use it to help create a rotation
+		let dir = Vec3.sub( this.feet_ik[1], this.feet_ik[0] ); // Direction from Left to Right Foot, which makes an X Axis
+		this.hip_ik_fwd.from_cross( Vec3.UP, dir ).normalize();	// Then cross product with up to get forward
+
+		/*
+		App.debug
+			.point( this.hip_ik, 8 )
+			.line( this.hip_ik, Vec3.scale( this.hip_ik_fwd, 0.3 ).add(this.hip_ik), 8 );
+		*/
+	}
+
+	apply_spine( wp ){
+		let rot = new Quat(),
+			q 	= new Quat(),
+			i, b;
+
+		// Apply Noise to rotation by providing the noise function a range in the form of Euler values.
+		Quat.fromEuler( rot,
+			this.noise_clock.lerp( this.spine_min.x, this.spine_max.x, 1, 0 ),
+			this.noise_clock.lerp( this.spine_min.y, this.spine_max.y, 1, 0.5 ),
+			this.noise_clock.lerp( this.spine_min.z, this.spine_max.z, 1, 1.4 ),
+		);
+
+		// Apply rotatio to each bone of the chain
+		for( i=0; i < this.bSpine.cnt; i++ ){
+			b = this.bSpine.bind[ i ];			// Get the Bind Transform
+			q.from_mul( b.rot, rot );			// Add new Rotation to Bind Pose
+			this.bSpine.updateBone( i, q );		// Update Armature
+			wp.add( q, b.pos, b.scl );			// Add to World Space Transform for caller to use.
+		}
+
+		//App.debug.line( wp.pos, Vec3.transformQuat( Vec3.FORWARD, wp.rot ).scale(0.5).add( wp.pos), 6 );
+	}
+
+	apply_arm( chain, wt, isMirror, nOffset=0.0 ){
+		// Need to know the Parent World Transform to the chain.
+		//   WARNING - This is a hack, Depending on the armature, there
+		//   can be no or multiple bones between the arm and chest. For 
+		//   this example I know there one bone between the arm and chest,
+		//   this is to just keep things as simple as possible.
+		
+		let wp		= Transform.add( wt, chain.getParent().Bone.bind ),		// Shoulder WS
+			wc		= Transform.add( wp, chain.bind[0] ),	// Chain WS
+			rot		= new Quat(),
+			q		= new Quat(),
+			zaxis 	= Vec3.transformQuat( Vec3.FORWARD, wt.rot ),
+			xaxis 	= Vec3.transformQuat( Vec3.LEFT, wt.rot ),
+			yaxis 	= Vec3.transformQuat( Vec3.UP, wt.rot ),	//Not used for anything but Debuggin
+			isM 	= (isMirror)? -1 : 1,
+			rad;
+
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// By using the chest ws transform to define an direction axis for movement
+		//App.debug.line( wc.pos, Vec3.add( zaxis, wc.pos), 0 );
+		//App.debug.line( wc.pos, Vec3.add( xaxis, wc.pos), 1 );
+		//App.debug.line( wc.pos, Vec3.add( yaxis, wc.pos), 2 );
+		
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// CAN THIS BETTER WITH EULER TO QUATERNION VERSION, BUT WANTED TO SHOW HOW TO PIECEMEAL QUATERNION ROTATION
+		// ORDER IS IMPORTANT YXZ
+		// Horizontal Movement
+		rad = this.noise_clock.lerp( this.arm_min.y * isM, this.arm_max.y * isM, 1, 0.8 + nOffset );
+		rot.mul( q.setAxisAngle( yaxis, rad ) ); //Maths.toRad(-10);
+
+		// Vertical Movement
+		rad = this.noise_clock.lerp( this.arm_min.x * isM, this.arm_max.x * isM, 1, nOffset );
+		rot.mul( q.setAxisAngle( xaxis, rad ) );
+
+		// Twist Movement (Elbow Points At)
+		rad = this.noise_clock.lerp( this.arm_min.z * isM, this.arm_max.z * isM, 1, 1.32 + nOffset );
+		rot.mul( q.setAxisAngle( zaxis, rad ) );
+
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		rot.mul( wt.rot );			// Now rotate the Chest WS Rotation by the new Noise Rotation.
+
+		zaxis.from_quat( rot );		// Calc the Forward Direction for IK Aiming the Chain.
+		xaxis.from_quat( rot, (isMirror)? Vec3.RIGHT : Vec3.LEFT );	// Get the Left Direction to aim elbow at a specific direction.
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Determine how far to have the hand away from the shoulder, Defining the IK end effector.
+		let nLen = this.noise_clock.lerp( chain.len * this.arm_min_scalar, chain.len, 1, 0.3 + nOffset );
+		zaxis.scale( nLen );
+
+		this.apply_ik_chain( chain, wp, Vec3.add( zaxis, wc.pos ), xaxis );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		//App.debug.line( wc.pos, Vec3.add( zaxis, wc.pos ), 6 );
+		//App.debug.line( wc.pos, Vec3.add( xaxis, wc.pos ), 2 );
+		//App.debug.point( Vec3.add( zaxis, wc.pos ), 6 );
+	}
+
+	apply(){
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Move the Hip
+		let hip_rot = Quat.rotationTo( Vec3.FORWARD, this.hip_ik_fwd );
+		this.bHip.Node
+			.setRot( hip_rot )
+			.setPos( this.hip_ik );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Move Legs
+		let wt = new Transform( hip_rot, this.hip_ik, [1,1,1] );
+		this.apply_ik_chain( this.bLeg_L, wt, this.feet_ik[ 0 ], this.hip_ik_fwd );
+		this.apply_ik_chain( this.bLeg_R, wt, this.feet_ik[ 1 ], this.hip_ik_fwd );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Move Spine
+		// WT is passed by reference, so WT gets updated all the way up the spine
+		// This allows us to already have the World Space Transform of the final
+		// Bone of the spine, that we can then use to pass to the arm IK functionality.
+		this.apply_spine( wt );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Move Arms
+		// NEED TO FREEZE FRAME TO DEMO
+		this.apply_arm( this.bArm_L, wt, false );
+		this.apply_arm( this.bArm_R, wt, true );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.arm.isModified = true;
+	}
+
+	apply_ik_chain( chain, wp, end_pos, dir ){
+		let wc = Transform.add( wp, chain.bind[0] );
+
+		this.ik.byPos( wc.pos, end_pos, dir );
+		//IKTarget.debug( App.debug, this.ik );
+
+		if( this.ik.distanceSqr <= chain.lenSqr )
+			Solver.limb( chain, this.ik, null, wp );
+		else
+			Solver.aim( chain, this.ik, null, wp );
+	}
+}
+
+
+//#############################################################################
+
+
+//#############################################################################
+</script><body></body></html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App					from "../fungi/engine/App.js";
+import ArmTest				from "../fungi.armature/ArmTest.js";
+
+//#############################################################################
+App.useArmature = 2;
+App	.launch( onDraw, true )
+	.then( dl	=> dl.addGrp( "shader", "../fungi/shaders/VecWColor.txt", "../fungi.armature/shaders/ArmaturePreview.txt" ).start() )
+	.then( ()	=> App.loadScene( true, true ) )
+	.then( ()	=> init() )
+	.catch( err	=> console.error( err ) );
+
+//#############################################################################
+function onDraw(dt, ss){ App.ecs.sys_run(); }
+
+function init(){
+	App.cameraCtrl.setTarget( 0, 0.75, 0 ).setOrbit( -35, 15, 2.1 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let e = ArmTest.previewHuman();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	App.loop.start();
+}
+
+//#############################################################################
+</script><body></body></html>
