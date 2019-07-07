@@ -1,0 +1,379 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder, Components }		from "./fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "./fungi/maths/Maths.js";
+
+import CallbackTimer from "./fungi.test/CallbackTimer.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.load_module( "./ecs/DynamicVerts.js" )
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "./fungi/shaders/VecWColor.txt" ) )
+	.load_scene( true, false )
+	.add_task( init )
+	.render_loop( onDraw )
+	.set_camera( 0, 25, 4.0, 0, 0, 0 )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+let gPnt, gSpring, gTimer, gClosure;
+let gRun = false;
+
+window.addEventListener("keypress", function(e){ if( e.keyCode == 32 ) gRun = true; });
+
+//#############################################################################
+function onDraw( dt, ss ){
+	if( gRun ) gClosure( dt );
+	App.ecs.sys_run();
+}
+
+//#############################################################################
+function init(){
+	let DV = Components.get_ref( "DynamicVerts" );
+
+	gPnt = DV.$( App.$Draw( "Pnt" ), "vao_pnt" );
+	gPnt.DynamicVerts.raw_pnt( 0, 0.1, 0, 0 );
+	gPnt.Node.setPos( 2, 0, 0 );
+
+	test_raw();
+	//test_basic_dt();
+	//test_critically_damp();
+	//test_exponentiation_damp();
+	//test_build_velocity();
+	//test_springy();
+	//test_springy2();
+	//test_jiggy();
+	//test_custom_spring();
+
+	return true;
+}
+
+//#########################################################
+/*
+Raw basic Spring Equation, Need to run on a timer to see the motion in action. The math
+is in basic unit per second.
+
+The Main things to keep track of is Current Position, Resting Position and Velocity.
+
+Without damping, The spring will simply oscillate from its resting position based on
+its inital strength, which is the displacement ( current position - resting position )
+
+When using Mass, the heavier the object, the longer it takes to accelerate and decelerate.
+*/
+function test_raw(){
+	gClosure = CallbackTimer.closure( 0.1, function(){ 
+		let vel 	= 0, 	// Current Velocity
+			pos 	= 2,	// Curent Position
+			to 		= 0,	// Resting Position
+			mass 	= 1,	// How heavy an object is
+			tension = 0.1,	// Also known as stiffness, How strong or tight a spring is
+			damping = 0.1;	// Simpler to friction, how fast to slow down the movement
+			// Critical Damp : 0.1, 0.5
+			// Over Damp: 0.1, 1.5
+			// Under Damp : 0.1 0.4
+		return ()=>{
+			let f		= -tension * ( pos - to );		// f = -kx 			:: SpringForce = -SpringConstant * Displacement
+			let a		= (f - damping * vel) / mass;	// a = (f - dv) / m	:: accel = (spring_force - damping * velocity) / mass  (a = f/m)
+			vel 		+= a;							// v = v + a 		:: velocity = velocity + acceleration
+			pos 		+= vel;							// p = p + v 		:: positon = current_position + velocity
+			gPnt.Node.setPos( pos, null, null );
+		} 
+	}() );
+}
+
+//#########################################################
+// Simple delta time by just limiting acceleration or velocity.
+// This requires Tension and Damping values need to be higher to get
+// good animations. But reading that this is not the proper way as
+// things don't move perfectly or differently at different framerates.
+function test_basic_dt(){
+	let vel 	= 0, 	
+		pos 	= 2,	
+		to 		= 0,	
+		mass 	= 1,	
+		tension = 2.0,
+		damping = 1.2;
+
+	gClosure = ( dt ) => {
+		let f		= -tension * ( pos - to );
+		let a		= (f - damping * vel) / mass;
+		vel 		+= a * dt;
+		pos 		+= vel * dt;
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// This is a nice example of a critically damped motion, I wouldn't call it a spring
+// since there is no tension value. Things just speeds up, then slows down right on target.
+// Damping just determines the speed of acceleration / deceleration.
+function test_critically_damp(){
+	let vel 	= 0, 	
+		pos 	= 2,	
+		to 		= 0,
+		damping = 3;
+	
+	// Might of come from one of these two pages, but site isn't working
+	// https://gafferongames.com/post/spring_physics/
+	// https://gafferongames.com/post/physics_in_3d/
+    // n1 = vel - ( pos - rest_pos  ) * ( omega * omega * dt );
+    // n2 = 1 + omega * dt;
+    // vel = n1 / ( n2 * n2 );
+    // pos += vel * dt;
+
+	gClosure = ( dt ) => {
+		let dSqr_dt	= damping * damping * dt;
+		let n		= 1 + damping * dt;
+
+		vel = ( vel - (pos - to) * dSqr_dt ) / ( n * n );
+		pos += vel * dt;
+
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// This one uses a slightly different spring equation while using a different method
+// to calculate damping that is more based on framerate plus delta time. This produces
+// a smoother movement and transition to newer resting positions.
+function test_exponentiation_damp(){
+	let vel 	= 0, 	
+		pos 	= 2,	
+		to 		= 0,
+		fr 		= 60,	// FrameRate	
+		tension = 2.0,
+		damping = 1.2;
+	// http://lolengine.net/blog/2015/05/03/damping-with-delta-time
+	// float const D = 10.0f; 						// Per-second damping coefficient
+	// float const D2 = pow(1.f - D / 60.f, 60.f);	// Exponentiation base for velocity damping
+	// velocity *= pow(D2, delta_time); // Damp velocity (framerate-independent)
+
+	// Math.pow( 1 - damping / fr, fr * dt ); can be used for any damped movement, including lerp, not just springs.
+	// with lerp, the value will be put in place of T.
+	gClosure = ( dt ) => {
+		let a		= -tension * ( pos - to );
+		vel 		= ( vel + a * dt ) * Math.pow( 1 - damping / fr, fr * dt );
+		pos 		+= vel * dt;
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// Its a Smoother spring motion. This one is different since it
+// accumulates velocity, instead calcuating a new one. This is a good one
+// to use for moving objects around.
+function test_build_velocity(){
+	let vel 	= 0,
+		pos 	= 2,	
+		to 		= 0,
+		mass 	= 1,
+		tension = 2.0,
+		damping = 1.2;
+
+	gClosure = ( dt ) => {
+		let a		= -tension * ( pos - to ) / mass;
+		vel 		+= ( a - damping * vel ) * dt;
+		pos 		+= vel * dt;
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// This one uses a static rate and not delta time. But it does create
+// a fast acceleration that is then damped down. This one acts more like how
+// you expect a spring to look when you let one go when its extended.
+// The only issue us that the static rate causes small artifacts in the motion.
+function test_springy(){
+	let vel 	= 0,
+		pos 	= 2,	
+		to 		= 0,
+		rate 	= 10 / 16.67, // 60 FPS
+		mass 	= 1,
+		tension = 1.2,
+		damping = 0.1;	// For this one, Damping going over one causes NaN errors
+
+	gClosure = ( dt ) => {
+		let a		= -tension * ( pos - to ) / mass;
+		vel 		= ( vel + a * rate ) * Math.pow( 1 - damping, rate );
+		pos 		+= vel * dt;
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// This is an attempt to bring delta time to the springy version.
+// Using Exponentiation Damp since the original does something similar.
+// The issue is that the only way to get this fast acceleration was by
+// scaling deltatime up to speed up the animation. Trying to raise tension
+// and damping to higher values proves hard to get right. So for this one
+// you play around with t and d till you like the motions, then scale up
+// dt to just make it faster. Its a hack, but it does the job.
+function test_springy2(){
+	let vel 	= 0,
+		pos 	= 2,	
+		to 		= 0,
+		fr 		= 60,
+		mass 	= 1,
+		tension = 1.0,
+		damping = 0.6;	// For this one, Damping going over one causes NaN errors
+
+	gClosure = ( dt ) => {
+		dt  		*= 5;
+		let a		= -tension * ( pos - to ) / mass;
+		vel 		= ( vel + a * dt ) * Math.pow( 1 - damping / fr, fr * dt );
+		pos 		+= vel * dt;
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// https://wiki.unity3d.com/index.php/JiggleBone
+// This one well, its about the same as others. Thing to note is
+// that displacement is calculeted in reverse, then the Force quation does not
+// set the Spring_Constant(tension) as negative. If swopping the two changes to
+// the regular spring math, this will continue to work as is. I like how this
+// example shows how to calculate the spring force, then add gravity to the force
+// before calculating acceleration.
+function test_jiggly(){
+	let vel 	= 0,
+		pos 	= 2,	
+		to 		= 0,
+		mass 	= 1,
+		tension = 1.0,
+		damping = 0.9;	// For this one, Damping going over one causes NaN errors
+
+	gClosure = ( dt ) => {
+		let d = to - pos; 		// Displacement is usually the other way around, Pos - To
+		let f = tension * d;	// Normally -Tension, but this only works because Displacement is backwards
+		// f += g, original added gravity to the force.
+		let a = f / mass; 
+		vel += a * damping;		// Damping just on accel
+		pos += (vel + f) * dt;	// Add Velocity and Force to position.
+
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+//#########################################################
+// https://gamedev.stackexchange.com/questions/105728/how-to-program-a-fully-controllable-spring-damped-motion
+// https://codepen.io/sketchpunk/details/WqJOMM
+
+// This is pretty neat bit of math of math I found. Its the only 
+// "Spring Damping" type of calculator that lets you define things like
+// how long you want the spring to run, how many bounces to make. Then 
+// Gives you the Spring Constant & Damping Values to make it happen.
+// ALL the credit goes to Jesse Dorsey for giving a mind melting answer
+// on stackexchange when someone asked for such a thing. I personally
+// dont get the math, but dang, it works fairly well. Also the first
+// time I had to try to implement Newton's Method to help run the
+// math to get the results for damping. Happy to find a reason and now
+// nothing I'll throw in my math lib and use in the future... Like curve caching :)
+function test_custom_spring(){
+	let DECAY_TIME	= 5.0;
+	let CYCLE		= 4;	// Cycles must be in 2's, else things just break.
+	let START 	   	= 2;	// Start breaks down if negative
+	let END     	= 0.01;
+
+	let vel 	= 0,
+		pos 	= START,	
+		to 		= END,
+		damping = newtons_method( 0, damp_closure( DECAY_TIME, CYCLE, START, END ) ),
+		tension = calc_tension( DECAY_TIME, CYCLE, damping );
+
+	gClosure = ( dt ) => {
+		vel -= dt * ( tension * pos + damping * vel );
+		pos += dt * vel;
+		gPnt.Node.setPos( pos, null, null );
+	};
+}
+
+// Once Damping Value has been found, Plug it into this to get the tension value
+function calc_tension( decay_time, cycle, damp ){
+	// Stiffness = (DecayTime^2*Friction^2+4*%pi^2*CycleNum^2)/(4*DecayTime^2))
+	let decay_sqr = decay_time ** 2;
+	return (decay_sqr * damp**2 + 4 * Math.PI**2 * cycle**2) / (4 * decay_sqr);
+}
+
+// Creates a closure for the Damp Solving Equation,
+// Plug it into a Newton's Method function to find its root
+function damp_closure( decay_time, cycle, start, end ){
+	// https://gamedev.stackexchange.com/questions/105728/how-to-program-a-fully-controllable-spring-damped-motion
+	// Jesse Dorsey
+	// csc(%pi*CycleNum)*(2*%pi*CycleNum*cos(%pi*CycleNum)/DecayTime-2*%pi*CycleNum*%e^-(DecayTime*Friction/2)*Pull/(DecayTime*Stopped))
+	// [DecayTime = 5.0, Stopped = 0.01, Pull = 1.0, CycleNum = 4.0]
+	// After newtons method of starting guess of 0, should get around 1.842068074395236
+	// should then get tension/stiffness of around 7.164850514373732 using the damp value.
+	let pi_cycle = Math.PI * cycle;
+	return (x) => {
+		return ( 1 / Math.sin( pi_cycle ) ) * (
+			2 * pi_cycle * Math.cos( pi_cycle )
+			/ decay_time - 2 * pi_cycle * Math.exp( -( decay_time * x / 2 ) ) * start / ( decay_time * end )
+		);
+	}	
+}
+
+// Takes function and if available, Derivitive function. If not, it will get an estimate of the
+// the derivitive value by using an increment on the main function passed in.
+function newtons_method( x, f, fd=null ){
+	// without derivitive, use th following:
+	// x = x - f(x) / ( (f(x+i) - f(x-1)) / (2*i) )
+	// else
+	// x = x - f(x) / fd(x);
+	const precision = 0.001;
+	const inc 		= 0.001;
+	const inc_2_inv	= 1 / (2 * inc); // Just to remove Division and the extra mul
+	const lmt 		= 20;
+	
+	let i, px = x;
+	for( i=0; i < lmt; i++ ){
+		x = ( !fd )?
+			x - f(x) / (( f(x + inc) - f(x - inc) ) * inc_2_inv ) :
+			x - f(x) / fd(x);
+		//console.log( i, px, x );
+		if( Math.abs( px - x ) <= precision ) break;
+		px = x;
+	}
+	return x;
+}
+
+
+//#############################################################################
+
+/*NOTES
+https://www.khanacademy.org/science/ap-physics-1/simple-harmonic-motion-ap/spring-mass-systems-ap/v/period-dependance-for-mass-on-spring
+
+Force = Mass * Accel :: f = ma
+Accel = Force / Mass :: a = f/m
+
+Displacement 	= Current - Target
+Force 			= -SpringConstant * Displacement	:: f = -kx
+					- SpringConstant == Stiffness, Tension
+    				- optional : Force += Gravity
+
+Accel 		= (-SpringConstant * Displacement - Damper * Velocity ) / Mass  :: a = (-km - dv) / m
+Accel 		= Force * deltaTime // Acceleration per second, but for a frame, needs fraction of a second.
+Velocity	+= Accel
+Position	+= Velocity * DeltaTime
+Period		= 2 * Pi * sqrt( Mass / SpringConstant ) 	:: t = 2PI * sqrt( m / k )
+*/
+
+//#############################################################################
+
+/*
+[[ SPRINGS ]]
+http://www.ryanjuckett.com/programming/damped-springs/
+https://gafferongames.com/post/spring_physics/
+https://gafferongames.com/post/physics_in_3d/
+https://wiki.unity3d.com/index.php/JiggleBone
+https://www.khanacademy.org/science/ap-physics-1/simple-harmonic-motion-ap/spring-mass-systems-ap/v/period-dependance-for-mass-on-spring
+
+https://gamedev.stackexchange.com/questions/105728/how-to-program-a-fully-controllable-spring-damped-motion
+https://codepen.io/sketchpunk/details/WqJOMM
+
+[[ DAMPING ]]
+http://lolengine.net/blog/2015/05/03/damping-with-delta-time
+http://www.rorydriscoll.com/2016/03/07/frame-rate-independent-damping-using-lerp/
+http://mathproofs.blogspot.com/2013/07/critically-damped-spring-smoothing.html
+*/
+
+</script><body></body></html>
