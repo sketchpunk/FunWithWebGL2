@@ -1,0 +1,258 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }	from "../fungi/engine/App.js";
+import Arm					from "../fungi.armature/Armature.js";
+import Pose 				from "../fungi.armature/Pose.js";
+import Maths,{ Quat, Vec3 } from "../fungi/maths/Maths.js";
+import Spring				from "../fungi/maths/Spring.js";
+import Transform 			from "../fungi/maths/Transform.js";
+
+import IKChain				from "../fungi.ik/IKChain.js";
+import { Solver, IKTarget }	from "../fungi.ik/Solver.js";
+
+import _NA					from "../fungi.misc/MeshLoader.js";
+
+//#############################################################################
+
+(function(){new AppBuilder().launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"../fungi/shaders/VecWColor.txt",
+		"../fungi.armature/shaders/ArmaturePreview.txt",
+		"../fungi.armature/shaders/ArmatureSkinPhong.txt" )
+		.addEntity( "Baller", "./baller", "ArmatureSkinPhong", 3, 25 )
+	)
+	.load_scene( true, true )
+	.set_camera( -130, 15, 5.0 )
+	.add_task( init )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+function onDraw(dt, ss){
+	gBaller.update(dt);
+	App.ecs.sys_run();
+}
+
+let gBaller;
+
+function init(){
+	gBaller = new Baller();
+
+	//FollowBallerCamera.init( App.camera, gBaller );
+
+	//let b = gBaller.arm.get_bone("root");
+	//gBaller.entity.Node.local.rot.pmul( Quat.axisAngle([0,0,1], Maths.toRad(45)));
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return true;
+}
+
+
+//#############################################################################
+
+class Baller{
+	constructor( e ){
+		this.move_vel		= new Vec3();
+		this.move_target	= new Vec3();
+		this.speed 			= 0;
+		this.max_speed		= 60;
+		this.acell_speed	= 10;
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.aim_x 			= 0;
+		this.aim_y 			= 0;
+		this.aim_target		= new Quat();
+		this.aim_vel		= new Float32Array( [0.0,0.0,0.0,0.0] );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.entity = App.ecs.entity_find( "Baller" );
+		this.n		= this.entity.Node;
+		this.arm 	= this.entity.Armature;
+		this.bGun	= this.arm.get_bone("gun");
+		this.bBall	= this.arm.get_bone("ball");
+		this.bChair = this.arm.get_bone("chair");
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		//Define the Movement for each degree of rotation.
+		this.ball_radius	= 0.806604;
+		this.ball_len		= Math.PI * this.ball_radius * 2;	// C = Pi * 2R
+		//this.speed_ps 		= Maths.toRad( 90 );	// Degrees of rotation per sec.
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.entity.Draw.items[1].material = App.cache.getMaterial("LowPolyPhong_grayBlend");
+	}
+
+	//////////////////////////////////////////////////////////////////
+	//
+	//////////////////////////////////////////////////////////////////
+		update( dt ){
+			this.kb_move_ctrl( dt );
+			this.kb_move_cannon( dt );
+
+			this.movement( dt );
+			this.aim( dt );
+		}
+
+
+	//////////////////////////////////////////////////////////////////
+	// Movement
+	//////////////////////////////////////////////////////////////////
+		speedup( dt ){
+			if( this.speed >= this.max_speed ) return this;
+				
+			this.speed = Math.max( this.max_speed, this.acell_speed * dt );
+			return this;
+		}
+
+		movement( dt ){
+			//const FRICTION = 0.91;
+			//this.vel.scale( FRICTION );
+
+			//const tension = 60.0;
+			//const damping = 7.0;
+
+			// a	= -tension * ( pos - to ) / mass;
+			// vel	+= ( a - damping * vel ) * dt;
+			//let damp	= Vec3.scale( this.vel, damping ),
+			//	acell	= Vec3.sub( this.n.local.pos, this.move_target ).scale( -tension ).sub( damp ).scale( dt );
+			//this.vel.add( acell );
+			//
+			let next_pos = this.n.local.pos.clone();
+			Spring.accel_vec3( dt, 60.0, 7.0, this.move_target, next_pos, this.move_vel );
+			//Spring.springy_vec3( dt, 60, 1, 60.0, 7.0, this.move_target, next_pos, this.move_vel );
+			//const d_ratio =  Math.log(0.3) / ( -Maths.PI_2 * 0.5 );
+			//Spring.semi_implicit_euler_vec3( dt, Maths.PI_2, d_ratio, this.move_target, next_pos, this.move_vel );
+			//Spring.implicit_euler_vec3( dt, Maths.PI_2, d_ratio, this.move_target, next_pos, this.move_vel );
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			let len		= Vec3.len( next_pos, this.n.local.pos ),			// Get Velocity Length
+				rot 	= Maths.PI_2 * ( len / this.ball_len ),				// Convert to Angular Velocity
+				axis	= Vec3.cross( Vec3.UP, this.move_vel ).normalize(),	// Angle of Rotation
+				q		= new Quat().setAxisAngle( axis, rot );				// Final Rotation
+
+			this.n.local.pos.copy( next_pos );
+			this.n.isModified = true;
+
+			this.bBall.Node.local.rot.pmul( q );
+			this.bBall.Node.isModified	= true;
+			this.arm.isModified 		= true;
+		}
+
+		aim( dt ){
+			let bn = this.bGun.Node;
+
+			Spring.accel_quat( dt, 30, 1.2, this.aim_target, bn.local.rot, this.aim_vel );
+			//Spring.springy_quat( dt, 60, 1, 60.0, 7.0, this.aim_target, bn.local.rot, this.aim_vel );
+
+			bn.isModified		= true;
+			this.arm.isModified	= true;
+		}
+
+
+	//////////////////////////////////////////////////////////////////
+	// Keyboard Input
+	//////////////////////////////////////////////////////////////////
+		kb_move_ctrl(dt){
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Check Direction 
+			let zDir = 0, xDir = 0;
+
+			if( App.input.arrowDown )	zDir = -1;
+			if( App.input.arrowUp )		zDir = 1;
+			if( App.input.arrowLeft )	xDir = 1;
+			if( App.input.arrowRight )	xDir = -1;
+			if( !zDir && !xDir ){
+				if( this.speed != 0 ) this.speed = 0;
+				return;
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			let move	= new Vec3( Vec3.FORWARD );
+			let dir		= zDir;
+
+			if( zDir == 0 && xDir !== 0 ){				// Side Movement
+				move.copy( Vec3.LEFT );
+				dir = xDir;
+			}else if( zDir && xDir ){					// Angle Movement
+				move.rotate( Maths.toRad( 45 * xDir * zDir ), "y" ).nearZero().normalize();
+			}
+
+			this.speedup( dt );
+			this.move_target.from_add( this.n.local.pos, move.scale( this.speed * dt * dir ) );
+		}
+
+		kb_move_cannon( dt ){
+			let xDir = 0, yDir = 0;
+
+			// d:100, D:68, a:97, A:65, w:119, W:87, s:115, S:83
+			if( App.input.keyState[119] )	yDir = 1;
+			if( App.input.keyState[115] )	yDir = -1;
+			if( App.input.keyState[100] )	xDir = 1;
+			if( App.input.keyState[97] )	xDir = -1;
+
+			if( App.input.keyState[120] ){ //x
+				this.aim_target.reset();
+				return;
+			}
+
+			if( !xDir && !yDir ) return;
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			this.aim_x 	+= xDir * 10 * dt;
+			this.aim_y 	= Maths.clamp( this.aim_y + yDir * 10 * dt, -89.99999, 89.99999 );
+			this.aim_target
+				.from_polar( this.aim_x, this.aim_y )
+				.mul( this.bGun.Bone.bind.rot );
+		}
+}
+
+Vec3.len = function( a, b ){
+	return Math.sqrt( 
+		( a[0] - b[0] )**2 +
+		( a[1] - b[1] )**2 +
+		( a[2] - b[2] )**2
+	);
+}
+
+
+from_add( a, b ){
+	this[0] = a[0] + b[0];
+	this[1] = a[1] + b[1];
+	this[2] = a[2] + b[2];
+	return this;
+}
+
+from_look( dir, up ){ return Quat.lookRotation( dir, up, this ); }
+
+
+//#############################################################################
+class FollowBallerCamera{
+	static init( cam, tar, ecs, priority = 1, is_active = false ){ 
+		let sys = new FollowBallerCamera( cam, tar );
+		ecs.sys_add( sys, priority, is_active );
+		return sys;
+	}
+
+	constructor( cam, tar ){
+		this.camera		= cam;
+		this.target		= tar;
+		this.distance	= 4;
+		this.direction  = Vec3.from_polar( 180, 20 );
+	}
+
+	run( ecs ){
+		let cn 	= this.camera.Node,
+			tn 	= this.target.Node,
+			v	= new Vec3();
+
+		v.copy( this.direction ).scale( this.distance )
+		cn.local.pos.from_add( tn.local.pos, v );
+		cn.local.rot.from_look( this.direction.invert( v ), Vec3.UP );	// Rotate to Look at Target.
+		cn.isModified = true;
+	}
+}
+
+//#############################################################################
+</script><body></body></html>

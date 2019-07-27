@@ -1,0 +1,70 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }		from "./fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "./fungi/maths/Maths.js";
+import Spring					from "./fungi/maths/Spring.js";
+import Transform				from "./fungi/maths/Transform.js";
+
+import Motion					from "./fungi.test/Motion.js";
+import FacedCube				from "./fungi/primitives/FacedCube.js";
+
+import Armature					from "./fungi.armature/Armature.js";
+import ArmaturePreview			from "./fungi.armature/ArmaturePreview.js";
+
+import Jiggly					from "./fungi.armature/Jiggly.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.load_armature()
+	.load_module( "../../fungi.armature/Jiggly.js" )
+	.download( dl=>dl.addGrp( "shader", 
+		"./fungi/shaders/VecWColor.txt", 
+		"./fungi.armature/shaders/ArmaturePreview.txt" ) )
+	.load_scene( true, true )
+	.add_task( init )
+	.render_loop( onDraw )
+	.set_camera( 0, 25, 4.0, 0, 0, 0 )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+window.addEventListener("keyup", function(e){
+	if(e.keyCode == 32) gRun = !gRun;
+});
+
+
+//#############################################################################
+let gCube, gMover, gSpring, gArm, gRun = false;
+
+function onDraw(dt, ss){
+	if( gRun ) gMover( dt );
+	App.ecs.sys_run();
+}
+
+function init(){
+	//........................
+	let e 		= Armature.$( App.$Draw( "Arm", FacedCube.vao(0.5,0.5,0.5), "VecWColor" ) ),
+		b0 		= e.Armature.add_bone( "b0", 0.6 );
+
+	b0.Node.local.pos.y = 0.28;
+
+	Armature.finalize( e );
+	ArmaturePreview.$( e, "ArmaturePreview", 2 );
+
+	Jiggly.$( b0, 0.3, 0.9, 0.5 ); // Apply Jiggly after Finalized, Need to set starting world position.
+	
+	//........................
+	//gMover = Motion.sin( e, 1.0, [2,0,0] );
+	gMover = Motion.circle( e, 1.0, 1 );
+	//gMover = Motion.rnd_radius( e, 0.1, 2 );
+	//gMover = Motion.axis_sin_rot( e, 2, Vec3.FORWARD, 45 );
+	//gMover = Motion.noise_pos( e, 3, [-2,0,-2], [2,0,2], 0.3 );
+	//gMover = Motion.noise_rot( e, 5, [-45, -45, -45], [45, 45, 45], 0.25 );
+
+	gArm 	= e;
+	
+	//........................
+	return true;
+}
+</script><body></body></html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App, { AppBuilder, Material } from "./fungi/engine/App.js";
+import FacedCube	from "./fungi/primitives/FacedCube.js";
+import DVerts 		from "./fungi/engine/ecs/DynamicVerts.js";
+
+import Maths, { Quat }		from "./fungi/maths/Maths.js";
+import Spring				from "./fungi/maths/Spring.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "./fungi/shaders/VecWColor.txt" ) )
+	.load_scene( true, true )
+	.set_camera( -20, 20, 4, 0, 0, 0 )
+	.add_task( init )
+	.render_loop( onDraw )
+	//.render_on_mouse( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+window.addEventListener("keypress", function(e){ 
+	if( e.keyCode == 32 ){
+
+		t_rotation.from_polar( Maths.rnd(-180,180), Maths.rnd(-90,90) );
+		gLine.Node.setRot( t_rotation );
+		gPnt.Node.setRot( t_rotation );
+
+	}
+});
+
+
+//#############################################################################
+let gCube, gLine, gPnt, t_rotation, gClosure;
+function onDraw( dt, ss ){
+	if( gClosure ) gClosure( dt );
+	App.ecs.sys_run();
+}
+
+
+//#############################################################################
+function init(){
+	t_rotation	= new Quat();
+	gCube		= FacedCube( "CubeA" );
+	gLine 		= DVerts.entity_line( "Line" );
+	gPnt		= DVerts.entity_pnt( "Pnt" );
+
+	gLine.DynamicVerts.raw_line( 0,0,0, 0,0,1.5, 6,6 );
+	gPnt.DynamicVerts.raw_pnt( 0,0,1.5, 6 );
+
+	test_accel();
+	//test_springy();
+	//test_implicit_euler();
+	//test_semi_implicit_euler();
+
+	return true;
+}
+
+
+//#########################################################
+function test_accel(){
+	let vel 	= new Float32Array([0,0,0,0]),	
+		tension = 10.0,
+		damping = 3;
+
+	gClosure = ( dt ) => {
+		Spring.accel_quat( dt, tension, damping, t_rotation, gCube.Node.local.rot, vel );
+		gCube.Node.isModified = true;
+	};
+}
+
+function test_springy(){
+	let vel 		= new Float32Array([0,0,0,0]),
+		frame_rate	= 60,
+		dt_scale	= 2,
+		tension		= 10.0,
+		damping 	= 1;
+
+	gClosure = ( dt ) => {
+		Spring.springy_quat( dt, frame_rate, dt_scale, tension, damping, t_rotation, gCube.Node.local.rot, vel );
+		gCube.Node.isModified = true;
+	};
+}
+
+function test_semi_implicit_euler(){
+	let vel 		= new Float32Array([0,0,0,0]),
+		osc_ps		= Maths.PI_2 * 1,	// How many Cycles Per Wecond
+		damping 	= 0.5,
+		damp_time	= 0.5, 				// Damping in X amount of time
+		damp_ratio	= Math.log( damping ) / ( -osc_ps * damp_time );
+
+	gClosure = ( dt ) => {
+		Spring.semi_implicit_euler_quat( dt, osc_ps, damp_ratio, t_rotation, gCube.Node.local.rot, vel );
+		gCube.Node.isModified = true;
+	};
+}
+
+function test_implicit_euler(){
+	let vel 		= new Float32Array([0,0,0,0]),
+		osc_ps		= Maths.PI_2 * 1,	// How many Cycles Per Wecond
+		damping 	= 0.9,
+		damp_time	= 2, 				// Damping in X amount of time
+		damp_ratio	= Math.log( damping ) / ( -osc_ps * damp_time );
+
+	gClosure = ( dt ) => {
+		Spring.implicit_euler_quat( dt, osc_ps, damp_ratio, t_rotation, gCube.Node.local.rot, vel );
+		gCube.Node.isModified = true;
+	};
+}
+
+</script><body></body></html>

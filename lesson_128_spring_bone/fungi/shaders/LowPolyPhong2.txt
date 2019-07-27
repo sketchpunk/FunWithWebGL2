@@ -1,0 +1,121 @@
+<shader>{
+	"name"		: "LowPolyPhong",
+	"ubo"		: [ "UBOGlobal", "UBOModel", "UBOLighting" ],
+	"uniforms":[
+		{ "name":"u_basecolor", "type":"vec4" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"LowPolyPhong",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "ff7f7fff" }
+	]},
+
+	{ "name":"LowPolyPhong_green",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "00ff00ff" }
+	]},
+
+	{ "name":"LowPolyPhong_yellow",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "FFFF00ff" }
+	]},
+
+	{ "name":"LowPolyPhong_gray",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "A0A0A0ff" }
+	]},
+
+	{ "name":"LowPolyPhong_grayBlend",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "A0A0A099" }
+	], "options":{ "blend":true }},
+
+
+	{ "name":"LowPolyPhong_litegray",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "BEBEBEff" }
+	]},
+
+	{ "name":"LowPolyPhong_purple",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "666699ff" }
+	]},
+
+	{ "name":"LowPolyPhong_orange",	"uniforms":[
+		{ "name":"u_basecolor", "type":"rgba", "value": "e68a00ff" }
+	]}
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	out vec3 v_cameraPos;
+	out vec3 v_worldPos;
+
+	void main(void){
+		//Need to pass Camera pos turned to WorldSpace avoid inverse
+		//vCameraPos 	= (inverse(matCameraView) * vec4(posCamera,1.0)).xyz;  
+
+		v_cameraPos = cameraPos;
+
+		vec4 wpos	= modelMatrix * vec4(a_position,1.0);
+		v_worldPos	= wpos.xyz;
+
+		gl_Position	= projViewMatrix * wpos;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform UBOLighting{
+		vec3 lightPosition;
+		vec3 lightDirection;
+		vec3 lightColor;
+	};
+
+	uniform vec4 u_basecolor;
+	
+	in vec3 v_cameraPos;
+	in vec3 v_worldPos;
+
+	out vec4 oFragColor;
+
+	//const vec3 uLightPos			= vec3(1.0, 6.0, -4.0);
+	//const vec3 uLightColor		= vec3(1.0, 1.0, 1.0);
+
+	const float uAmbientStrength	= 0.5;
+	const float uDiffuseStrength	= 0.5;
+	const float uSpecularStrength	= 0.2f;	//0.15
+	const float uSpecularShininess	= 1.0f; //256.0
+
+	void main(void){
+		vec3 pixelNorm = normalize( cross( dFdx(v_worldPos), dFdy(v_worldPos) ) ); //Calc the Normal of the Rasterizing Pixel
+
+		//Ambient Lighting
+		vec3 cAmbient		= lightColor * uAmbientStrength;
+		
+		//Diffuse Lighting
+		vec3 lightVector	= normalize(lightPosition - v_worldPos);		//light direction based on pixel world position
+		float diffuseAngle	= max( dot(pixelNorm,lightVector) ,0.0);	//Angle between Light Direction and Pixel Direction (1==90d)
+		vec3 cDiffuse		= lightColor * diffuseAngle * uDiffuseStrength;
+
+		//Specular Lighting
+		vec3 camVector		= normalize(v_cameraPos - v_worldPos);	//Camera Direction based on pixel world position
+		vec3 reflectVector	= reflect(-lightVector, pixelNorm);		//Reflective direction of line from pixel direction as pivot.
+		float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+		vec3 cSpecular		= lightColor * specular * uSpecularStrength;
+
+		//Final Color
+		oFragColor = vec4(u_basecolor.rgb * (cAmbient + cDiffuse + cSpecular), u_basecolor.a);
+	}
+<\fragment>	

@@ -1,0 +1,58 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App, { AppBuilder }	from "./App.js";
+//import Debug		from "./Debug.js";
+import Maths, {Vec3, Quat} from "../maths/Maths.js";
+
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "../shaders/VecWColor.txt" ) )
+	.load_scene( true, true )
+	.add_task( init )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+function onDraw( dt, ss ){ App.ecs.sys_run(); }
+
+//#############################################################################
+function init(){
+	App.camera.Node
+		.setPos(3.213587522506714, 1.7394452095031738, 5.701508522033691)
+		.setRotAxis([-0.44259775633139326,0.8891670091983153,0.11614334701069971], 0.5739513839640681);
+
+	//Debug.init( App.ecs );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	//Debug
+	App.debug
+		.point( [-1,1,0], 0)
+		.rawPoint( 0, 1, 0, 1 )
+		.point( new Vec3(1,1,0), 2 )
+
+		.line( [-1,1,0], new Vec3(0,1,0), 0 , 1 )	// Dual Color Line using Array and Vectors
+		.line( [ 0,1,0], [1,1,0], 1 , 2 )			// Dual Color Line using just arrays
+		.line( [0,0,0], [0,1,0], 6 )				// Single Color Line
+
+		.quat( 
+			Quat.fromEuler(null, 
+				Maths.toRad(-45), 
+				Maths.toRad(-45), 
+				Maths.toRad(45)), 
+			[0, 0.2, 1], 
+			0.5
+		)
+
+		.rawBox( -2,-2,-2, 2,2,2, 4 )
+		.box( [-1.5, -1.5, -1.5], new Vec3(1.5, 1.5, 1.5), 7 )
+	;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return true;
+}
+
+</script><body></body></html>

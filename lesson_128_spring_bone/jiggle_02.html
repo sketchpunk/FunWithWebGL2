@@ -1,0 +1,100 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }		from "./fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "./fungi/maths/Maths.js";
+import Spring					from "./fungi/maths/Spring.js";
+
+import DVerts 					from "./fungi/engine/ecs/DynamicVerts.js";
+
+import Motion					from "./fungi.test/Motion.js";
+import FacedCube				from "./fungi/primitives/FacedCube.js";
+
+
+//#############################################################################
+(function(){new AppBuilder()
+	.load_module( "./ecs/DynamicVerts.js" )
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "./fungi/shaders/VecWColor.txt" ) )
+	.load_scene( true, true )
+	.add_task( init )
+	.render_loop( onDraw )
+	.set_camera( 0, 25, 4.0, 0, 0, 0 )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+window.addEventListener("keyup", function(e){
+	if(e.keyCode == 32) gRun	= !gRun;
+	if(e.keyCode == 66) gPause	= !gPause;
+});
+
+
+//#############################################################################
+let gCube, gPntT, gMover, gSpring, gRun = false, gPause = false;
+
+function onDraw(dt, ss){
+	if(!gPause){
+		if( gRun ) gMover( dt );
+		gSpring( dt );
+	}
+	App.ecs.sys_run();
+}
+
+function init(){
+	gCube = FacedCube();
+	gCube.Node.setScl( 0.5 );
+
+	gPntT = DVerts.entity_pnt( "PntB" );
+	gPntT.DynamicVerts.raw_pnt( 0,0,0, 0 );
+
+	gSpring = SpringPoint();
+
+	//........................
+	gMover = Motion.sin( gCube, 1.0, [2,0,0] );
+	//gMover = Motion.circle( gCube, 1.0, 1 );
+	//gMover = Motion.rnd_radius( gCube, 0.1, 2 );
+	//gMover = Motion.axis_sin_rot( gCube, 2, Vec3.FORWARD, 45 );
+	//gMover = Motion.noise_pos( gCube, 3, [-2,0,-2], [2,0,2], 0.3 );
+	//gMover = Motion.noise_rot( gCube, 5, [-45, -45, -45], [45, 45, 45], 0.25 );
+
+	//........................
+	return true;
+}
+
+//#############################################################################
+function SpringPoint(){
+	let get_tpos = (v)=>{ return (v || new Vec3()).from_quat( gCube.Node.local.rot, offset ).add( gCube.Node.local.pos ); };
+
+	let offset		= new Vec3( 0, 1, 0 );
+	let target		= new Vec3();
+
+	let vel 		= new Vec3();
+	let pos 		= get_tpos();
+	let osc_ps 		= Maths.PI_2 * 0.5;
+	let damp 		= 0.3;
+	let damp_time	= 0.9;
+	let damp_ratio	= Math.log( damp ) / ( -osc_ps * damp_time );
+
+	return ( dt ) => {
+		get_tpos( target );
+
+		let cpos = gCube.Node.local.pos; 
+
+		Spring.semi_implicit_euler_vec3( dt, osc_ps, damp_ratio, target, pos, vel );
+
+		gPntT.Node.local.pos.copy( pos );
+		gPntT.Node.isModified = true;
+
+		let t_dir 	= Vec3.sub( target, cpos );
+		let to_dir	= Vec3.sub( pos, cpos );
+		let axis	= Vec3.cross( t_dir, to_dir ).norm();
+
+		App.debug
+			.reset()
+			.line( cpos, Vec3.add( cpos, to_dir ), 0 )
+			.line( cpos, Vec3.add( cpos, axis), 8 )
+			.line( cpos, target, 6 )
+			.point( target, 6 );
+	}
+}
+</script><body></body></html>

@@ -1,0 +1,36 @@
+html, body { margin:0px; padding:0px; width:100%; height:100%; }
+canvas{ background-color:#606060; z-index:300; }
+body > section{ background-color:#303030; box-shadow:2px 0px 8px #303030; z-index:500; }
+
+
+/* ================================================================= */
+body.C2_R1{ display:grid; 
+	grid-template-columns: 200px auto;
+	grid-template-rows: auto;
+	grid-template-areas: "panel main";
+}
+
+
+/* ================================================================= */
+body.FULL{ display:grid;
+	grid-template-columns: 100%;
+	grid-template-rows: 100%;
+	grid-template-areas: "main";
+}
+
+
+/* ================================================================= */
+body.FULL canvas,
+	body.C2_R1 canvas
+		{ width:100%; height:100%; }
+	
+
+/*
+http://blog.rectorsquid.com/sample-linkage-mechanisms-2/
+http://csharphelper.com/blog/2016/07/animate-two-rods-connected-to-a-wheel-in-c/
+http://daerospace.com/mechanical-systems/four-bar-linkage/
+http://www.mechanicalexpressions.com/explore/kinematics/4-bar-linkage.html  IN JS MAYBE
+https://en.wikipedia.org/wiki/Four-bar_linkage
+https://github.com/arashnh11/Four-bar-mechanism/blob/master/Main/Form1.cs
+http://dynref.engr.illinois.edu/aml.html JS Examples
+*/

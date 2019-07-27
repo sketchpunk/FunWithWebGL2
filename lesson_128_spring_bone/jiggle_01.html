@@ -1,0 +1,69 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }		from "./fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "./fungi/maths/Maths.js";
+import Spring					from "./fungi/maths/Spring.js";
+import DVerts 					from "./fungi/engine/ecs/DynamicVerts.js";
+import Motion					from "./fungi.test/Motion.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.load_module( "./ecs/DynamicVerts.js" )
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "./fungi/shaders/VecWColor.txt" ) )
+	.load_scene( true, false )
+	.add_task( init )
+	.render_loop( onDraw )
+	.set_camera( 0, 25, 4.0, 0, 0, 0 )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+window.addEventListener("keyup", function(e){
+	if(e.keyCode == 32) gRun = !gRun;
+});
+
+
+//#############################################################################
+let gPntA, gPntB, gMover, gSpring, gRun = false;
+
+function onDraw(dt, ss){
+	if( gRun ) gMover( dt );
+	gSpring( dt );
+
+	App.ecs.sys_run();
+}
+
+function init(){
+	gPntA = DVerts.entity_pnt( "PntA" );
+	gPntA.DynamicVerts.raw_pnt( 0,0,0, 0 );
+
+	gPntB = DVerts.entity_pnt( "PntB" );
+	gPntB.DynamicVerts.raw_pnt( 0,0.2,0, 2 );
+
+	//........................
+	gMover = Motion.sin( gPntA, 1.0, [2,0,0] );
+	//gMover = Motion.circle( gPntA, 1.0, 1 );
+	//gMover = Motion.rnd_radius( gPntA, 0.1, 2 );
+
+	gSpring = SpringPoint();
+
+	//........................
+	return true;
+}
+
+//#############################################################################
+function SpringPoint(){
+	let vel 		= new Vec3();
+	let pos 		= new Vec3( gPntA.Node.local.pos );
+	let osc_ps 		= Math.PI * 2 * 1;
+	let damp 		= 0.3;
+	let damp_time	= 1.0;
+	let damp_ratio	= Math.log( damp ) / ( -osc_ps * damp_time );
+
+	return ( dt ) => {
+		Spring.semi_implicit_euler_vec3( dt, osc_ps, damp_ratio, gPntA.Node.local.pos, pos, vel );
+		gPntB.Node.setPos( pos );
+	}
+}
+</script><body></body></html>

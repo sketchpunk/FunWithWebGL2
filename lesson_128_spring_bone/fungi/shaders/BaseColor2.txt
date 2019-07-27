@@ -1,0 +1,46 @@
+<shader>{
+	"name":"BaseColor",
+	"ubo":[ "UBOGlobal", "UBOModel" ],
+	"options": { "modelMatrix":true, "blendMode":1 },
+	"uniforms":[
+		{ "name":"u_color", "type":"vec4" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"BaseColorRed",	"uniforms":[{ "name":"u_color", "type":"rgba", "value":"ff000033" }] },
+	{ "name":"BaseColorGreen",	"uniforms":[{ "name":"u_color", "type":"rgba", "value":"00ff0033" }] },
+	{ "name":"BaseColorGray",	"uniforms":[{ "name":"u_color", "type":"rgba", "value":"a0a0a0aa" }], "options": { "blend":true, "sampleAlphaCoverage":false } },
+	{ "name":"BaseColorBlack",	"uniforms":[{ "name":"u_color", "type":"rgba", "value":"00000033" }] }
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	void main(void){
+		gl_Position = projViewMatrix * modelMatrix * vec4( a_position, 1.0 );
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform vec4 u_color;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = u_color; }
+<\fragment>
