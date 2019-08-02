@@ -1,0 +1,213 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }		from "./fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "./fungi/maths/Maths.js";
+import Spring					from "./fungi/maths/Spring.js";
+import Transform				from "./fungi/maths/Transform.js";
+
+import Motion					from "./fungi.test/Motion.js";
+import FacedCube				from "./fungi/primitives/FacedCube.js";
+
+import Armature					from "./fungi.armature/Armature.js";
+import ArmaturePreview			from "./fungi.armature/ArmaturePreview.js";
+
+import Jiggly, { JigglySystem }	from "./fungi.armature/Jiggly.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"./fungi/shaders/VecWColor.txt", 
+		"./fungi.armature/shaders/ArmaturePreview.txt" ) )
+	.load_scene( true, true )
+	.add_task( init )
+	.render_loop( onDraw )
+	.set_camera( 0, 25, 4.5, 0, 0, 0 )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+window.addEventListener("keyup", function(e){
+	switch( e.keyCode ){
+		case 32: gRun	= !gRun; break;		// Space
+		case 66: gPause	= !gPause; break;	// b
+
+		// 1 to 6
+		case 49: gMover = gM_Sin; break;
+		case 50: gMover = gM_Circle; break;
+		case 51: gMover = gM_RndRadius; break;
+		case 52: gMover = gM_Axis; break;
+		case 53: gMover = gM_NoiseP; break;
+		case 54: gMover = gM_NoiseR; break;
+	}
+});
+
+
+//#############################################################################
+let gCube, gMover, gSpring, gArm, gRun = false, gPause = false;
+let gM_Sin, gM_Circle, gM_RndRadius, gM_Axis, gM_NoiseP, gM_NoiseR;
+let isDebug = true;
+
+function onDraw(dt, ss){
+	/**/
+	if(!gPause){
+		if( gRun )		gMover( dt );
+		if( gSpring )	gSpring( dt );
+	}
+
+	App.ecs.sys_run();
+}
+
+function init(){
+	//........................
+	let e 		= Armature.$( App.$Draw( "Arm", FacedCube.vao(0.5,0.5,0.5), "VecWColor" ) ),
+		b0 		= e.Armature.add_bone( "b0", 0.3 ),
+		b1 		= e.Armature.add_bone( "b1", 0.3, b0 ),
+		b2 		= e.Armature.add_bone( "b2", 0.3, b1 ),
+		b3 		= e.Armature.add_bone( "b3", 0.3, b2 );
+
+	b0.Node.local.pos.y = 0.28;
+
+	Armature.finalize( e );
+	ArmaturePreview.$( e, "ArmaturePreview", 2 );
+
+	/*........................ */
+	let cube = App.$Draw( "TestCube", FacedCube.vao(), "VecWColor" );
+	cube.Node.setScl( 0.2 ).setPos( 0, 0.3, 0 );
+	b3.Node.add_child( cube );
+
+	//........................
+	gM_Sin			= Motion.sin( e, 1.0, [2,0,0] );
+	gM_Circle		= Motion.circle( e, 1.0, 1 );
+	gM_RndRadius	= Motion.rnd_radius( e, 0.1, 2 );
+	gM_Axis			= Motion.axis_sin_rot( e, 2, Vec3.FORWARD, 45 );
+	gM_NoiseP		= Motion.noise_pos( e, 3, [-2,0,-2], [2,0,2], 0.3 );
+	gM_NoiseR		= Motion.noise_rot( e, 5, [-45, -45, -45], [45, 45, 45], 0.25 );
+	gMover			= gM_Sin;
+
+	//........................
+	gArm 	= e;
+	
+	//JigglySystem.init( App.ecs );
+	/* 
+	let damp = 0.5;
+	let damp_t = 0.5;
+	let osc_s = 1.0;
+	let damp_ratio = 0.3;
+	
+	Jiggly.$( b0, damp, damp_t, osc_s );
+	Jiggly.$( b1, damp, damp_t, osc_s );
+	Jiggly.$( b2, damp, damp_t, osc_s );
+	Jiggly.$( b3, damp, damp_t, osc_s );
+	*/
+
+	/*
+	Jiggly.$raw( b0, 0.4, 0.6 );
+	Jiggly.$raw( b1, 0.6, 0.8 );
+	Jiggly.$raw( b2, 0.8, 1.0 );
+	Jiggly.$raw( b3, 0.9, 1.2 );
+	*/
+	
+	/* */
+	gSpring	= SpringChain( 0.4, 0.2, 0.6, 0.2 );
+	//gSpring	= SpringChain( 0.6, 0.1, 3.0, 0.5 );  // Stiff
+	//gSpring	= SpringChain( 0.2, 0.05, 3.0, 0.5 ); // Springy Stiff
+	//gSpring( 0.001 );
+
+	//........................
+	return true;
+}
+
+//#############################################################################
+// NOTE: Try to avoid over damping, can make things act wonky if to much.
+
+function SpringChain( damp_v=0.4, damp_inc=0.2, osc_v = 0.6, osc_inc=0.2 ){
+	let arm			= gArm.Armature;			// Refernce to Armature Component
+	let bary 		= arm.bones;				// Ref to Bones Array
+	let chain_len	= bary.length;				// Bone Count
+	let chain		= new Array( chain_len );	// Spring State for each bone on chain
+
+	let bone_tail	= new Vec3( 0, 0, 0 );		// Use to calc tail ws pos
+	let tpos 		= new Vec3();				// Target Position
+	let wp			= new Transform();			// Parent World Transform
+	let wc			= new Transform();			// Child World Transform
+	let rot_inv		= new Quat();				// Parent Rotation Inverted
+	let rot 		= new Quat();				// Build Up Bone Rotation
+
+	let ray_a		= new Vec3();				// Calc Rotation Axis
+	let ray_b		= new Vec3();
+
+	let itm;									// Reference for Chain Item
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create chain array, each bone will have its on spring state and settings.
+	// The spring settings can be the same for each bone or increment / decrement
+	
+	bary[0].Node.get_world_transform( wp, false );		// WS Transform of Parent of Root Chain Bone.
+
+	for( let i=0; i < chain_len; i++ ){
+		//................................
+		// Calc World Space Position of Bone's Tail
+		bone_tail.set( 0, bary[i].Bone.length, 0 );		// Local Space Pos of Tail
+
+		wp	.add( bary[i].Bone.bind )					// Add Bone's Bind Transform
+			.transformVec( bone_tail, tpos );			// Move Tail Bone LS Pos to WS Pos
+
+		//................................
+		// Built Spring State
+		chain[i] = {
+			follow_vel	: new Vec3(),
+			follow_pos	: tpos.clone(),
+			damp_ratio	: damp_v,
+			osc_ps		: Maths.PI_2 * osc_v,
+		};
+
+		//................................
+		// Increment Spring Settings for next bone
+		damp_v	+= damp_inc;
+		osc_v	+= osc_inc;
+	}
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return ( dt ) => {
+
+		bary[0].Node.get_world_transform( wp, false );		// WS Transform of Parent of Root Chain Bone.
+		if( isDebug ) App.debug.reset();
+
+		for(let i=0; i < chain_len; i++ ){
+			itm = chain[i];
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			wp.rot.invert( rot_inv );						// Save copy parent inverted rot, for to LS transforming
+			wc.from_add( wp, bary[i].Bone.bind );			// Add Bind Transform to get Bones WS Transform
+			
+			bone_tail.set( 0, bary[i].Bone.length, 0 );		
+			wc.transformVec( bone_tail, tpos );				// Transform Bone's Tail LS to WS Position
+
+			if( isDebug ) App.debug.point( tpos, 6 );
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Apply Spring
+			Spring.semi_implicit_euler_vec3( dt, itm.osc_ps, itm.damp_ratio, tpos, itm.follow_pos, itm.follow_vel );
+
+			if( isDebug ) App.debug.point( itm.follow_pos, 2 );
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			ray_a.from_sub( tpos, wc.pos ).norm();				// Bone Head to Bone Tail
+			ray_b.from_sub( itm.follow_pos, wc.pos ).norm();	// Bone Head to Follow Point
+
+			rot .from_unit_vecs( ray_a, ray_b )					// Get Quat based on Two Rays, Gets Axis and Angle
+				.mul( wc.rot )									// Tack rotation to bind's WS Rotation
+				.pmul( rot_inv );								// Convert to LS Rotation
+			
+			wp.add( rot, bary[i].Bone.bind.pos, bary[i].Bone.bind.scl ); // Add Rot, Bine Pos/Scl to calc WS Transform for next loop
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			bary[i].Node.setRot( rot );							// Save results to bone
+		}
+
+		arm.isModified = true;
+	};
+}
+</script><body></body></html>

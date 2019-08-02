@@ -1,24 +1,24 @@
 <!DOCTYPE html><html><head><title></title></head><script type="module">
-import App, { AppBuilder }		from "./fungi/engine/App.js";
-import Maths, { Vec3, Quat }	from "./fungi/maths/Maths.js";
-import Spring					from "./fungi/maths/Spring.js";
-import Transform				from "./fungi/maths/Transform.js";
+import App, { AppBuilder }		from "../fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "../fungi/maths/Maths.js";
+import Spring					from "../fungi/maths/Spring.js";
+import Transform				from "../fungi/maths/Transform.js";
 
-import Motion					from "./fungi.test/Motion.js";
-import FacedCube				from "./fungi/primitives/FacedCube.js";
+import Motion					from "../fungi.test/Motion.js";
+import FacedCube				from "../fungi/primitives/FacedCube.js";
 
-import Armature					from "./fungi.armature/Armature.js";
-import ArmaturePreview			from "./fungi.armature/ArmaturePreview.js";
+import Armature					from "../fungi.armature/Armature.js";
+import ArmaturePreview			from "../fungi.armature/ArmaturePreview.js";
 
-import Jiggly, { JigglySystem }	from "./fungi.armature/Jiggly.js";
+import Jiggly, { JigglySystem }	from "./Jiggly.js";
 
 //#############################################################################
 (function(){new AppBuilder()
 	.launch()
 	.load_armature()
 	.download( dl=>dl.addGrp( "shader", 
-		"./fungi/shaders/VecWColor.txt", 
-		"./fungi.armature/shaders/ArmaturePreview.txt" ) )
+		"../fungi/shaders/VecWColor.txt", 
+		"./shaders/ArmaturePreview.txt" ) )
 	.load_scene( true, true )
 	.add_task( init )
 	.render_loop( onDraw )
@@ -51,9 +51,8 @@ let gM_Sin, gM_Circle, gM_RndRadius, gM_Axis, gM_NoiseP, gM_NoiseR;
 function onDraw(dt, ss){
 	/**/
 	if(!gPause){
-		if( gRun ) gMover( dt );
-		
-		//gSpring( dt );
+		if( gRun )		gMover( dt );
+		if( gSpring )	gSpring( dt );
 	}
 
 	App.ecs.sys_run();
@@ -69,13 +68,12 @@ function init(){
 	Armature.finalize( e );
 	ArmaturePreview.$( e, "ArmaturePreview", 2 );
 
-	/*........................
+	//........................
 	let cube = App.$Draw( "TestCube", FacedCube.vao(), "VecWColor" );
-	cube.Node.setScl( 0.5 );
+	cube.Node.setScl( 0.2 ).setPos( 0, 0.6, 0 );
 	b0.Node.add_child( cube );
-	*/
 
-	//........................	
+	//........................
 	gM_Sin			= Motion.sin( e, 1.0, [2,0,0] );
 	gM_Circle		= Motion.circle( e, 1.0, 1 );
 	gM_RndRadius	= Motion.rnd_radius( e, 0.1, 2 );
@@ -86,7 +84,13 @@ function init(){
 
 	//........................
 	gArm 	= e;
+	/*
 	gSpring	= SpringPoint();
+	*/
+
+	/**/
+	JigglySystem.init( App.ecs );
+	Jiggly.$( b0, 0.3, 0.9, 0.5 );
 	
 	//........................
 	return true;
@@ -170,4 +174,26 @@ function SpringPoint(){
 			;
 	}
 }
+
+/*
+http://digitalopus.ca/site/pd-controllers/
+https://stackoverflow.com/questions/24197182/efficient-quaternion-angular-velocity
+https://gafferongames.com/post/physics_in_3d/
+https://gafferongames.com/post/spring_physics/
+https://burakkanber.com/blog/physics-in-javascript-car-suspension-part-1-spring-mass-damper/
+	great exampleS
+https://stackoverflow.com/questions/44688112/spring-physics-applied-to-quaternions-using-python
+https://forum.unity.com/threads/technique-to-apply-bouncy-breasts-and-hair-physics.62473/
+https://twitter.com/minionsart/status/986374665399685121
+https://github.com/cheece/JiggleArmature/blob/master/JiggleArmature.py
+http://wiki.unity3d.com/index.php/JiggleBone
+https://www.khanacademy.org/partner-content/pixar/simulation/hair-simulation-code/v/sim7-fix
+	Has Multi Mass Spring Configuration.
+https://github.com/skevy/wobble/blob/develop/src/index.ts#L261
+https://hackernoon.com/the-spring-factory-4c3d988e7129
+	spring with stiffness and underdamping but in a time based way like easing
+
+https://medium.com/unity3danimation/torsional-springs-4c700b9ede32
+http://www.euclideanspace.com/physics/kinematics/angularvelocity/
+*/
 </script><body></body></html>

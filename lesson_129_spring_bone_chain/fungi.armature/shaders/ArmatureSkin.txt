@@ -1,0 +1,148 @@
+<shader>{
+	"name"		: "ArmatureSkin",
+	"ubo"		: [ "UBOGlobal", "UBOModel", "UBOArmature" ],
+	"uniforms"	: [ ]
+}<\shader>
+		{ "name":"u_joints", "type":"mat2x4" },
+		{ "name":"u_jointScale", "type":"vec3" },
+		{ "name":"u_jointCount", "type":"int" }
+<materials>[
+	{ "name":"ArmatureSkin" }
+]<\materials> "useBlending":false
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_norm;
+	layout(location=2) in vec2 a_uv;
+
+	layout(location=8) in vec4 a_boneIndex;
+	layout(location=9) in vec4 a_boneWeight;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform UBOArmature{
+		mat2x4[90]	bones;
+		vec3[90]	scale;
+		int 		boneCount;
+	} Arm;
+
+
+	//uniform int			u_jointCount;
+	//uniform mat2x4[3]	u_joints;
+	//uniform vec3[3]	u_jointScale;
+
+	vec3 dqBoneTransform(vec3 vpos,int iJointCnt, mat2x4[60] aryJoint, vec4 jointIdx, vec4 jointWeight){
+		/* NORMALIZE DATA First */
+		float t = 0.0;
+		if(iJointCnt == 2)		t = 1.0 / (jointWeight.x + jointWeight.y);
+		else if(iJointCnt == 3)	t = 1.0 / (jointWeight.x + jointWeight.y + jointWeight.z);
+		else if(iJointCnt == 4)	t = 1.0 / (jointWeight.x + jointWeight.y + jointWeight.z + jointWeight.w);
+
+		mat2x4 dqSum;
+		for(int i=0; i < iJointCnt; i++){
+			dqSum += aryJoint[ int(jointIdx[i]) ] * jointWeight[i] * t;
+		}
+
+		/*RAW DATA - May Not be Normalized  
+		mat2x4 dqSum;
+		for(int i=0; i < iJointCnt; i++){
+			dqSum += aryJoint[ int(jointIdx[i]) ] * jointWeight[i];
+		} */
+		
+
+		//vec3 v		= a_position.xyz;
+		vec4 Qr 	= dqSum[0].xyzw; //real (rot)
+		vec4 Qd 	= dqSum[1].xyzw; //dual (trans)
+
+		vec3 pos	= vpos + cross(2.0 * Qr.xyz, cross(Qr.xyz, vpos) + Qr.w * vpos);	//Rotate Vector
+		vec3 tran	= 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+		return pos + tran;
+	}
+
+
+	vec3 dqVecTransform(mat2x4 dq, vec3 v){
+		vec4 Qr 	= dq[0].xyzw; //real (rot)
+		vec4 Qd 	= dq[1].xyzw; //dual (trans)
+		vec3 pos	= v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);	//Rotate Vector
+		vec3 tran	= 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	//Pull out Translation from DQ
+		return pos + tran;
+	}
+
+	vec3 dqBoneTransform_2(vec3 pos, mat2x4[70] bDQ, vec4 bIndex, vec4 bWeight, vec3[70] bScale){
+		/* NORMALIZE DATA First */
+		int a = int( bIndex.x ),
+			b = int( bIndex.y );
+
+		float t 		=	1.0 / (bWeight.x + bWeight.y);
+		bWeight.xy		*=	t;
+
+		/* APPLY WEIGHTS */
+		mat2x4 dqSum 	=	bDQ[ a ] 	* bWeight.x  +  bDQ[ b ]	* bWeight.y;
+		vec3 wScale 	=	bScale[ a ]	* bWeight.x  +  bScale[ b ]	* bWeight.y;
+
+		/* SCALE, ROTATE - TRANSLATE */
+		return dqVecTransform(dqSum, pos * wScale);
+	}
+
+	vec3 dqBoneTransform_4(vec3 pos, mat2x4[90] bDQ, vec4 bIndex, vec4 bWeight, vec3[90] bScale){
+		/* NORMALIZE DATA FIRST */
+		int a = int( bIndex.x ),
+			b = int( bIndex.y ),
+			c = int( bIndex.z ),
+			d = int( bIndex.w );
+		bWeight *= 1.0 / (bWeight.x + bWeight.y + bWeight.z + bWeight.w); // 1 Div, 4 Mul, instead of 4 Div.
+
+		/* APPLY WEIGHTS */
+		mat2x4 dqSum 	=	bDQ[ a ] * bWeight.x +  
+							bDQ[ b ] * bWeight.y +
+							bDQ[ c ] * bWeight.z +
+							bDQ[ d ] * bWeight.w;
+							
+		dqSum *= 1.0 / length( dqSum[0] ); // Normalize DQ by the length of the Quaternion
+
+		vec3 wScale 	=	bScale[ a ]	* bWeight.x +
+							bScale[ b ]	* bWeight.y +
+							bScale[ c ]	* bWeight.z +
+							bScale[ d ]	* bWeight.w;
+
+		/* SCALE, ROTATE - TRANSLATE */
+		return dqVecTransform(dqSum, pos * wScale);
+	}
+
+	void main(void){
+		gl_PointSize = 5.0;
+		//int tmp = u_jointCount + 1;
+		//vec3 pos = boneScale(a_position.xyz,  u_jointCount, u_jointScale, a_jointIdx, a_jointWeight);
+		//pos = dqBoneTransform(a_position.xyz, u_jointCount, u_joints, a_jointIdx, a_jointWeight);
+		//vec3 pos = dqBoneTransform(a_position.xyz, u_jointCount, u_joints, a_jointIdx, a_jointWeight);
+		//vec3 pos = dqBoneTransform(a_position.xyz, Arm.count, Arm.joints, a_jointIdx, a_jointWeight);
+		//vec3 pos = dqBoneTransform_2(a_position.xyz, Arm.bones, a_boneIndex, a_boneWeight, Arm.scale);
+		vec3 pos = dqBoneTransform_4(a_position.xyz, Arm.bones, a_boneIndex, a_boneWeight, Arm.scale);
+		
+
+		gl_Position = projViewMatrix * vec4(pos, 1.0); // modelMatrix * 
+		//gl_Position = projViewMatrix * modelMatrix * vec4(a_position.xyz, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	out vec4 oFragColor;
+
+	void main(void){ 
+		oFragColor = vec4(0.0, 0.0, 0.0, 1.0);
+	}
+<\fragment>
