@@ -1,0 +1,72 @@
+<shader>{
+	"name"		: "VecWColor",
+	"ubo"		: [ "UBOGlobal", "UBOModel" ],
+	"uniforms"	: [
+		{ "name":"u_colorAry", "type":"rgb" }
+	]
+}<\shader>
+		"ubo"		: [ "UBOGlobal", "UBOModel" ],
+		"options"	: { "modelMatrix":true },
+<materials>[
+	{ "name":"VecWColor",	
+		"options"	: { "depthTest":true, "blend":false },
+		"uniforms":[
+		{ "name":"u_colorAry", "value": ["ff0000","00dd00","0000ff","555555","999999","dddddd","000000","ff7f7f","ff8c00","ffff00"] }
+	]},
+	
+	{ "name":"MatGridFloor",	
+		"options"	: { "depthTest":true, "blend":false },
+		"uniforms":[
+			{ "name":"u_colorAry", "value": ["e6e6e6","ff9999","66ff66"] }
+		]
+	},
+
+	{ "name":"MatGridFloorDark",
+		"options"	: { "depthTest":true, "blend":false },
+		"uniforms":[
+		{ "name":"u_colorAry", "value": ["555555","bb5555","118811"] }
+	] }
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+		float	deltaTime;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform vec3 u_colorAry[20];
+	out vec3 v_color;
+
+	void main(void){
+		v_color			= u_colorAry[ int(a_position.w) ];		
+		gl_PointSize 	= 8.0;
+		//gl_Position 	= projViewMatrix * vec4(a_position.xyz, 1.0);
+		gl_Position 	= projViewMatrix * modelMatrix * vec4(a_position.xyz, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec3 v_color;
+	out vec4 oFragColor;
+
+	void main(void){ 
+		//vec2 coord = gl_PointCoord - UV_CENTER;
+		//if( length(coord) > 0.5 ) discard;
+		//gl_FragColor = vec4( v_color, smoothstep( 0.5, 0.45, length(coord) ) );
+		oFragColor = vec4(v_color, 1.0);
+	}
+<\fragment>	

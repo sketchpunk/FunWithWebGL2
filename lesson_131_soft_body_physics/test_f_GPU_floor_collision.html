@@ -1,0 +1,317 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder, gl, Shader, Material, Components, Entity } from "./fungi/engine/App.js";
+import Vao, { Buf } from "./fungi/core/Vao2.js";
+import UVSphere from "./fungi/primitives/UVSphere.js";
+
+import Motion from "./fungi.test/Motion.js";
+
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "./fungi/shaders/VecWColor.txt", ) ) // "./fungi/shaders/BaseColor.txt", "./fungi/shaders/LowPolyPhong.txt",
+	.load_scene( true, false, false )
+	.set_camera( 0, 20, 4, 0, 1, 0 )
+	.add_task( init )
+	.render_loop( onDraw )
+	//.render_on_mouse( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+window.addEventListener( "keydown", function(e){	
+	switch( e.keyCode ){
+		case 37: GridOffset[0] -= 0.2; UpdateOffset=true; break; //Left
+		case 39: GridOffset[0] += 0.2; UpdateOffset=true; break; //Right
+		case 38: GridOffset[1] -= 0.2; UpdateOffset=true; break; //up
+		case 40: GridOffset[1] += 0.2; UpdateOffset=true; break; //Down
+	}
+});
+
+//#############################################################################
+let gMover, gSphere;
+function onDraw( dt, ss ){
+	gMover( dt );
+	gSphere.TransformFeedback.execute();
+
+	App.ecs.sys_run();
+}
+
+//#############################################################################
+function init(){
+	/*
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// SHADER & MATERIALS*/
+	let json	= Shader.parseInline( "inline_shader" ),
+		shader	= Shader.buildFromJson( json ); //Shader.build( json.shader.name, json.vertex, json.fragment );
+
+	if( !shader ) return false;
+	Material.build( shader, json.materials[ 0 ] );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	setup();
+	gMover = Motion.lerp_pos( gSphere, [0,2,0], [0,0,0], 5 ); // Switch final to [0,-1,0] for full sphere flattening.	
+	return true;
+}
+
+
+//#############################################################################
+function setup(){
+	/* STEPS
+	1. Create a shader that will perform calculations and save results. The TransformFeedback Shader.
+	2. Get data needed for calculation.
+		- Determine whats needed for rendering.
+		- Determine whats read only or writeable.
+		- Determine what needs to be duplicated for A & B passes and what can be shared between them (Usually Read only static data)
+	3. Create Buffers based on the data. 
+		- Static buffers can be shared between A & B, so need to only make 1 buffer to hold the data.
+		- Dynamic buffers that will be Read AND Written to, will need to be duplicated. 
+			BUT.. the buffers for example A, will be shared by all VAO and TF of that specific Pass.
+			So vert buffer created for A Pass can be part of the Read VAO of A, TransformFeedback of A, and Render VAO of A. 
+			One Buffer shared in all 3 containers of A.
+	4. Create VAOs for a single transfrom feedback pass.
+		- VAO to Reading data
+		- TransformFeedback to write data 
+		- Another VAO to render the results
+	5. Once a single pass is created, Duplicate the same structure for the second pass.
+
+	
+	Transform Feedback works by having two sets of the same same data but in seperate buffers.
+	Lets call it A and B.
+	In the first frame of rendering, We will Read from A, but Write to B.
+	Then We will render the results of B.
+
+	In the next frame, Read from B, then write to A. Render A.
+	Repeat the process, going back and forth between A and B.
+	*/
+
+
+	//.................................................................
+	// Create Shader to process the data in the transform feedback
+	let tf_names	= [ "follow_pos", "follow_vel" ];	// Out Variables in Transform Feedback
+	let f_src		= "#version 300 es\nprecision mediump float; out vec4 outColor; void main(void){ outColor = vec4(1.0); }";
+	let v_src		= document.getElementById("feedback").innerText;
+	let sh			= Shader.build( "TF_test", v_src, f_src, tf_names );
+
+	Shader.prepareUniformBlock( sh, "UBOGlobal" );
+	Shader.prepareUniform( sh, "u_model_pos", "vec3" );
+
+	//.................................................................
+	// Create Data
+	let verts		= UVSphere.verts(  8, 12, 0.5, false );
+	let zeros		= new Float32Array( verts.length );	// Used for the Velocity Buffers
+
+	// Create some read only static buffers that will be shared in various Vaos.
+	let bRest		= Buf.new_array( verts, false, false );
+
+	// Build Transformm Feedback Entity
+	let e = App.$Draw( "Sphere" );
+	TransformFeedback.$( e, sh, (i)=>{
+		let follow_pos	= Buf.new_array( verts, false, false ),	// Vertex Position 
+			follow_vel	= Buf.new_array( zeros, false, true );	// Vertex Velocity
+
+		//..............................
+		// Build Transform Vao: this is used to Read Data from
+		i.vao_tf.bind()
+			.add_buf( "follow_pos",	follow_pos,	0 )
+			.add_buf( "follow_vel",	follow_vel,	1 )
+			.add_buf( "rest_pos",	bRest,		2 )
+			.unbind_all()
+			.set( verts.length / 3 ); //TODO incase of prop, unbind buf only, unbind vao after tf
+		
+		//..............................
+		// Build Transform Feedback : This defines what buffers will be written to.
+		i.tf.bind()
+			.bind_buf( 0, follow_pos )
+			.bind_buf( 1, follow_vel )
+			.unbind();
+
+		//..............................
+		// This will draw the data as lines
+		i.vao_draw.bind()
+			.add_vertices( follow_pos )
+			.unbind_all()
+			.set( verts.length / 3 );
+	} );
+
+	e.Draw.items[0].vao = e.TransformFeedback.data[0].vao_draw;
+	gSphere = e;
+}
+
+
+//#############################################################################
+// Simple ECS Component to Hold TF Data and how to execute it.
+class TransformFeedback{
+	static $( e, shader, func ){
+		if( e instanceof Entity && !e.TransformFeedback ) Entity.com_fromName( e, "TransformFeedback" );
+
+		e.TransformFeedback.build( func );
+		e.TransformFeedback.shader = shader;
+		e.TransformFeedback.entity = e;
+		e.Draw.add( null, "VecColor", 0 );
+
+		return e;
+	}
+
+	constructor(){
+		this.data = [ 
+			{ vao_tf:new Vao(), tf:new Tffb(), vao_draw:new Vao() }, 
+			{ vao_tf:new Vao(), tf:new Tffb(), vao_draw:new Vao() }
+		];
+
+		this.current_idx	= 0;
+		this.shader 		= null;
+		this.entity			= null;
+	}
+
+	build( func ){
+		func( this.data[0] );
+		func( this.data[1] );
+	}
+
+	execute(){
+		let i 	= (this.current_idx + 1) & 1,
+			r	= this.data[ this.current_idx ],
+			w	= this.data[ i ];
+
+		//gl.ctx.useProgram( this.shader.program );
+		this.shader.bind().setUniform( "u_model_pos", this.entity.Node.local.pos );
+
+		gl.ctx.bindVertexArray( r.vao_tf.id );									// Set Buffer to Read From
+		gl.ctx.bindTransformFeedback( gl.ctx.TRANSFORM_FEEDBACK, w.tf.id );	// Set Buffer to Write To
+		gl.ctx.enable( gl.ctx.RASTERIZER_DISCARD );							// Disable Fragment Program (only need vertex for this)
+
+		gl.ctx.beginTransformFeedback( gl.ctx.POINTS );						// Begin Feedback Process
+		gl.ctx.drawArrays( gl.ctx.POINTS, 0, r.vao_tf.elmCount );			// Execute Feedback Shader.
+		gl.ctx.endTransformFeedback();	
+
+		gl.ctx.disable( gl.ctx.RASTERIZER_DISCARD );						// Enable Fragment Program so we can draw to framebuffer
+		gl.ctx.bindTransformFeedback( gl.ctx.TRANSFORM_FEEDBACK, null );
+		gl.ctx.bindVertexArray( null );
+
+		gl.ctx.useProgram( null );
+
+		this.current_idx = i;												// Move to Next Data Index
+		this.entity.Draw.items[0].vao = this.data[i].vao_draw;
+	}
+} Components( TransformFeedback );
+
+
+//#############################################################################
+// Tiny TransformFeedback object, similar to the Vao object
+class Tffb{
+	constructor(){
+		this.id = gl.ctx.createTransformFeedback();
+	}
+
+	bind_buf( loc, buf ){ gl.ctx.bindBufferBase( gl.ctx.TRANSFORM_FEEDBACK_BUFFER, loc, buf ); return this; }
+	unbind(){ gl.ctx.bindTransformFeedback( gl.ctx.TRANSFORM_FEEDBACK, null ); return this; }
+	bind(){ gl.ctx.bindTransformFeedback( gl.ctx.TRANSFORM_FEEDBACK, this.id ); return this; }
+}
+
+</script><body>
+
+
+<script id="feedback" type="plain/text">#version 300 es
+	layout(location=0) in vec3 a_follow_pos;
+	layout(location=1) in vec3 a_follow_vel;
+	layout(location=2) in vec3 a_rest_pos;
+	
+	out vec3 follow_pos;
+	out vec3 follow_vel;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+		float	deltaTime;
+	};
+
+	uniform vec3 u_model_pos;
+
+	const float DAMP_RATIO	= 0.25;
+	const float OSC_PS		= 6.283185307179586 * 1.0;
+
+	void main(void){
+		// semi_implicit_euler_vec3
+  		// vel += -2.0 * dt * damp_ratio * osc_ps * vel + dt * osc_ps * osc_ps * (to - pos);
+  		// pos += dt * vel;
+
+  		vec3 w_pos 		= a_rest_pos + u_model_pos;	// Calc World Space Position Of Vertice
+
+  		// Test for Floor collision.
+  		if( w_pos.y < 0.0 ){
+  			follow_vel 	= a_follow_vel;	//Must resave, else data will be lost in next feedback
+  			follow_pos 	= a_follow_pos;
+  			follow_pos.y = -(w_pos.y) + a_rest_pos.y;
+
+  		}else{ // If not colliding, apply spring movements.
+  			follow_vel 		= a_follow_vel + ( -2.0 * deltaTime * DAMP_RATIO * OSC_PS * a_follow_vel + deltaTime * OSC_PS * OSC_PS * (a_rest_pos - a_follow_pos));
+  			follow_pos 		= a_follow_pos + deltaTime * follow_vel;
+  		}
+	}
+</script>
+
+
+<script id="inline_shader" type="plain/text">
+<shader>{
+	"name"		: "VecColor",
+	"ubo"		: [ "UBOGlobal", "UBOModel" ],
+	"uniforms"	: [
+		{ "name":"u_colorAry", "type":"rgb" }
+	]
+}<\shader>
+
+<materials>[
+	{ "name":"VecColor",	
+		"options"	: { "depthTest":true, "blend":true, "sampleAlphaCoverage":false },
+		"uniforms"	: [
+			{ "name" : "u_colorAry", "value" : ["1ca3ec","e7d1b5","4cba5f","208d4e","208d4e","ffffff","ffffff","ff7f7f","ff8c00","ffff00"] }
+		]
+	}
+]<\materials>
+
+<vertex>
+	#version 300 es
+	layout(location=0) in vec3 a_position;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+		float	deltaTime;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform vec3 u_colorAry[20];
+	out vec3 v_color;
+
+	void main(void){
+		v_color = u_colorAry[ 0 ];
+		gl_PointSize 	= 7.0;
+		gl_Position 	= projViewMatrix * modelMatrix * vec4(a_position.xyz, 1.0);
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	const vec2 UV_CENTER = vec2( 0.5 ); 
+
+	in vec3 v_color;
+	out vec4 oFragColor;
+
+	void main(void){ 
+		vec2 coord = gl_PointCoord - UV_CENTER;
+		oFragColor = vec4( v_color, smoothstep( 0.5, 0.45, length(coord) ) );
+	}
+<\fragment>	
+</script>
+
+</body></html>
