@@ -1,0 +1,63 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { Material, AppBuilder }from "./App.js";
+import FacedCube	from "../primitives/FacedCube.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "../shaders/VecWColor.txt" ) )
+	.load_scene( true, true )
+	.add_task( init )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+
+//#############################################################################
+let cubeA, cubeB;
+function onDraw( dt, ss ){
+	//cubeA.Node.setRotAxis( [0,1,0], Math.sin( ss ) * Math.PI );
+	//cubeB.Node.setRotAxis( [0,1,0], Math.sin( ss ) * Math.PI );
+	App.ecs.sys_run();
+}
+
+//#############################################################################
+function init(){
+	App.camera.Node
+		.setPos( 0, 1.5, 4 )
+		.setRotAxis( [1,0,0], -15 * Math.PI / 180 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Clone Material and Change the colors
+	let mat = Material.clone( "VecWColor", "Alt_VecWColor" );
+	mat.update_uniform( "u_colorAry", ["000000","000000","000000","000000","000000","000000"] );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	/* CREATE CUBES - STYLE 1 
+	cubeA = FacedCube( "CubeA" );
+	cubeA.Draw.add( cubeA.Draw.items[0].vao, mat, 0 );
+
+	cubeB = FacedCube( "CubeB" );
+	cubeB.Draw.add( cubeB.Draw.items[0].vao, mat, 0 );
+	cubeB.Node.setPos(0,1,0).setScl( 0.5 );
+	*/
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	/* CREATE CUBES - STYLE 2 */
+	let vao = FacedCube.vao();
+
+	cubeA = App.$Draw( "CubeA", vao, "VecWColor", 4 );
+	cubeA.Draw.add( vao, mat, 0 );
+
+	cubeB = App.$Draw( "CubeB" );
+	cubeB.Draw.add( vao, "VecWColor" ).add( vao, "Alt_VecWColor", 0 );
+	cubeB.Node.setPos(0,1,0).setScl( 0.5 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// ASSIGN PARENTING
+	App.node.addChild( cubeA, cubeB );
+	return true;
+}
+
+</script><body></body></html>

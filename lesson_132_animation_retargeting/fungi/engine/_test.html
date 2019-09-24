@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import Ecs, { Components, System, Entity } from "./Ecs.js";
+
+			let gEcs;
+			window.addEventListener("load", function(){
+				/* TEST 1 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				let e = new Entity( "name", ["Node"] );
+				Entity.removeCom( e, "Node" );
+				console.log( e );
+				*/
+
+				/* TEST 2 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+				Assemblages.add( "Test", ["Node"] );
+
+				let e = Assemblages.new( "Test", "GO" );
+				console.log( e );
+				*/
+
+				//Assemblages.add( "Test", ["Node"] );
+				gEcs = new Ecs();
+				NodeSystem.init( gEcs );
+
+				let e = gEcs.entity( "w00t", "Node" );
+				//let e = gEcs.newAssemblage( "Test" );
+				console.log( e );
+				console.log( gEcs );
+
+				gEcs.sys_run();
+
+			});
+
+
+			class Node{
+				constructor(){
+					this.name = "x";
+				}
+			} Components( Node );
+
+
+
+			class NodeSystem extends System{
+				static init( ecs, priority = 90 ){ ecs.sys_add( new NodeSystem(), priority ); }
+
+				constructor(){ super(); }
+				run( ecs ){
+					console.log( "NodeSystem.update" );
+					let list = ecs.query_entities( [ "Node" ] );
+
+					console.log( "list", list );
+
+				}
+			}
+
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+</body>
+</html>

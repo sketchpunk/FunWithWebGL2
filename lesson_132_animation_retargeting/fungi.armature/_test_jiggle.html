@@ -1,0 +1,199 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }		from "../fungi/engine/App.js";
+import Maths, { Vec3, Quat }	from "../fungi/maths/Maths.js";
+import Spring					from "../fungi/maths/Spring.js";
+import Transform				from "../fungi/maths/Transform.js";
+
+import Motion					from "../fungi.test/Motion.js";
+import FacedCube				from "../fungi/primitives/FacedCube.js";
+
+import Armature					from "../fungi.armature/Armature.js";
+import ArmaturePreview			from "../fungi.armature/ArmaturePreview.js";
+
+import Jiggly, { JigglySystem }	from "./Jiggly.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"../fungi/shaders/VecWColor.txt", 
+		"./shaders/ArmaturePreview.txt" ) )
+	.load_scene( true, true )
+	.add_task( init )
+	.render_loop( onDraw )
+	.set_camera( 0, 25, 4.0, 0, 0, 0 )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+window.addEventListener("keyup", function(e){
+	switch( e.keyCode ){
+		case 32: gRun	= !gRun; break;		// Space
+		case 66: gPause	= !gPause; break;	// b
+
+		// 1 to 6
+		case 49: gMover = gM_Sin; break;
+		case 50: gMover = gM_Circle; break;
+		case 51: gMover = gM_RndRadius; break;
+		case 52: gMover = gM_Axis; break;
+		case 53: gMover = gM_NoiseP; break;
+		case 54: gMover = gM_NoiseR; break;
+	}
+});
+
+
+//#############################################################################
+let gCube, gMover, gSpring, gArm, gRun = false, gPause = false;
+let gM_Sin, gM_Circle, gM_RndRadius, gM_Axis, gM_NoiseP, gM_NoiseR;
+
+function onDraw(dt, ss){
+	/**/
+	if(!gPause){
+		if( gRun )		gMover( dt );
+		if( gSpring )	gSpring( dt );
+	}
+
+	App.ecs.sys_run();
+}
+
+function init(){
+	//........................
+	let e 		= Armature.$( App.$Draw( "Arm", FacedCube.vao(0.5,0.5,0.5), "VecWColor" ) ),
+		b0 		= e.Armature.add_bone( "b0", 0.6 );
+
+	b0.Node.local.pos.y = 0.28;
+
+	Armature.finalize( e );
+	ArmaturePreview.$( e, "ArmaturePreview", 2 );
+
+	//........................
+	let cube = App.$Draw( "TestCube", FacedCube.vao(), "VecWColor" );
+	cube.Node.setScl( 0.2 ).setPos( 0, 0.6, 0 );
+	b0.Node.add_child( cube );
+
+	//........................
+	gM_Sin			= Motion.sin( e, 1.0, [2,0,0] );
+	gM_Circle		= Motion.circle( e, 1.0, 1 );
+	gM_RndRadius	= Motion.rnd_radius( e, 0.1, 2 );
+	gM_Axis			= Motion.axis_sin_rot( e, 2, Vec3.FORWARD, 45 );
+	gM_NoiseP		= Motion.noise_pos( e, 3, [-2,0,-2], [2,0,2], 0.3 );
+	gM_NoiseR		= Motion.noise_rot( e, 5, [-45, -45, -45], [45, 45, 45], 0.25 );
+	gMover			= gM_Sin;
+
+	//........................
+	gArm 	= e;
+	/*
+	gSpring	= SpringPoint();
+	*/
+
+	/**/
+	JigglySystem.init( App.ecs );
+	Jiggly.$( b0, 0.3, 0.9, 0.5 );
+	
+	//........................
+	return true;
+}
+
+//#############################################################################
+// http://box2d.org/files/GDC2011/GDC2011_Catto_Erin_Soft_Constraints.pdf
+// http://allenchou.net/2015/04/game-math-precise-control-over-numeric-springing/
+function SpringPoint(){
+	let bone 		= gArm.Armature.bones[0];				// Reference to bone
+	let bone_tail	= new Vec3( 0, bone.Bone.length, 0 );	// Local Position of tail
+
+	let vel 		= new Vec3();		// Spring Velocity
+	let pos 		= new Vec3();		// Spring Movement Position
+	let osc_ps 		= Maths.PI_2 * 0.5;	// Oscillations Per Second
+	let damp 		= 0.3;				// Damp Value
+	let damp_time	= 0.9;				// How much it takes to fullfil damp.
+	let damp_ratio	= Math.log( damp ) / ( -osc_ps * damp_time );
+
+	let wp 			= new Transform();
+	let wc 			= new Transform();
+
+	// Get Starting Position for the spring position.
+	wp.copy( gArm.Node.local )
+		.add( bone.Node.local )
+		.add_pos( bone_tail );
+	pos.copy( wp.pos );
+
+	return ( dt ) => {
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Figure out World Space Transform of Bone's Tail and Its Parent.
+		wp.copy( gArm.Node.local );
+		wc.copy( gArm.Node.local ).add( bone.Bone.bind );
+
+		let tpos = wc.transformVec( bone_tail, new Vec3() ); // Tail
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Apply Spring Movement
+		Spring.semi_implicit_euler_vec3( dt, osc_ps, damp_ratio, tpos, pos, vel );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Need to get the Two Rays from the Origin of the Bone Head's Position
+		let ray_a	= new Vec3().from_sub( tpos, wc.pos ).norm();
+		let ray_b	= new Vec3().from_sub( pos, wc.pos ).norm();
+
+		/* Basic Idea 
+		let ray_c	= Vec3.cross( ray_a, ray_b ).norm();
+		let rad		= Vec3.angle( ray_a, ray_b );
+		let q 		= Quat.axisAngle( ray_c, rad );
+		*/
+
+		/* There is a function that handles that more efficently.*/
+		let q = Quat.rotationTo( ray_a, ray_b );
+		q	.mul( wc.rot )
+			.pmul( wp.rot.invert() );
+		
+
+		/* Or We can do more a Look at type of way, using Velocity as our looking direction.
+		The Ray toward the moving point can be the up direction (bones point up)
+		Velocity will be our forward direction, with cross product gives us our
+		left direction. We then cross Left and Up to get an orthogonal forward direction.
+		let v_lft 	= Vec3.cross( ray_b, vel ).norm();
+		let v_fwd 	= Vec3.cross( v_lft, ray_b ).norm();
+		let q 		= Quat.fromAxis( v_lft, ray_b, v_fwd );
+		q.pmul( wp.rot.invert() ); // To Local Space
+		*/
+
+
+		bone.Node.setRot( q );
+		gArm.Armature.isModified = true;
+
+		//console.log( Vec3.dot( ray_a, ray_b ) );
+		//console.log( Vec3.dot( ray_a, ray_b ) );
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		/**/
+		App.debug.reset()
+			.point( wc.pos, 6 )
+			.point( tpos, 2 )
+			.point( pos, 0 )
+			;
+	}
+}
+
+/*
+http://digitalopus.ca/site/pd-controllers/
+https://stackoverflow.com/questions/24197182/efficient-quaternion-angular-velocity
+https://gafferongames.com/post/physics_in_3d/
+https://gafferongames.com/post/spring_physics/
+https://burakkanber.com/blog/physics-in-javascript-car-suspension-part-1-spring-mass-damper/
+	great exampleS
+https://stackoverflow.com/questions/44688112/spring-physics-applied-to-quaternions-using-python
+https://forum.unity.com/threads/technique-to-apply-bouncy-breasts-and-hair-physics.62473/
+https://twitter.com/minionsart/status/986374665399685121
+https://github.com/cheece/JiggleArmature/blob/master/JiggleArmature.py
+http://wiki.unity3d.com/index.php/JiggleBone
+https://www.khanacademy.org/partner-content/pixar/simulation/hair-simulation-code/v/sim7-fix
+	Has Multi Mass Spring Configuration.
+https://github.com/skevy/wobble/blob/develop/src/index.ts#L261
+https://hackernoon.com/the-spring-factory-4c3d988e7129
+	spring with stiffness and underdamping but in a time based way like easing
+
+https://medium.com/unity3danimation/torsional-springs-4c700b9ede32
+http://www.euclideanspace.com/physics/kinematics/angularvelocity/
+*/
+</script><body></body></html>

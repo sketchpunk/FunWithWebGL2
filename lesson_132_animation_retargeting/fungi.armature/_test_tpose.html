@@ -1,0 +1,120 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App, { AppBuilder }	from "../fungi/engine/App.js";
+import Armature				from "./Armature.js";
+import ArmaturePreview		from "./ArmaturePreview.js";
+import Pose 				from "./Pose.js";
+
+import Vao, { Buf }			from "../fungi/core/Vao2.js";
+import XhrPromise			from "../fungi.misc/XhrPromise.js";
+import { Vec3 }				from "../fungi/maths/Maths.js";
+
+import TPose 				from "./TPose.js";
+
+//#############################################################################
+(function(){new AppBuilder().launch()
+	.load_armature( )
+	.download( dl=>dl.addGrp( "shader", 
+		"../fungi/shaders/VecWColor.txt",
+		"./shaders/ArmatureSkinPhong.txt",
+		"./shaders/ArmaturePreview.txt" ))
+	.load_scene( true, true )
+	.set_camera( 0, 15, 2.1 )
+	.add( init )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+function onDraw(dt, ss){ App.ecs.sys_run(); }
+
+/*
+	Maybe Have Every Bone or Chain Root store the Heirachy array of bone indexes to travels
+*/
+
+async function init(){
+	let dl	= await XhrPromise.get( 
+		"../files/models/vegeta.txt", "text", "../files/models/vegeta.bin", "arraybuffer", //files/models/
+	);
+
+	let e = MeshLoader.entity( dl[0], dl[1] );
+	let pose = new Pose( e.Armature, true );
+
+	TPose.align_chain( e, [ "LeftArm", "LeftForeArm" ], Vec3.LEFT, pose );
+	TPose.align_chain( e, [ "RightArm", "RightForeArm" ], Vec3.RIGHT, pose );
+
+	TPose.align_chain( e, [ "LeftUpLeg", "LeftLeg" ], Vec3.DOWN, pose );
+	TPose.align_chain( e, [ "RightUpLeg", "RightLeg" ], Vec3.DOWN, pose );
+
+	TPose.align_foot_forward( e, "LeftFoot", pose );
+	TPose.align_foot_forward( e, "RightFoot", pose );
+
+	pose.apply();
+
+	return true;
+}
+
+
+//#############################################################################
+class MeshLoader{
+	static entity( txt, bin ){
+		let e = App.$Draw( "Target" );
+
+		/*
+		let spec = this.parse_section( "Vao", txt );
+		let s = spec["Vegeta"];
+
+		let vao = Vao.standard_by_bin( "Test", s, bin );
+		e.Draw.add( vao, "ArmatureSkinPhong" );
+		*/
+
+		this.load_bones( e, txt );
+		ArmaturePreview.$( e, "ArmaturePreview", 2 );
+
+		return e;
+	}
+
+	static parse_section( sec, txt ){
+		let aPos = txt.indexOf( "<" + sec + ">" ) + sec.length + 2;
+		let bPos = txt.indexOf( "</" + sec + ">" );
+
+		if( aPos == -1 || bPos == -1 || bPos <= aPos ) return null;
+
+		let tmp	= txt.substring( aPos, bPos );
+
+		try{ return JSON.parse( tmp ); }
+		catch(err){ console.error( err.message, "\n" , tmp ); }
+
+		return null;
+	}
+
+
+	static load_bones( e, txt ){
+		let json = this.parse_section( "Armature", txt );
+		Armature.$( e );
+
+		let i, b, ab, bLen = json.length, arm = e.Armature;
+
+		for( i=0; i < bLen; i++ ){
+			b	= json[i];
+			//ab 	= Armature.addBone( arm, b.name, b.len, null, b.idx );
+			ab 	= arm.add_bone( b.name, b.len, null, b.idx );
+
+			// Can not have levels updated automaticly, Callstack limits get hit
+			// Instead, using the Level from bones to manually set it.
+			//if( b.p_idx != null ) App.node.addChild( arm.bones[ b.p_idx ], ab, false );
+			if( b.p_idx != null ) arm.bones[ b.p_idx ].Node.add_child( ab, false );
+
+			// Manual set node level, Must do it after addChild, else it will get overwritten.
+			ab.Node.level = b.lvl; 
+
+			if( b.rot ) ab.Node.setRot( b.rot );
+			if( b.pos ) ab.Node.setPos( b.pos );
+			if( b.scl ) ab.Node.setScl( b.scl );
+		}
+		Armature.finalize( e );	//This updates World Transform
+	}
+}
+
+//#############################################################################
+</script><body></body></html>

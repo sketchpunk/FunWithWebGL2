@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			html,body{margin:0px; padding:0px; width:100%; height:100%;}
+			body{background-color:#404040;}
+			canvas{border:0px solid green;}
+			div{display:flex; width:100%; height:100%; align-items:center; justify-content:center;}
+			#lblFPS{position:absolute; top:0px; left:0px; width:40px; padding:5px 5px;
+				background:gray; color:white; font-weight:bold; text-align:center; font-family:arial; font-size:13px; }
+		</style>
+
+		<script type="module">
+			import gl		from "./gl.js";
+			import Ubo		from "./Ubo.js";
+			import Shader	from "./Shader.js";
+			import Material	from "./Material.js";
+			import Cache	from "./Cache.js";
+			import Vao		from "./Vao.js";
+
+			let uboGlobal, 		// Global UBO, What ever shader needs
+				gVao,			// Contains the Mesh that we want to render
+				m4Projection	= new Float32Array( 16 ),	// Used to contain Perspective Projection
+				m4View			= new Float32Array( 16 ),	// Used to contain the inverse of the Camera Pos / Rot
+				vecCameraRot	= new Float32Array( [-50,0,0] ),	// Not needed for animation only used for single frame test.
+				vecCameraPos	= new Float32Array( [0,9,20] );		// Camera Position
+
+			window.addEventListener("load",function(){
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// START UP GL
+				if( !gl.init("FungiCanvas") ) return false;
+				gl.fitScreen().setClearColor("#d0d0d0").clear();
+
+				// Projection Matrix
+				Mat4.identity( m4Projection );
+				Mat4.perspective( m4Projection, 45 * Math.PI / 180, gl.width / gl.height, 0.01, 1000 );
+				
+				// View Matrix - Just for Single Frame Test, Can Use lookAt to create a ViewMatrix in one step.
+				Mat4.identity( m4View );
+				Mat4.fromEulerYXZ(	m4View, vecCameraRot[0], vecCameraRot[1], vecCameraRot[2] );
+				Mat4.translate(		m4View, vecCameraPos[0], vecCameraPos[1], vecCameraPos[2] );
+				Mat4.invert( m4View );
+
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// UNIFORM BUFFER OBJECTS
+				uboGlobal = Ubo.build( "UBOGlobal", 0, [
+					"projMatrix",	"mat4",
+					"viewMatrix",	"mat4",
+				]);
+
+				uboGlobal
+					.setItem( "projMatrix", m4Projection )
+					.setItem( "viewMatrix", m4View )
+					.update();
+
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// SHADER & MATERIALS
+				let json	= Shader.parseInline( "inline_shader" ),
+					shader	= Shader.buildFromJson( json );
+
+				if( !shader ) return false;
+
+				let mat = Material.build( shader, json.materials[ 0 ] );
+				mat.bind().apply(); // Bind Shader, Then Apply Uniforms to Shader
+
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// CREATE VERTEX DATA
+				gVao = Mesh_GridFloor();
+				Vao.bind( gVao ).draw( gVao, gl.ctx.LINES );
+
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				onDraw();
+			});
+
+			let time = 0;
+			function onDraw(){
+				const len = 20;
+				time += 0.02;
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// ROTATE CAMERA AND PUSH TO UBO
+				vecCameraPos[ 0 ] = len * Math.cos( time );
+				vecCameraPos[ 1 ] = 9;
+				vecCameraPos[ 2 ] = len * Math.sin( time );
+
+				Mat4.lookAt(vecCameraPos, [0,0,0], [0,1,0], m4View);
+				uboGlobal.setItem( "viewMatrix", m4View ).update();
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// DRAW SCENE
+				gl.clear();
+				Vao.draw( gVao, gl.ctx.LINES );
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// START NEXT FRAME
+				requestAnimationFrame( onDraw );
+			}
+
+
+			function Mesh_GridFloor(){
+				let GridSize	= 0.2,				// Distance between lines
+					len			= 70,				// How many lines to generate
+					t			= len * GridSize,	// Total Size of grid
+					p			= 0,				// Position
+					v			= [ ];				// Vertex Array
+
+				let c = 4; // Color for lines
+				for(var i=1; i <= len; i++){		//build grid
+					p = i * GridSize;
+					v.push(	 p,0,t,c,	 p,0,-t,c,
+							-p,0,t,c,	-p,0,-t,c,
+							-t,0,p,c,	 t,0,p,c,
+							-t,0,-p,c,	 t,0,-p,c,
+					);
+				}
+				v.push(-t,0.007,0,1, t,0.007,0,1, 0,0.007,t,0, 0,0.007,-t,0); //origin x,z lines
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Create VAO that will contain the Mesh Data
+				return Vao.buildStandard( "gridFloor", 4, v );
+			}
+
+
+			class Mat4{
+				static identity(out){
+					for(var i=0; i <= out.length; i++) out[i] = (i % 5 == 0)? 1 : 0; //only positions 0,5,10,15 need to be 1 else 0
+				}
+
+				static perspective(out, fovy, aspect, near, far){
+					var f = 1.0 / Math.tan(fovy / 2),
+						nf = 1 / (near - far);
+					out[0] = f / aspect;
+					out[1] = 0;
+					out[2] = 0;
+					out[3] = 0;
+					out[4] = 0;
+					out[5] = f;
+					out[6] = 0;
+					out[7] = 0;
+					out[8] = 0;
+					out[9] = 0;
+					out[10] = (far + near) * nf;
+					out[11] = -1;
+					out[12] = 0;
+					out[13] = 0;
+					out[14] = (2 * far * near) * nf;
+					out[15] = 0;
+				}
+
+				static translate(out,x,y,z){
+					out[12] = out[0] * x + out[4] * y + out[8]	* z + out[12];
+					out[13] = out[1] * x + out[5] * y + out[9]	* z + out[13];
+					out[14] = out[2] * x + out[6] * y + out[10]	* z + out[14];
+					out[15] = out[3] * x + out[7] * y + out[11]	* z + out[15];
+				}
+
+				static fromEulerYXZ( out, x, y, z ){
+					let rx	= x * Math.PI / 180,
+						ry	= y * Math.PI / 180,
+						rz	= z * Math.PI / 180,
+						a	= Math.cos( rx ), 
+						b	= Math.sin( rx ),
+						c	= Math.cos( ry ), 
+						d	= Math.sin( ry ),
+						e	= Math.cos( rz ), 
+						f	= Math.sin( rz );
+
+					let ce = c * e, cf = c * f, de = d * e, df = d * f;
+
+					out[ 0 ] = ce + df * b;
+					out[ 4 ] = de * b - cf;
+					out[ 8 ] = a * d;
+
+					out[ 1 ] = a * f;
+					out[ 5 ] = a * e;
+					out[ 9 ] = - b;
+
+					out[ 2 ] = cf * b - de;
+					out[ 6 ] = df + ce * b;
+					out[ 10 ] = a * c;
+				}
+
+				//This creates a View Matrix, not a World Matrix. Use TargetTo for a World Matrix type LookAt.
+				static lookAt(eye, center, up, out){
+					let x0, x1, x2, y0, y1, y2, z0, z1, z2, len;
+					let eyex = eye[0];
+					let eyey = eye[1];
+					let eyez = eye[2];
+					let upx = up[0];
+					let upy = up[1];
+					let upz = up[2];
+					let centerx = center[0];
+					let centery = center[1];
+					let centerz = center[2];
+
+					if (Math.abs(eyex - centerx) < 0.000001 &&
+						Math.abs(eyey - centery) < 0.000001 &&
+						Math.abs(eyez - centerz) < 0.000001) {
+						return Mat4.identity( out );
+					}
+
+					z0 = eyex - centerx;
+					z1 = eyey - centery;
+					z2 = eyez - centerz;
+
+					len = 1 / Math.sqrt(z0 * z0 + z1 * z1 + z2 * z2);
+					z0 *= len;
+					z1 *= len;
+					z2 *= len;
+
+					x0 = upy * z2 - upz * z1;
+					x1 = upz * z0 - upx * z2;
+					x2 = upx * z1 - upy * z0;
+					len = Math.sqrt(x0 * x0 + x1 * x1 + x2 * x2);
+
+					if (!len) {
+						x0 = 0;
+						x1 = 0;
+						x2 = 0;
+					} else {
+						len = 1 / len;
+						x0 *= len;
+						x1 *= len;
+						x2 *= len;
+					}
+
+					y0 = z1 * x2 - z2 * x1;
+					y1 = z2 * x0 - z0 * x2;
+					y2 = z0 * x1 - z1 * x0;
+
+					len = Math.sqrt(y0 * y0 + y1 * y1 + y2 * y2);
+					if (!len) {
+						y0 = 0;
+						y1 = 0;
+						y2 = 0;
+					} else {
+						len = 1 / len;
+						y0 *= len;
+						y1 *= len;
+						y2 *= len;
+					}
+
+					out[0] = x0;
+					out[1] = y0;
+					out[2] = z0;
+					out[3] = 0;
+					out[4] = x1;
+					out[5] = y1;
+					out[6] = z1;
+					out[7] = 0;
+					out[8] = x2;
+					out[9] = y2;
+					out[10] = z2;
+					out[11] = 0;
+					out[12] = -(x0 * eyex + x1 * eyey + x2 * eyez);
+					out[13] = -(y0 * eyex + y1 * eyey + y2 * eyez);
+					out[14] = -(z0 * eyex + z1 * eyey + z2 * eyez);
+					out[15] = 1;
+
+					return out;
+				}
+
+				static invert(out,mat){
+					mat = mat || out; //If input isn't sent, then output is also input
+
+					var a00 = mat[0], a01 = mat[1], a02 = mat[2], a03 = mat[3],
+						a10 = mat[4], a11 = mat[5], a12 = mat[6], a13 = mat[7],
+						a20 = mat[8], a21 = mat[9], a22 = mat[10], a23 = mat[11],
+						a30 = mat[12], a31 = mat[13], a32 = mat[14], a33 = mat[15],
+
+						b00 = a00 * a11 - a01 * a10,
+						b01 = a00 * a12 - a02 * a10,
+						b02 = a00 * a13 - a03 * a10,
+						b03 = a01 * a12 - a02 * a11,
+						b04 = a01 * a13 - a03 * a11,
+						b05 = a02 * a13 - a03 * a12,
+						b06 = a20 * a31 - a21 * a30,
+						b07 = a20 * a32 - a22 * a30,
+						b08 = a20 * a33 - a23 * a30,
+						b09 = a21 * a32 - a22 * a31,
+						b10 = a21 * a33 - a23 * a31,
+						b11 = a22 * a33 - a23 * a32,
+
+						// Calculate the determinant
+						det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+					if (!det) return false;
+					det = 1.0 / det;
+
+					out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+					out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+					out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+					out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+					out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+					out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+					out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+					out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+					out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+					out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+					out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+					out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+					out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+					out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+					out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+					out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+
+					return true;
+				}
+			}
+		</script>
+	</head>
+<body>
+	<div><canvas id="FungiCanvas"></canvas></div>
+
+<script id="inline_shader" type="plain/text">
+<shader>{
+	"name"		: "VecWColor",
+	"ubo"		: [ "UBOGlobal" ],
+	"options"	: { "modelMatrix":false },
+	"uniforms"	: [
+		{ "name":"u_colorAry", "type":"vec3" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"VecWColor",	
+		"options"	: { "depthTest":true, "blend":false },
+		"uniforms":[
+		{ "name":"u_colorAry", "type":"rgb", "value": ["ff0000","00ff00","0000ff","555555","999999","dddddd","000000","ff7f7f","ff8c00","ffff00"] }
+	]}
+]<\materials>
+	
+<vertex>
+	#version 300 es
+	layout(location=0) in vec4 a_position;
+
+	uniform UBOGlobal{ 
+		mat4 projMatrix;
+		mat4 viewMatrix;
+	};
+
+	uniform vec3 u_colorAry[20];
+	out vec3 v_color;
+
+	void main(void){
+		v_color			= u_colorAry[ int(a_position.w) ];
+		gl_PointSize 	= 20.0;
+
+
+		//gl_Position		= vec4( a_position.xyz, 1.0 );
+		gl_Position		= projMatrix * viewMatrix * vec4( a_position.xyz, 1.0 );
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	in vec3 v_color;
+	out vec4 oFragColor;
+
+	void main(void){ oFragColor = vec4(v_color, 1.0); }
+<\fragment>	
+</script>
+
+</body>
+</html>

@@ -1,0 +1,744 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder, gl, Shader, Material, Components, Entity } from "./fungi/engine/App.js";
+import Vao, { Buf }	from "./fungi/core/Vao2.js";
+import Maths, { Quat, Vec3 }		from "./fungi/maths/Maths.js";
+import Transform		from "./fungi/maths/Transform.js";
+
+import Gltf			from "./fungi.misc/GLTF.js";
+import XhrPromise	from "./fungi.misc/XhrPromise.js";
+
+import Armature			from "./fungi.armature/Armature.js";
+import ArmaturePreview	from "./fungi.armature/ArmaturePreview.js";
+
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"./fungi/shaders/VecWColor.txt", 
+		"./fungi/shaders/LowPolyPhong.txt", 
+		"./fungi.armature/shaders/ArmaturePreview.txt", 
+		"./fungi.armature/shaders/ArmatureSkinPhong.txt", 
+	) ) 
+	.load_scene( true, true, false )
+	.set_camera( -50, 10, 3, 0, 0.7, 0 )
+	.add( dl_files )
+	.render_loop( onDraw )
+	//.render_on_mouse( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+let gFrame=0, gFrameUpdate=false;
+window.addEventListener( "keydown", function(e){	
+	switch( e.keyCode ){
+		case 37: gFrame--; gFrameUpdate=true; break; //Left
+		case 39: gFrame++; gFrameUpdate=true; break; //Right
+		case 38: gPause = !gPause; break; //up
+		case 40: gBall.Node.local.pos.x = 2.0; gBall.Node.isModified = true; break; //Down
+	}
+});
+
+let gSrc, gAnim, gSrcPose, gAnimPose;
+let gSrcTPose, gDstTPose, gDstPose, gDst;
+
+async function dl_files(){
+	//let dl	= await XhrPromise.get( "./RiggedSimple.gltf", "json", "./RiggedSimple0.bin", "arraybuffer" );
+	let dl	= await XhrPromise.get( 
+		"./walking.gltf", "json", "./walking.bin", "arraybuffer",
+		//"./running.gltf", "json", "./running.bin", "arraybuffer",
+		//"./run_anim.gltf", "json", "./run_anim.bin", "arraybuffer",
+		"../shared/models/vegeta.txt", "text", "../shared/models/vegeta.bin", "arraybuffer", //files/models/
+		//"./files/models/pitohui.txt", "text", "./files/models/pitohui.bin", "arraybuffer", //files/models/
+	);
+	
+	build_src( dl[0], dl[1] );
+	build_target( dl[2], dl[3] );
+	//build_target2( dl[2], dl[3] );
+
+	//gAnim.at( 1.0, gAnimPose );
+	//gAnimPose.apply();
+
+	//gAnim.at_frame( 0, gAnimPose );
+	//gAnimPose.apply();
+
+	retarget();
+	
+	return true;
+}
+
+
+function build_src( json, bin ){
+	let e		= App.$Draw( "Mesh" );
+	let node 	= {};
+	let bones 	= Gltf.getSkin( "Armature", json, node );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~
+	Armature.$( e );
+	gltf_armature( e, bones ); //Gltf.$armature( e, bones ); // Will Execute Armature.$() on e, then parse in bones.
+	ArmaturePreview.$( e, "ArmaturePreview", 2 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~
+	//gSrcPose = new Pose( e.Armature, true );
+	gAnimPose = new TPose( e.Armature, false ).set_offset( node.rot, null, node.scl );
+	gSrcTPose = new TPose( e.Armature ).set_offset( node.rot, null, node.scl ).update_world();
+
+	if( node.scl ) e.Node.setScl( node.scl );
+	if( node.rot ) e.Node.setRot( node.rot );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~
+	let anim = Gltf.getSkinAnimation( "Armature|mixamo.com|Layer0", json, bin );
+	gAnim 	= new AnimationBones( anim );
+	gSrc 	= e;
+}
+
+//Vegeta
+function build_target( json, bin ){
+	let e = MeshLoader.entity( json, bin, ["Vegeta"] );
+	
+	gDstTPose = new TPose( e.Armature );
+	TPose.align_chain( e, [ "LeftArm", "LeftForeArm" ], Vec3.LEFT, gDstTPose );
+	TPose.align_chain( e, [ "RightArm", "RightForeArm" ], Vec3.RIGHT, gDstTPose );
+	TPose.align_chain( e, [ "LeftUpLeg", "LeftLeg" ], Vec3.DOWN, gDstTPose );
+	TPose.align_chain( e, [ "RightUpLeg", "RightLeg" ], Vec3.DOWN, gDstTPose );
+	TPose.align_foot_forward( e, "LeftFoot", gDstTPose );
+	TPose.align_foot_forward( e, "RightFoot", gDstTPose );
+	gDstTPose.apply();
+	gDstTPose.update_world();
+
+	gDstPose = new TPose( e.Armature );
+
+	e.Node.setPos( 1, 0, 0 );
+	gDst = e;
+}
+
+//pitohui
+function build_target2( json, bin ){
+	let e = MeshLoader.entity( json, bin,  ["body","skin_p0","skin_p1","skin_p2", "hair"] );
+	
+	gDstTPose = new TPose( e.Armature );
+	
+	TPose.align_chain( e, [ "bip_upperarm_L", "bip_lowerarm_L" ], Vec3.LEFT, gDstTPose );
+	TPose.align_chain( e, [ "bip_upperarm_R", "bip_lowerarm_R" ], Vec3.RIGHT, gDstTPose );
+	
+	gDstTPose.apply();
+	gDstTPose.update_world();
+
+	gDstPose = new TPose( e.Armature );
+
+	e.Node.setPos( 1, 0, 0 );
+	gDst = e;
+}
+
+
+//#############################################################################
+function onDraw( dt, ss ){
+	gAnim.at( ss  , gAnimPose );
+	gAnimPose.apply();
+	retarget();
+	
+	/*
+	if( gFrameUpdate ){
+		gFrameUpdate = false;
+		gAnim.at_frame( gFrame, gAnimPose );
+		gAnimPose.apply();
+		retarget();
+		//visualDebug();
+	}
+	*/
+
+	App.ecs.sys_run();
+}
+
+//#############################################################################
+
+// Create Bone Entities from info in the GLTF File
+function gltf_armature( e, bones, def_len=0.3 ){
+	let arm = e.Armature;	
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Bones
+	let i, b, ab, bLen = bones.length;
+	for( i=0; i < bLen; i++ ){
+		b	= bones[i];
+		ab	= arm.add_bone( b.name, 1, null, b.idx );
+
+		if( b.rot ) ab.Node.setRot( b.rot );
+		if( b.pos ) ab.Node.setPos( b.pos );
+		if( b.scl ) ab.Node.setScl( b.scl );
+	}
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Setting up Parent-Child
+	for( i=0; i < bLen; i++ ){
+		b	= bones[ i ];
+		ab	= arm.bones[ b.idx ];
+
+		// Can not have levels updated automaticly, Callstack limits get hit
+		// Instead, using the Level from bones to manually set it.
+		if( b.p_idx != null ) arm.bones[ b.p_idx ].Node.add_child( ab, false );
+
+		// Manual set node level, Must do it after addChild, else it will get overwritten.
+		ab.Node.level = b.lvl; 
+	}
+	Armature.finalize( e );	//This updates World Transforms
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// With the WorldTransforms update, Calculate the Length of each bone.
+	for( i=0; i < bLen; i++ ){
+		ab	= arm.bones[ i ];
+		if( ab.Node.children.length == 0 ){
+			ab.Bone.length = def_len;
+			continue;
+		}
+
+		b = ab.Node.children[0].Node.world;					// First Child's World Space Transform
+		ab.Bone.length = ab.Node.world.pos.length( b.pos );	// Distance from Parent to Child
+	}
+}
+
+
+//#############################################################################
+
+// Quickly Built animator to test run animation data from GLTF.
+// Only need to Animate Rotation mostly. Hip needs to handle Position BUT only Y most of the time.
+class AnimationBones{
+	constructor( a ){
+		this.max_time 	= 0;
+		this.time 		= null;
+		this.time_i		= []; // Pre Calc the time between Frames, then invert it. 1 / (b-a)
+		this.bones		= [];
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Save keyframes grouped as Bones, ties back to bone index.
+		for( let i in a ){
+			let b = a[ i ];
+
+			if( !b.rot && !b.pos ) continue;
+
+			if( !this.time && b.rot.time ) this.time = b.rot.time;
+
+			this.bones.push({
+				idx: b.bone_idx,
+				rot: b.rot.data,
+				pos: b.pos.data,
+			});
+		}
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Cache the scaler to calculate T between frames.
+		for( let i=0; i < this.time.length-1; i++ ){
+			this.time_i.push( 1 / ( this.time[ i+1 ] - this.time[i] ) ); //  1 / (b - a)
+		}
+
+		this.max_time = this.time[ this.time.length-1 ];
+	}
+
+	// Load only one frame into the pose object
+	at_frame( f, pose ){
+		let ff = f % this.time.length;
+
+		console.log( f, ff, this.time.length );
+
+		let b, q = new Quat(), v = new Vec3();
+		for( b of this.bones ){
+			q_buf( b.rot, ff * 4, q );
+			pose.update_bone( b.idx, q );
+
+			if( pose.get_bone_name( b.idx ) == "Hips" ){
+				v_buf( b.pos, ff * 3, v );
+				//console.log( b );
+				pose.update_bone( b.idx, null, v );
+			}
+		}
+	}
+
+	// Animate based on time.
+	at( t, pose ){
+		let //aBones	= e.Armature.bones,
+			q		= new Quat(),
+			v		= new Vec3(),
+			fA		= 0, 
+			fB, fT, i, b;
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Figure out which frame we're in.
+		t = t % this.max_time;	// Passing in DeltaTime, this makes sure we stay within the limit of the animation
+		for( i=this.time.length-2; i > 0; i-- )
+			if( this.time[ i ] < t ){ fA = i; break; }
+
+		fB = fA + 1;
+		//fT = ( t - this.time[ fA ] ) * this.time_i[ fA ];
+		fT = ( t - this.time[ fA ] ) / ( this.time[ fB ] - this.time[ fA ]);
+
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		for( b of this.bones ){
+			//..............................
+			// Try Different ways to interpolate 
+
+			//q_buf_lerp( b.rot, fA * 4, fB * 4, fT, q );
+			q_buf_blend( b.rot, fA * 4, fB * 4, fT, q ); // Lerp but with a Dot Check, better then lerp and more efficent then slerp.
+			//q_buf_slerp( b.rot, fA * 4, fB * 4, fT, q );
+
+			//..............................
+			//Hack, just run position on hips
+			if( pose.get_bone_name( b.idx ) == "Hips" ){
+				v_buf_lerp( b.pos, fA * 3, fB * 3, fT, v )
+				pose.update_bone( b.idx, null, v );
+			}
+
+			//..............................
+			pose.update_bone( b.idx, q );
+		}
+	}
+}
+
+// Simple Lerp from a Rotation Data Buffer
+function q_buf_lerp( ary, ai, bi, t, out ){
+	let ti = 1 - t;
+	out[ 0 ] = ary[ ai ] * ti + ary[ bi ] * t;
+	out[ 1 ] = ary[ ai + 1 ] * ti + ary[ bi + 1 ] * t;
+	out[ 2 ] = ary[ ai + 2 ] * ti + ary[ bi + 2 ] * t;
+	out[ 3 ] = ary[ ai + 3 ] * ti + ary[ bi + 3 ] * t;
+	return out.norm();
+}
+
+// Slerp
+function q_buf_slerp( ary, ai, bi, t, out ){
+	let ti = 1 - t;
+	let qA = new Quat( ary[ ai ], ary[ ai + 1 ], ary[ ai + 2 ], ary[ ai + 3 ] );
+	let qB = new Quat( ary[ bi ], ary[ bi + 1 ], ary[ bi + 2 ], ary[ bi + 3 ] );
+
+	Quat.slerp( qA, qB, t, out )
+
+	return out.norm();
+}
+
+// Debugging
+function q_buf_debug( ary, ai, bi ){
+	let qA = new Quat( ary[ ai ], ary[ ai + 1 ], ary[ ai + 2 ], ary[ ai + 3 ] );
+	let qB = new Quat( ary[ bi ], ary[ bi + 1 ], ary[ bi + 2 ], ary[ bi + 3 ] );
+
+	console.log( qA, qB, Quat.dot( qA, qB ) );
+}
+
+// http://physicsforgames.blogspot.com/2010/02/quaternions.html 
+// Lerp but with a Dot Check, better then lerp and more efficent then slerp.
+function q_buf_blend( ary, ai, bi, t, out ){
+	let qA = new Quat( ary[ ai ], ary[ ai + 1 ], ary[ ai + 2 ], ary[ ai + 3 ] );
+	let qB = new Quat( ary[ bi ], ary[ bi + 1 ], ary[ bi + 2 ], ary[ bi + 3 ] );
+
+	let dot = qA[0]*qB[0] + qA[1]*qB[1] + qA[2]*qB[2] + qA[3]*qB[3];
+	let ti = 1 - t;
+    
+    if( dot < 0 ){
+          out[ 0 ] = ti * qA[0] + t * (-qB[0]);
+          out[ 1 ] = ti * qA[1] + t * (-qB[1]);
+          out[ 2 ] = ti * qA[2] + t * (-qB[2]);
+          out[ 3 ] = ti * qA[3] + t * (-qB[3]);
+     }else{
+          out[ 0 ] = ti * qA[0] + t * qB[0];
+          out[ 1 ] = ti * qA[1] + t * qB[1];
+          out[ 2 ] = ti * qA[2] + t * qB[2];
+          out[ 3 ] = ti * qA[3] + t * qB[3];
+     }
+     return out.norm();
+}
+
+// Just sets a quaternion from data buffer
+function q_buf( ary, i, out ){
+	out.set( ary[ i ], ary[ i + 1 ], ary[ i + 2 ], ary[ i + 3 ] );
+	return out;
+}
+
+// Sets vector from a data buffer
+function v_buf( ary, i, out ){
+	out.set( ary[ i ], ary[ i + 1 ], ary[ i + 2 ] );
+	return out;
+}
+
+// Lerps a Vector from data buffer
+function v_buf_lerp( ary, ai, bi, t, out ){
+	let ti = 1 - t;
+	out[ 0 ] = ary[ ai ] * ti + ary[ bi ] * t;
+	out[ 1 ] = ary[ ai + 1 ] * ti + ary[ bi + 1 ] * t;
+	out[ 2 ] = ary[ ai + 2 ] * ti + ary[ bi + 2 ] * t;
+	return out;
+}
+
+
+//#############################################################################
+// Object to handle TPose of an Armature
+class TPose{
+	constructor( arm ){
+		this.arm = arm;
+		this.bones = [];
+		this.root_offset = new Transform();
+
+		// Create a Transform for each bone.
+		let b, pi;
+		for( let i=0; i < arm.bones.length; i++ ){
+			b	= arm.bones[i];
+			pi	= ( b.Node.parent && b.Node.parent.Bone )? b.Node.parent.Bone.order : null;
+
+			this.bones[ i ] = {
+				pidx 		: pi,
+				len 		: b.Bone.length,
+				chg_state	: 0,
+				local		: new Transform( b.Bone.bind ),
+				world		: new Transform(),
+			};
+		}
+	}
+
+	get_bone_name( idx ){ return this.arm.bones[ idx ].info.name; }
+
+	update_bone( idx, rot=null, pos=null, scl=null ){
+		let b = this.bones[ idx ];
+
+		b.local.set( rot, pos, scl );
+		if( rot ) b.chg_state |= TPose.ROT;
+		if( pos ) b.chg_state |= TPose.POS;
+		if( scl ) b.chg_state |= TPose.SCL;
+
+		return this;
+	}
+
+	set_offset( rot=null, pos=null, scl=null ){ this.root_offset.set( rot, pos, scl ); return this; }
+
+	update_world(){
+		for( let b of this.bones ){
+			if( b.pidx != null )	b.world.from_add( this.bones[ b.pidx ].world, b.local );
+			else					b.world.from_add( this.root_offset, b.local );
+		}
+		return this;
+	}
+
+	apply(){
+		let i, pb, ab;
+
+		for( i=0; i < this.bones.length; i++ ){
+			pb = this.bones[ i ];
+			if( pb.chg_state == 0 ) continue;
+
+
+			ab = this.arm.bones[ i ];
+			if( pb.chg_state & TPose.ROT ) ab.Node.local.rot.copy( pb.local.rot );
+			if( pb.chg_state & TPose.POS ) ab.Node.local.pos.copy( pb.local.pos );
+			if( pb.chg_state & TPose.SCL ) ab.Node.local.scl.copy( pb.local.scl );
+
+			ab.Node.isModified	= true;
+			pb.changeState		= 0;
+		}
+
+		this.arm.isModified = true;
+		return this;
+	}
+
+	static align_chain( e, ary, dir, pose ){
+		let pt		= new Transform(),			// Parent Transform ( Current Bone's Parent );
+			ct		= new Transform(),			// Child Transform ( Current Bone)
+			aEnd	= ary.length - 1,			// End Index
+			f		= new Vec3(),				// Forward
+			u		= new Vec3( dir ),			// Up
+			l		= new Vec3(),				// Left
+			r		= new Quat(),				// Final Rotation
+			q		= new Quat(),				// Temp Rotation
+			b 		= e.Armature.get_bone( ary[0] );	// Bone Entity Reference
+
+		// Parent Bone's Transform
+		b.Node.get_world_transform( pt, false );
+
+		for( let i=0; i <= aEnd; i++ ){
+
+			ct.from_add( pt, b.Bone.bind );		// Calc current bones world transform
+			//App.debug
+			//	.point( ct.pos, 2 )
+			//	.line( ct.pos, Vec3.add( ct.pos, dir), 0 );
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Up direction is where we need the bone to point to.
+			// We then get the bone's current forward direction, use it
+			// to get its left, then finish it off by recalculating
+			// fwd to make it orthogonal. Want to try to keep the orientation
+			// while ( fwd, lft ) realigning the up direction.
+			f.from_quat( ct.rot, Vec3.FORWARD ); 		// Find Bone's Forward World Direction
+			l.from_cross( u, f ).norm();				// Get World Left
+			f.from_cross( l, u ).norm();				// Realign Forward
+			r.from_axis( l, u, f );						// Create Rotation from 3x3 rot Matrix
+
+			if( Quat.dot( r, ct.rot ) < 0 ) r.negate();	// Do a Inverted rotation check, negate it if under zero.
+
+			r.pmul( q.from_invert( pt.rot ) );			// Move rotation to local space
+
+			pose.update_bone( b.Bone.order, r );			// Update Pose with new ls rotation
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// If not the last bone, take then the new rotation to calc the next paren't
+			// world space transform for the next bone on the list.
+			if( i != aEnd){
+				pt.add( r, b.Bone.bind.pos, b.Bone.bind.scl );
+				b = e.Armature.get_bone( ary[i+1] );
+			}
+		}
+	}
+
+	static align_foot_forward( e, foot, pose ){
+		let pt	= new Transform(),
+			ct	= new Transform(),
+			v	= new Vec3(),
+			q	= new Quat(),
+			b	= e.Armature.get_bone( foot );
+		
+		this.pose_bone_world_parent( e.Armature, pose, b, pt, ct ); // Get the Parent and Child Transforms.
+		
+		ct.transformVec( [0,b.Bone.length,0], v );	// Get the Tails of the Bone
+		v.sub( ct.pos );							// Get The direction to the tail
+		v[1] = 0;									// Flatten vector to 2D by removing Y Position
+		v.norm();									// Make it a unit vector
+
+		q	.from_unit_vecs( v, Vec3.FORWARD )		// Rotation needed to point the foot forward.
+			.mul( ct.rot )							// Move WS Foot to point forward
+			.pmul( pt.rot.invert() );				// To Local Space
+
+		pose.update_bone( b.Bone.order, q );			// Save to Pose
+	}
+
+	static pose_bone_world_parent( arm, pose, b, pt, ct ){
+		let n	= b.Node,
+			ary	= [];
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Move up the Node Tree
+		while( n.parent != null ){
+			if( !n.parent.Bone ) break; //Armature root is an entity, can skip it to only get Model Space Transform for pose
+			ary.push( n.parent.Bone.order );
+			n = n.parent.Node;
+		}
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		let i 	= ary.length - 1,
+			pb	= pose.bones;
+
+		pt.copy( pb[ ary[i] ].local );							// Start the parent Transfrom by coping the first bone
+		
+		for( i--; i > -1; i-- ) pt.add( pb[ ary[i] ].local );	// Then add all the children bones
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		ct.from_add( pt, pb[ b.Bone.order ].local );			// Then add child current local transform to the parent's
+	}
+}
+TPose.ROT = 1;
+TPose.POS = 2;
+TPose.SCL = 4;
+
+
+//#############################################################################
+// Manage loading mesh from a custom data format linked to GLTF Bin File
+class MeshLoader{
+	static entity( txt, bin, mesh_list ){
+		let ename = "Target";
+		let e		= App.$Draw( ename );
+
+		/**/
+		let s, vao, spec = this.parse_section( "Vao", txt );
+		console.log( spec );
+		for( let i of mesh_list ){
+			//console.log( i );
+			s	= spec[ i ];
+			vao	= Vao.standard_by_bin( ename +"_"+ i, s, bin );
+			e.Draw.add( vao, "ArmatureSkinPhong" );
+		}
+		
+		
+
+		/*
+		let dv 	= ( bin instanceof ArrayBuffer )? new DataView( bin ) : bin;
+		let vao	= new Vao( "Vegeta" ).bind();
+		vao.add_vertices( Buf.new_array_bin( dv, s.vertices.byteStart, s.vertices.byteLen, true, false ), s.vertices.compLen );
+		vao.add_indices( Buf.new_element_bin( dv, s.indices.byteStart, s.indices.byteLen, true, false ) );
+		vao.elmCount = s.indices.elmCount;
+		vao.unbind_all();
+		*/
+
+		this.load_bones( e, txt );
+		ArmaturePreview.$( e, "ArmaturePreview", 2 );
+
+		return e;
+	}
+
+	static parse_section( sec, txt ){
+		console.log("Sec", sec );
+		let aPos = txt.indexOf( "<" + sec + ">" ) + sec.length + 2;
+		let bPos = txt.indexOf( "</" + sec + ">" );
+
+		if( aPos == -1 || bPos == -1 || bPos <= aPos ) return null;
+
+		let tmp	= txt.substring( aPos, bPos );
+
+		try{ return JSON.parse( tmp ); }
+		catch(err){ console.error( err.message, "\n" , tmp ); }
+
+		return null;
+	}
+
+	static load_bones( e, txt ){
+		let json = this.parse_section( "Armature", txt );
+		Armature.$( e );
+
+		let i, b, ab, bLen = json.length, arm = e.Armature;
+
+		for( i=0; i < bLen; i++ ){
+			b	= json[i];
+			//ab 	= Armature.addBone( arm, b.name, b.len, null, b.idx );
+			ab 	= arm.add_bone( b.name, b.len, null, b.idx );
+
+			// Can not have levels updated automaticly, Callstack limits get hit
+			// Instead, using the Level from bones to manually set it.
+			//if( b.p_idx != null ) App.node.addChild( arm.bones[ b.p_idx ], ab, false );
+			if( b.p_idx != null ) arm.bones[ b.p_idx ].Node.add_child( ab, false );
+
+			// Manual set node level, Must do it after addChild, else it will get overwritten.
+			ab.Node.level = b.lvl; 
+
+			if( b.rot ) ab.Node.setRot( b.rot );
+			if( b.pos ) ab.Node.setPos( b.pos );
+			if( b.scl ) ab.Node.setScl( b.scl );
+		}
+		Armature.finalize( e );	//This updates World Transform
+	}
+}
+
+//#############################################################################
+
+function retarget_tbone( from_name, from_tpose, from_pose, to_name, to_tpose, to_pose ){
+	let a_idx	= gSrc.Armature.names[ from_name ];
+	let a_pidx 	= from_tpose.bones[ a_idx ].pidx;
+
+	let b_idx	= gDst.Armature.names[ to_name ];
+	let b_pidx	= to_tpose.bones[ b_idx ].pidx;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Get some data in local and Model Space.
+	
+	let a_ls_b	= from_pose.bones[ a_idx ].local.rot;	// From LS Bone
+	//let a_ls_bt	= from_tpose.bones[ a_idx ].local.rot;	// From LS TBone  // Need Inverted
+	let a_ws_bt = from_tpose.bones[ a_idx ].world.rot; 
+	let ap_ws_bt = (a_pidx == null)? from_tpose.root_offset.rot : from_tpose.bones[ a_pidx ].world.rot;
+
+	//let b_ls_bt = to_tpose.bones[ b_idx ].local.rot; 
+	let b_ws_bt = to_tpose.bones[ b_idx ].world.rot; 
+	let bp_ws_bt = (b_pidx == null)? to_tpose.root_offset.rot : to_tpose.bones[ b_pidx ].world.rot;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Model Space Difference between TPoses
+	let convert = new Quat()
+	convert.from_mul( Quat.invert( a_ws_bt ), b_ws_bt ); 
+
+	let dif = new Quat();
+	// Isolate each bone change in Model Space TPose.
+	// Using the TPose Model Space of thje parent, but the local rotation of the bone
+	// The idea of having just a whole tpose with only one bone that changed.
+	dif.from_mul( ap_ws_bt, a_ls_b ); 
+
+	// We shift the Src MS bone rotation, Into the Target's MS Bone by
+	// using the TPose Difference.
+	if( Quat.dot( dif, a_ws_bt ) < 0 ) 	dif.mul( convert.negate() ); 
+	else 								dif.mul( convert );
+
+	dif.pmul( Quat.invert( bp_ws_bt ) ); // Move the bone to local space for the target bone
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Handle the Hip Moving up and Down, very important else animation does't look right.
+	// This is a hack looking for the bone called Hips, need to improve in next version
+	if( from_name == "Hips" ){
+		let a_yt 	= from_tpose.bones[ a_idx ].world.pos[1]; 		// Max Height of hip in tpose A
+		let a_y 	= from_pose.bones[ a_idx ].world.pos[1];		// Current Height in Model Splace
+		let a_scale	= a_y / a_yt;									// Create a scale value
+
+		let b_yt	= to_tpose.bones[ b_idx ].world.pos[1];			// Max Height of hip in tpose B
+		let b_y		= ( 1 - a_scale ) * b_yt;						// Calc new Height based on scaled B Max Hight
+
+		let pos  	= to_tpose.bones[ b_idx ].local.pos.clone();
+		pos[1]		-= b_y;
+
+		to_pose.update_bone( b_idx, null, pos );					// Apply Pos Only
+	}
+	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	to_pose.update_bone( b_idx, dif );
+	to_pose.apply();
+}
+
+function retarget(){
+	let b;
+
+	//gAnim.at( 0, gAnimPose );
+	//gAnimPose.apply();
+
+	gAnimPose.update_world(); // Update all the Model Space Data for all the updated animation local space data
+
+	//###################################################
+	// Pitohui
+	/*
+	retarget_tbone( "Hips", gSrcTPose, gAnimPose, "bip_pelvis", gDstTPose, gDstPose );
+	
+	
+	retarget_tbone( "Spine", gSrcTPose, gAnimPose, "bip_spine_0", gDstTPose, gDstPose );
+	retarget_tbone( "Spine1", gSrcTPose, gAnimPose, "bip_spine_1", gDstTPose, gDstPose );
+	retarget_tbone( "Spine2", gSrcTPose, gAnimPose, "bip_spine_2", gDstTPose, gDstPose );
+	retarget_tbone( "Neck", gSrcTPose, gAnimPose, "bip_neck", gDstTPose, gDstPose );
+
+	retarget_tbone( "LeftUpLeg", gSrcTPose, gAnimPose, "bip_hip_L", gDstTPose, gDstPose );
+	retarget_tbone( "LeftLeg", gSrcTPose, gAnimPose, "bip_knee_L", gDstTPose, gDstPose );
+
+	retarget_tbone( "RightUpLeg", gSrcTPose, gAnimPose, "bip_hip_R", gDstTPose, gDstPose );
+	retarget_tbone( "RightLeg", gSrcTPose, gAnimPose, "bip_knee_R", gDstTPose, gDstPose );
+	
+
+	retarget_tbone( "LeftShoulder", gSrcTPose, gAnimPose, "bip_collar_L", gDstTPose, gDstPose );
+	retarget_tbone( "LeftArm", gSrcTPose, gAnimPose, "bip_upperarm_L", gDstTPose, gDstPose );
+	retarget_tbone( "LeftForeArm", gSrcTPose, gAnimPose, "bip_lowerarm_L", gDstTPose, gDstPose );
+
+
+	
+	retarget_tbone( "RightShoulder", gSrcTPose, gAnimPose, "bip_collar_R", gDstTPose, gDstPose );
+	retarget_tbone( "RightArm", gSrcTPose, gAnimPose, "bip_upperarm_R", gDstTPose, gDstPose );
+	retarget_tbone( "RightForeArm", gSrcTPose, gAnimPose, "bip_lowerarm_R", gDstTPose, gDstPose );
+	*/
+
+
+	//###################################################
+	// VEGETA
+	/**/
+	retarget_tbone( "LeftUpLeg", gSrcTPose, gAnimPose, "LeftUpLeg", gDstTPose, gDstPose );
+	retarget_tbone( "LeftLeg", gSrcTPose, gAnimPose, "LeftLeg", gDstTPose, gDstPose );
+	
+	retarget_tbone( "LeftArm", gSrcTPose, gAnimPose, "LeftArm", gDstTPose, gDstPose );
+	retarget_tbone( "LeftForeArm", gSrcTPose, gAnimPose, "LeftForeArm", gDstTPose, gDstPose );
+
+	
+	retarget_tbone( "RightArm", gSrcTPose, gAnimPose, "RightArm", gDstTPose, gDstPose );
+	retarget_tbone( "RightForeArm", gSrcTPose, gAnimPose, "RightForeArm", gDstTPose, gDstPose );
+
+	retarget_tbone( "RightUpLeg", gSrcTPose, gAnimPose, "RightUpLeg", gDstTPose, gDstPose );
+	retarget_tbone( "RightLeg", gSrcTPose, gAnimPose, "RightLeg", gDstTPose, gDstPose );
+	
+	retarget_tbone( "LeftShoulder", gSrcTPose, gAnimPose, "LeftShoulder", gDstTPose, gDstPose );
+	retarget_tbone( "RightShoulder", gSrcTPose, gAnimPose, "RightShoulder", gDstTPose, gDstPose );
+
+	/**/
+	retarget_tbone( "Hips", gSrcTPose, gAnimPose, "Hips", gDstTPose, gDstPose );
+	
+	retarget_tbone( "Spine", gSrcTPose, gAnimPose, "Spine", gDstTPose, gDstPose );
+	retarget_tbone( "Spine1", gSrcTPose, gAnimPose, "Spine1", gDstTPose, gDstPose );
+	retarget_tbone( "Spine2", gSrcTPose, gAnimPose, "Spine2", gDstTPose, gDstPose );
+	retarget_tbone( "Neck", gSrcTPose, gAnimPose, "Neck", gDstTPose, gDstPose );
+	//retarget_tbone( "Head", gSrcTPose, gAnimPose, "Head", gDstTPose, gDstPose );
+	
+}
+
+
+</script><body>
+</body></html>
