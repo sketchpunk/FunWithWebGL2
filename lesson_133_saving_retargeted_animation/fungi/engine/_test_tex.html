@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App, { AppBuilder, Material } from "./App.js";
+import TextureLoader from "./lib/TextureLoader.js";
+import Quad	from "../primitives/Quad.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl
+		.addGrp( "shader", "../shaders/VecWColor.txt", "../shaders/TextureUV.txt"  )
+		.addTex( "tex01", "../../files/images/UV_Grid_Sm.jpg", true ) )
+	.load_scene( true, false )
+	.set_camera( -20, 20, 6, 0, 0, 0 )
+	.add( init )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+//#############################################################################
+function onDraw( dt, ss ){ App.ecs.sys_run(); }
+
+//#############################################################################
+async function init(){
+	let e = App.$Draw( "Quad", Quad.vao(), "TextureUV" );
+
+	return true;
+}
+
+</script><body></body></html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder, gl }	from "../fungi/engine/App.js";
+import Vao						from "../fungi/core/Vao2.js";
+
+//#############################################################################
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "../fungi/shaders/VecWColor.txt", ) )
+	.load_scene( true, true )
+	.set_camera( -20, 30, 4.0 )
+	.add_task( init )
+	//.render_loop( onDraw )
+	.render_on_mouse( onDraw )
+	.build().catch( e=>console.error("error",e) );
+})();
+
+//#############################################################################
+function onDraw( dt, ss ){ App.ecs.sys_run(); }
+
+//#############################################################################
+let debug;
+function init(){
+	debug = new Debug2D();
+
+	debug	.point( gl.width * 0.5, gl.height * 0.5 )
+			.point( 50, 50 )
+			.update();
+
+	return true;
+}
+
+//#############################################################################
+import DynamicBuffer from "../fungi/core/DynamicBuffer.js";
+
+class FlatVectorArray{
+	constructor( elmCnt=1, compLen=3, type=null ){
+		this.elm_cnt 	= elmCnt;
+		this.comp_len 	= compLen;
+		this.ary_len	= elmCnt * compLen;
+		this.count		= 0;
+
+		if( !type ){
+			this.ary_type	= Float32Array;
+			this.data		= new Float32Array( this.ary_len );
+		}else{
+			this.ary_type	= type;
+			this.data 		= new type( this.ary_len );
+		}
+	}
+
+	setComp( i, v, step=0 ){ this.data[ i * this.comp_len + step ] = v; return this; }
+	set( i, d ){
+		let ii, itm, a;
+		i *= this.compLen;
+
+		for( ii=1; ii < arguments.length; ii++ ){
+			itm = arguments[ ii ];
+
+			if( itm instanceof this.aryType || Array.isArray( itm ) ){
+				for( a of itm ) this.data[ i++ ] = a;
+			}else if( typeof itm == "number" ){
+				this.data[ i++ ] = itm;
+			}
+		}
+
+		return this;
+	}
+
+	push2( x, y ){
+		let i = this.count++ * this.comp_len;
+		this.data[ i ]		= x;
+		this.data[ i+1 ]	= y;
+		return this;
+	}
+
+	push3( x, y, z ){
+		let i = this.count++ * this.comp_len;
+		this.data[ i ]		= x;
+		this.data[ i+1 ]	= y;
+		this.data[ i+2 ]	= z;
+		return this;
+	}
+
+	get( i, out=null ){
+		let ii;
+		out	=	out || new this.ary_type( this.comp_len );
+		i	*=	this.comp_len;
+
+		for( ii=0; ii < this.comp_len; ii++ ){
+			this.out[ ii ] = this.data[ i++ ];
+		}
+
+		return out;
+	}
+}
+
+class Debug2D{
+	constructor( startSize = 10 ){
+		this.mat 	= screenSpaceShaderMat();
+		this.ary	= new FlatVectorArray( startSize, 2, Array );						// Flat Array that can be used as a Vector Array
+		this.vao	= Vao.standard_empty( "debug2D", startSize, 2 );						// Empty Buffer
+		this.dbuf 	= DynamicBuffer.newFloat( this.vao.buf.vertices, 2, startSize );	// Push Data to Empty Buffer
+		this.entity = App.$Draw( "debug2D", this.vao, this.mat, 0 );					// Drawing Entity
+	}
+
+	point( x, y ){
+		this.ary.push2( x, y );
+		this.vao.elmCount = this.ary.count;
+		return this;
+	}
+
+	update(){ this.dbuf.update( this.ary.data ); return this; }
+
+	reset(){
+		this.ary.count 		= 0;
+		this.vao.elmCount 	= 0;
+		return this;
+	}
+}
+
+
+//#############################################################################
+
+import Shader	from "../fungi/core/Shader.js";
+import Material	from "../fungi/core/Material.js";
+function screenSpaceShaderMat(){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Setup Raw Shader
+	let sh	= Shader.build( "screenSpace", V_SHADER, F_SHADER );
+	Shader.prepareUniformBlocks( sh, [ "UBOGlobal" ] );
+	Shader.prepareUniform( sh, "u_color", "rgb" );
+	Shader.prepareUniform( sh, "u_point_size", "float" );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Setup Raw Shader Material
+	let mat = new Material( "screenSpace" , sh );
+	mat.add_uniform( "u_color", "#000000" );
+	mat.add_uniform( "u_point_size", 10 );
+	App.cache.materials.set( mat.name, mat );
+
+	return mat;
+}
+
+const V_SHADER = `#version 300 es
+	layout(location=0) in vec2 a_position;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+	};
+
+	uniform float u_point_size;
+
+	void main(void){
+		gl_PointSize	= u_point_size;
+
+		// Normalize Position based on Screen Size. Then remap to normalized screen space ( -1, 1 );
+		// For Y, Flip the normalized position before remaping. Y = 0 at the top of the screen, not bottom.
+		gl_Position		= vec4(
+			a_position.x / screenSize.x * 2.0 - 1.0,
+			( 1.0 - a_position.y / screenSize.y ) * 2.0 - 1.0,
+			0.0,
+			1.0
+		);
+	}
+`;
+
+const F_SHADER = `#version 300 es
+	precision mediump float;
+	out vec4 oFragColor;
+
+	uniform vec3	u_color;
+
+	void main(void){
+		oFragColor = vec4( u_color, 1.0 );
+	}
+`;
+
+
+</script><body></body></html>

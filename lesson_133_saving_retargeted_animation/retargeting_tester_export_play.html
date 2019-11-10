@@ -1,0 +1,151 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App						from "./fungi/engine/App.js";
+import Maths, { Quat, Vec3 }	from "./fungi/maths/Maths.js";
+import XhrPromise				from "./fungi.misc/XhrPromise.js";
+import FungiGLTF, {Gltf} 		from "./fungi.misc/FungiGLTF.js";
+import GltfExport 				from "./fungi.misc/GltfExport.js";
+import Animation				from "./fungi.animation/Animation.js";
+import HumanRig 				from "./fungi.ik2/HumanRig.js";
+import Pose 					from "./fungi.ik2/Pose.js";
+
+//#############################################################################
+App.builder()
+	.launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"./fungi/shaders/VecWColor.txt", 
+		"./fungi.armature/shaders/ArmaturePreview.txt", 
+		"./fungi.armature/shaders/ArmatureSkinPhong.txt", 
+	) ) 
+	.load_scene( true, true, true )
+	.set_camera( -20, 10, 2.5, 0, 0.7, 0 )
+	.add( dl_files )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+
+let gIsActive = true;
+let gPose, gAnimation, gAnimator;
+
+async function dl_files(){
+	let dl	= await XhrPromise.get( 
+		"./test.gltf", "json", "./test.bin", "arraybuffer",
+		"../shared/models/vegeta.gltf", "json", "../shared/models/vegeta.bin", "arraybuffer",
+	);
+	
+	let e		= FungiGLTF.$debug_bind( "src_preview", dl[2], dl[3] );
+	gPose		= new Pose( e.Armature );
+	gAnimation	= FungiGLTF.animation( "Default", dl[0], dl[1] );
+	gAnimator	= new Animator();
+	return true;
+}
+
+
+//#############################################################################
+function onDraw( dt, ss ){
+	if( gIsActive ){
+		gAnimator.tick( dt ).update( gAnimation, gPose );
+		gPose.apply();
+	}
+	App.ecs.sys_run();
+}
+
+
+//############################################################################
+class Animator{
+	constructor(){
+		this.clock = 0;
+	}
+
+	/////////////////////////////////////////////////////////////////
+	// 
+	/////////////////////////////////////////////////////////////////
+		tick( dt ){ this.clock += dt; return this; }
+		reset( ){ this.clock = 0; return this; }
+
+		key_frame( ti, anim, pose ){
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			if( ti >= anim.frame_cnt ){ console.log("key frame index exceeds total key frames."); return this; }
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			let q		= new Quat(),
+				v		= new Vec3(),
+				qi 		= ti*4,
+				vi 		= ti*3,
+				track;
+
+			for( track of anim.tracks ){
+				if( ti >= anim.times[ track.time_idx ].length ) continue;
+
+				switch( track.type ){
+					case "rot": 
+						Animation.quat_buf_copy( track.data, q, qi );
+						pose.set_bone( track.joint_idx, q ); 
+						break;
+					case "pos": 
+						Animation.vec3_buf_copy( track.data, v, vi );
+						pose.set_bone( track.joint_idx, null, v );
+						break;
+				}
+			}
+		}
+
+		// Run animation and save results to pose object
+		update( anim, pose ){
+			let f_times	= this._frame_times( anim ),
+				q 		= new Quat(),
+				v		= [0,0,0],
+				track, frame;
+
+			for( track of anim.tracks ){
+				if( track.interp == "STEP" ) continue; //TODO, add support for this
+
+				frame = f_times[ track.time_idx ]; // [ FA_IDX, FB_IDX, NORM_TIME ]
+
+				switch( track.type ){
+					case "rot":
+						Animation.quat_buf_blend( track.data, frame[0]*4, frame[1]*4, frame[2], q );
+						pose.set_bone( track.joint_idx, q ); 
+						break;
+					case "pos":
+						Animation.vec3_buf_lerp( track.data, frame[0]*3, frame[1]*3, frame[2], v );
+						pose.set_bone( track.joint_idx, null, v );
+						break;
+				}
+			}
+
+			return this;
+		}
+
+		// Every animation can have multiple shared time tracks.
+		// So we incrmement our animation clock, then for each time
+		// track we find between which two frames does the time exist.
+		// Then we normalized the time between the two frames.
+		// Return: [ [ FA_IDX, FB_IDX, NORM_TIME ], ... ];
+		_frame_times( anim ){
+			// Find the Frames for each group time.
+			let j, i, time, fa, fb, ft,
+				times	= anim.times,
+				rtn		= new Array( anim.times.length ),
+				clock 	= this.clock % anim.time_max;
+
+			for( j=0; j < anim.times.length; j++ ){
+				time = anim.times[ j ];
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Find the first frame that is less then the clock.
+				fa = 0;
+				for( i=time.length-2; i > 0; i-- )
+					if( time[i] < clock ){ fa = i; break; }
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Normalize Time Between Frames
+				fb = fa + 1;
+				ft = ( clock - time[ fa ] ) / ( time[ fb ] - time[ fa ] );
+				//ft = ( data.clock - time[ fa ] ) * frame_inc[ fa ];
+				rtn[ j ] = [ fa, fb, ft ];
+			}
+			return rtn;
+		}
+}
+</script><body>
+</body></html>

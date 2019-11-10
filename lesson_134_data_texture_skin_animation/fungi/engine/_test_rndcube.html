@@ -1,0 +1,429 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App, { AppBuilder } from "./App.js";
+import Debug		from "./Debug.js";
+import Vao			from "../core/Vao.js";
+
+//https://catlikecoding.com/unity/tutorials/rounded-cube/
+//////////////////////////////////////////////////////////////////////
+
+(function(){new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "../shaders/VecWColor.txt", "/fungi/shaders/LowPolyPhong.txt" ) )
+	.load_scene( true, true )
+	.set_camera( -20, 20, 6, 0, 0, 0 )
+	.add_task( init )
+	//.render_loop( onDraw )
+	.render_on_mouse( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+//////////////////////////////////////////////////////////////////////
+let cube;
+function onDraw( dt, ss ){ App.ecs.sys_run(); }
+
+const PNT = 0;
+const TRI = 4;
+
+//////////////////////////////////////////////////////////////////////
+function init(){
+	/*
+	App.camera.Node.setPos( 0, 2.5, 6 )///.setRotAxis( [1,0,0], -15 * Math.PI / 180 );
+		//.setPos(2.287785530090332, 3.1941537857055664, 5.234932899475098)
+		//.setRotAxis([-0.71021737564972,0.6903120031442931,0.1380624308642273], 0.5489908994749623);
+		.setPos(1.0706796646118164, -1.720064640045166, 1.3691420555114746)
+		.setRotAxis([0.741033228358081,0.6210229480950011,-0.2553436866757945], 1.0131266105795604);
+	*/
+
+	/**/
+	//let d 	= RoundedCube();
+	//let d	= RoundedCube2();
+	let d  	= RoundedCube3();
+
+	//let vao	= Vao.buildStandard( "rcube", 4, d.verts, null, null, d.faces ); //, aryNorm=null, aryUV=null, aryInd=null 
+	let vao	= Vao.buildStandard( "rcube", 4, d.verts, null, null, null ); //, aryNorm=null, aryUV=null, aryInd=null 
+	
+	cube = App.$Draw( "cube", vao, "VecWColor", PNT );
+	//cube.Draw.add( vao, "LowPolyPhong", TRI, {cullFace:false} );
+
+	/*
+	cube = App.newDraw("cube")
+	cube.Draw.add( vao, "VecWColor", PNT );
+	cube.Draw.add( vao, "LowPolyPhong", TRI, {cullFace:false} );
+	*/
+
+	return true;
+}
+
+
+//////////////////////////////////////////////////////////////////////
+function RoundedCube3( x_div=3, y_div=2, z_div=3, x_size=1, y_size=1, z_size=1 ){
+	let verts	= [];
+	let faces	= [];
+	let offset	= [x_size/-2,0,z_size/-2];
+
+	let x_inc	= x_size / ( x_div );
+	let y_inc	= y_size / ( y_div );
+	let z_inc	= z_size / ( z_div );	
+
+	let i, j, k, y;
+
+	let add_vert = ( x,y,z,c=0 )=>{ verts.push( x+offset[0],y+offset[1],z+offset[2],c ) };
+
+	let row_len = (x_div + 1) * ( z_div + 1 ) - 4;
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Outer Walls
+	//for(j=0; j <= y_div; j++ ){
+		y = j * y_inc;
+		y = 0;
+		for(i=0; i <= x_div; i++ )		add_vert( i*x_inc, y, 0 );			// Top
+		for(i=1; i <= z_div; i++ )		add_vert( x_size, y, i*z_inc );		// Left
+		for(i=x_div-1; i >= 0; i-- ) 	add_vert( i*x_inc, y, z_size );		// Bottom
+		for(i=z_div-1; i > 0; i-- )		add_vert( 0, y, i*z_inc );			// Right
+	//}
+	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Caps
+	//for(k=0; k < 2; k++){
+	//	y = k * y_size;
+	//	for(i=1; i < z_div; i++ )
+	//		for(j=1; j< x_div; j++ )
+	//			add_vert( j*x_inc, y, i*z_inc, 2 );
+	//}
+
+	console.log( verts.length / 4, row_len );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return { verts, faces };
+}
+
+
+function RoundedCube2( xDiv=4, yDiv=2, zDiv=4, xSize=1, ySize=1, zSize=1 ){
+	let verts = [],
+		faces = [];
+
+	let toQuad = (a, b, c, d)=>{ faces.push( a, b, c, c, d, a ); }
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let colCnt	= ( xDiv + zDiv ) * 2,								// How many Verts makes one row of a Lathe.
+		lathCnt	= colCnt * (yDiv+1),								// Total verts used in the Lathe
+
+		start 	= [ xSize / -2, ySize / 2, zSize / 2 ],				// Where to start at each Axis
+		inc 	= [ xSize / xDiv, ySize / yDiv, zSize / zDiv ],		// Increment steps for each axis
+		pos 	= [ start[0], start[1], start[2] ],					// Current Position of vertex
+		aEnd 	= [ xDiv, zDiv, xDiv, zDiv-1 ];						// Where to end at each turn
+	
+	let xTurn	= 0, 			// How many turns going around the X and Z Axis
+		yTurn 	= 0,			// How many times stepped down Y to start another row
+		idx		= 0,			// Index of what axis to modify
+		i		= 1,			// Just index loop counting
+		end		= aEnd[ 0 ],	// When to stop before a turn
+		dir		= 1,			// Direction of increment value
+		offset 	= start[ 0 ];	// Starting point for each turn
+
+	verts.push( pos[0], pos[1], pos[2], 6 );
+	while( i <= end ){
+		//......................................
+		pos[ idx ] = offset + i * inc[ idx ] * dir;	// Move the position in a specific direction
+		verts.push( pos[0], pos[1], pos[2], 6 );	// Save data
+
+		//......................................
+		if( ++i > end ){
+			if( xTurn < 3 ){
+				xTurn++;
+				i		= 1;
+				end		= aEnd[ xTurn ];
+				idx		= ( xTurn & 1 )? 2 : 0;
+				dir		= ( xTurn != 3 )? -1 : 1;
+				offset	= ( xTurn & 1 )? start[ 2 ] : start[ 0 ];
+				if( xTurn > 1 )  offset *= -1;
+			}else if( yTurn < yDiv ){
+				yTurn++;
+				xTurn	= 0;
+				i		= 1;
+				end		= aEnd[ 0 ];
+				idx		= 0;
+				dir		= 1;
+				offset	= start[ 0 ];
+
+				pos[0]	= start[ 0 ];
+				pos[1] 	= start[ 1 ] - yTurn * inc[ 1 ];
+				pos[2]	= start[ 2 ];
+
+				verts.push( pos[0], pos[1], pos[2], 6 );
+			}
+		}
+	}
+
+	console.log( "vertCount", verts.length / 4 );
+	console.log( "x",colCnt * (yDiv+1) )
+
+	let topIdx = verts.length;
+	// Top Cap
+	for(let z=1; z < zDiv; z++){
+		for(let x=1; x < xDiv; x++) 
+			verts.push( 
+				start[0] + x * inc[0], 
+				start[1], 
+				start[2] + -z * inc[2], 2 );
+	}
+
+	let botIdx = verts.length;
+	// Bottom Cap
+	for(let z=1; z < zDiv; z++){
+		for(let x=1; x < xDiv; x++) 
+			verts.push( 
+				start[0] + x * inc[0], 
+				start[1] - yDiv * inc[1] , 
+				start[2] + -z * inc[2], 0 );
+	}
+
+
+	console.log( "top %s bot %s", topIdx/4, botIdx/4 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Defined Faces around the cube ( Lathe )
+	// Quad Order - Counter Clockwise Triangle Pattern : A B C, C D A
+	// A -- D
+	// | \  |
+	// B -- C
+	let rA, rB, cc, rr, a, b, c, d;
+	for(rr=0; rr < yDiv; rr++){
+		rA = rr * colCnt;	// Get the Starting Vertical Edge for the Loop
+		rB = rA + colCnt;
+
+		for(cc=0; cc < colCnt; cc++){
+			i = (cc + 1) % colCnt;	// Connect last and first edge together
+			toQuad( rA + cc, rB + cc, rB + i, rA + i );
+		}
+	}
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    /*
+    9  8 7  6
+   10 38 39 5
+   11 36 37 4
+	0  1 2  3
+	*/
+
+	let gridXLen	= xDiv - 2;
+	let gridZLen 	= zDiv - 2;
+
+	let corner0 	= 0;
+	let corner1		= corner0 + xDiv;
+	let corner2 	= corner1 + zDiv;
+	let corner3 	= corner2 + xDiv;
+
+	let gStart		= topIdx / 4;
+	let gEnd		= gStart - 1 + (xDiv - 1) * (zDiv - 1);
+	let eEnd		= corner0 + colCnt - 1;
+	let gPos;
+
+	//..................................
+	// TOP CAP
+
+	/// First Row
+	toQuad( colCnt-1, corner0, corner0+1, gStart );				// Starting Quad
+	for(cc=0; cc < gridXLen; cc++){								// In between Quads
+		toQuad( gStart + cc, corner0 + 1 + cc, corner0 + 2 + cc, gStart + cc + 1 );
+	}
+	toQuad( gStart + gridXLen, corner1-1, corner1, corner1+1 );	// Ending Quad
+
+	// Between Rows
+	a = gStart + (gridXLen + 1);
+	b = gStart;
+	for(rr=0; rr < gridZLen; rr++){
+		// Start Quad
+		toQuad( eEnd - rr - 1, eEnd - rr, gStart + (gridZLen+1) * rr, gStart + (gridZLen+1) * (rr + 1) );
+
+		// In Between Quads
+		for(cc=0; cc < gridXLen; cc++) toQuad( a++, b++, b, a );
+		a++; b++; // shift to next Row
+
+		// End Quad
+		gPos = gStart + gridXLen;
+		toQuad( gPos + (gridXLen + 1) * (rr+1), gPos + (gridXLen + 1) * rr,  corner1 + 1 + rr, corner1 + 2 + rr );
+	}
+
+	// Final Row
+	toQuad( corner3, corner3+1, gEnd - gridXLen, corner3-1 );	// Starting Quad
+	for(cc=0; cc < gridXLen; cc++){								// In between Quads
+		toQuad( corner3 - 1 - cc, gEnd - gridXLen + cc, gEnd - gridXLen + cc + 1, corner3 - 2 - cc );
+	}
+	toQuad( corner2+1, gEnd, corner2-1, corner2 );				// End Quad
+
+
+	//..................................
+	// BOTTOM CAP
+	//Debug.rawPoint( verts[botIdx], verts[botIdx+1], verts[botIdx+2], 1 );
+	//let tFinal = colCnt * yDiv * 4;
+	//Debug.rawPoint( verts[tFinal], verts[tFinal+1], verts[tFinal+2] + 0.1, 0 );
+	//console.log( tFinal );
+
+	corner0 	= colCnt * yDiv;
+	corner1		= corner0 + xDiv;
+	corner2 	= corner1 + zDiv;
+	corner3 	= corner2 + xDiv;
+
+	gStart		= botIdx / 4;
+	gEnd		= gStart - 1 + (xDiv - 1) * (zDiv - 1);
+	eEnd		= corner0 + colCnt - 1;
+
+
+	/// First Row
+	toQuad( corner0, corner0 + colCnt-1, gStart, corner0+1 );		// Starting Quad
+	for(cc=0; cc < gridXLen; cc++){								// In between Quads
+		toQuad( corner0 + 1 + cc, gStart + cc, gStart + cc + 1, corner0 + 2 + cc );
+	}
+	toQuad( corner1-1, gStart + gridXLen, corner1+1, corner1 );	// Ending Quad
+
+	// Between Rows
+	a = gStart;
+	b = gStart + (gridXLen + 1);
+	for(rr=0; rr < gridZLen; rr++){
+		// Start Quad
+		toQuad( eEnd - rr - 1, eEnd - rr, gStart + (gridZLen+1) * rr, gStart + (gridZLen+1) * (rr + 1) );
+
+		// In Between Quads
+		for(cc=0; cc < gridXLen; cc++) toQuad( a++, b++, b, a );
+		a++; b++; // shift to next Row
+
+		// End Quad
+		gPos = gStart + gridXLen;
+		toQuad( gPos + (gridXLen + 1) * (rr+1), gPos + (gridXLen + 1) * rr,  corner1 + 1 + rr, corner1 + 2 + rr );
+	}
+
+
+	// Final Row
+	toQuad( corner3+1, corner3, corner3-1, gEnd - gridXLen );	// Starting Quad
+	for(cc=0; cc < gridXLen; cc++){								// In between Quads
+		toQuad( gEnd - gridXLen + cc, corner3 - 1 - cc, corner3 - 2 - cc, gEnd - gridXLen + cc + 1 );
+	}
+	toQuad( gEnd, corner2+1, corner2, corner2-1 );				// End Quad
+
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	/*
+	let outMin = 0,
+		outMax = colCnt - 1,
+		inMin = topIdx / 4,
+		inMax = topIdx / 4;
+
+	rB = 7;
+	rA = 0;
+	let rZ = rA + xDiv;
+	let rY = rZ + 1;
+
+	console.log( inMin );
+	let cEnd = xDiv - 1;
+	let rEnd = zDiv - 1;
+
+
+	for(rr=0; rr <= 1; rr++){
+		rA = (rr==0)? 0 : outMax - (rr-1);
+		rB = outMax - rr;
+		rZ = xDiv + rr;
+		rY = rZ + 1;
+
+		console.log( rA, rB, rY, rZ );
+
+		for(cc=0; cc <= cEnd; cc++){
+			//a = (cc==0)? rB : inMin + (cc-1);
+
+			if( rr == rEnd )					a = rB - cc;
+			else if( cc == 0 )					a = rB;
+			else 								a = inMin + (cc-1);
+			
+			//b = rA + cc;
+			if( rr == rEnd && cc == 0) 			b = rA;
+			//else if( rr == rEnd && cc == cEnd)	b = 
+			else if ( rr == rEnd && cc != 0)	b = inMin + (cc-1);
+			else 								b = rA + cc;
+
+			//c = (rr==0)? b + 1 : inMin + cc;
+			if( rr == rEnd && cc == cEnd )		c = rZ;
+			else if( rr == 0 )					c = b + 1;
+			else 								c = inMin + cc;
+			
+			//d = (cc == cEnd)? rY : inMin + cc;
+			if( rr == rEnd && cc == cEnd )		d = rY;
+			else if( rr == rEnd ) 				d = rB - 1;
+			else if( cc == cEnd ) 				d = rY;
+			else 								d = inMin + cc;
+
+			faces.push( a, b, c, c, d, a );
+			console.log(rr, "---", a, b, c, d , "cc", cc, cEnd, rZ);
+		}
+	}
+	*/
+
+	/*
+		outMin = 0;
+		outMax = 7;
+		inMin = 9
+		inMax = 9
+
+	    6 5 4
+	    7 9 3
+		0 1 2
+
+	    9 8 7 6
+	   10     5
+	   11     4
+		0 1 2 3
+
+		7 0 1 9
+		9 1 2 3
+
+		6 7 9 5
+		5 9 3 4
+	*/
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return { verts, faces };
+}
+
+
+function RoundedCube( xDiv=2, yDiv=2, zDiv=2, xSize=1, ySize=1, zSize=1 ){
+	const cornerVerts	= 8;
+	let edgeVerts		= ( xDiv + yDiv + zDiv -3) * 4; // 4 edges for each axis, Subtract corner verts for each edge
+	let faceVerts		= (
+		(xDiv-1) * (yDiv-1) +
+		(xDiv-1) * (zDiv-1) +
+		(yDiv-1) * (zDiv-1)
+	) * 2; // Fwd + Top + Back faces, double it to make Left, bottom, Right
+	let vertCnt			= cornerVerts + edgeVerts + faceVerts;
+	let verts = [];
+
+	// Front, Left, Back, Right
+	for(let y=0; y <= yDiv; y++){
+		for(let i=0; i <= xDiv; i++)	verts.push( i, y, 0, 0 );
+		for(let i=1; i <= zDiv; i++)	verts.push( xDiv, y, -i, 0 );
+		for(let i=xDiv-1; i >= 0; i--)	verts.push( i, y, -zDiv, 0 );
+		for(let i=zDiv-1; i > 0; i--)	verts.push( 0, y, -i, 0 );
+	}
+	
+	// Top Cap
+	for(let z=1; z < zDiv; z++){
+		for(let x=1; x < xDiv; x++) verts.push( x, yDiv, -z, 2 );
+	}
+	
+	// Bottom Cap
+	for(let z=1; z < zDiv; z++){
+		for(let x=1; x < xDiv; x++) verts.push( x, 0, -z, 2 );
+	}
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Triangles
+	let quadCnt = ( xDiv * yDiv + xDiv * zDiv + yDiv * zDiv ) * 2;
+	console.log(quadCnt);
+
+	return { verts:verts };
+}
+
+</script><body></body></html>

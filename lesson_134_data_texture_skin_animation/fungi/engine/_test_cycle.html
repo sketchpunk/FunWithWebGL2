@@ -1,0 +1,25 @@
+<!DOCTYPE html><html><head><title>Fungi</title></head><script type="module">
+import App, { AppBuilder } from "./App.js";
+
+//#############################################################################
+(function(){ new AppBuilder()
+	.launch()
+	.download( dl=>dl.addGrp( "shader", "../shaders/VecWColor.txt" ) )
+	.load_scene( true, true )
+	.set_camera()
+	.add_task( init )
+	.render_loop( onFrame )
+	//.render_on_mouse( onFrame )
+	.build().catch( (e)=>console.error("error",e) );
+})();
+
+
+//#############################################################################
+function onFrame( dt, ss ){ App.ecs.sys_run(); }
+
+
+//#############################################################################
+function init(){
+	return true;
+}
+</script><body></body></html>

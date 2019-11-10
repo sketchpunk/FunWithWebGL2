@@ -1,0 +1,649 @@
+<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { AppBuilder }		from "./fungi/engine/App.js";
+import Maths, { Quat, Vec3 }	from "./fungi/maths/Maths.js";
+import XhrPromise				from "./fungi.misc/XhrPromise.js";
+import FungiGLTF, {Gltf} 		from "./fungi.misc/FungiGLTF.js";
+import GltfExport 				from "./fungi.misc/GltfExport.js";
+import Animation				from "./fungi.animation/Animation.js";
+import HumanRig 				from "./fungi.ik2/HumanRig.js";
+import Pose 					from "./fungi.ik2/Pose.js";
+
+/* [[[ PROCESS ]]] ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1. First load up Animation and its Armature.
+2. Then load up the Source Armature and Mesh
+3. Create a new Animation object to store the retargeted animation.
+	- Share the same Time Array
+	- Create new Track array based on the Target Armature Bones
+	- Each Track should have enough space to hold the same amount of frames from the Src Animation.
+4. Loop each frame of the source animation which updates the pose object.
+5. Retarget the pose to the Target Armature Pose
+6. Save the Target Pose into the Target Animation Object by using the same Frame Index of the Source Animation.
+7. Exporting to GTLF
+	- Need to save the Target Armature. Create Skin data, Local Space Bind Pose in Nodes, 
+		Inverse World Space Bind pose stored as matrices in an accessor buffer.
+	- Save animation by creating channels which is track type and samples store the time array and data array
+		for each frame of the animation.
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ */
+
+//#############################################################################
+App.builder()
+	.launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"./fungi/shaders/VecWColor.txt", 
+		"./fungi.armature/shaders/ArmaturePreview.txt", 
+		"./fungi.armature/shaders/ArmatureSkinPhong.txt", 
+	) ) 
+	.load_scene( true, true, true )
+	.set_camera( -50, 10, 3, 0, 0.7, 0 )
+	.add( dl_files )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+
+
+let gIsActive = true;
+let gRigTar, gRigSrc, gSession, gAnimation;
+
+
+async function dl_files(){
+	let dl	= await XhrPromise.get( 
+		"./walking.gltf", "json", "./walking.bin", "arraybuffer",
+		"../shared/models/vegeta.gltf", "json", "../shared/models/vegeta.bin", "arraybuffer",
+	);
+	
+	build_src( dl[0], dl[1] );				// Load Up Animation
+	build_target( dl[2], dl[3] );			// Load up Target Armature/Mesh
+	
+	gSession = new RetargetSession()		// Convert Animation to work on Target
+		.set_rigs( gRigSrc, gRigTar )		// 
+		.set_src_animation( gAnimation )
+		.build();
+
+	export_test();							// Export Animation to GLTF, Then Import it back in.
+	return true;
+}
+
+
+function build_src( json, bin ){
+	let e 		= FungiGLTF.$preview( "src_preview", "Armature", json );
+	gRigSrc		= new HumanRig( e, true );
+	gAnimation	= FungiGLTF.animation( "Armature|mixamo.com|Layer0", json, bin );
+}
+
+
+function build_target( json, bin ){
+	//let e = FungiGLTF.$preview_bind( "src_preview", "Armature", json );
+	//let e = FungiGLTF.$skin( "src_preview", json, bin );
+	let e = FungiGLTF.$skin_bind( "src_preview", json, bin );
+	//let e = FungiGLTF.$debug_bind( "src_preview", json, bin );
+
+	gRigTar = new HumanRig( e )
+		.set_leg_l( ["LeftUpLeg", "LeftLeg"] )
+		.set_leg_r( ["RightUpLeg", "RightLeg"] )
+		.set_arm_l( ["LeftArm", "LeftForeArm"] )
+		.set_arm_r( ["RightArm", "RightForeArm"] )
+		.set_foot( 0, "LeftFoot" )
+		.set_foot( 1, "RightFoot" )
+		.gen_tpose();
+	/**/
+	e.Node.setPos( 1, 0, 0 );
+}
+
+
+//#############################################################################
+function onDraw( dt, ss ){
+	/**/
+	if( gIsActive ){
+
+		//gSession.play_realtime( dt );
+		gSession.play_both( dt );
+		//gSession.play_target( dt );
+		
+
+		if( test_animation ){
+			test_animator
+				.tick( dt )
+				.update( test_animation, test_pose );
+			test_pose.apply();
+
+			//test_animator.update( test_animation, gRigTar.pose_a );
+			//gRigTar.pose_a.apply();
+		}
+	}
+
+	App.ecs.sys_run();
+}
+
+
+//############################################################################
+class Animator{
+	constructor(){
+		this.clock = 0;
+	}
+
+	/////////////////////////////////////////////////////////////////
+	// 
+	/////////////////////////////////////////////////////////////////
+		tick( dt ){ this.clock += dt; return this; }
+		reset( ){ this.clock = 0; return this; }
+
+		key_frame( ti, anim, pose ){
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			if( ti >= anim.frame_cnt ){ console.log("key frame index exceeds total key frames."); return this; }
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			let q		= new Quat(),
+				v		= new Vec3(),
+				qi 		= ti*4,
+				vi 		= ti*3,
+				track;
+
+			for( track of anim.tracks ){
+				if( ti >= anim.times[ track.time_idx ].length ) continue;
+
+				switch( track.type ){
+					case "rot": 
+						Animation.quat_buf_copy( track.data, q, qi );
+						pose.set_bone( track.joint_idx, q ); 
+						break;
+					case "pos": 
+						Animation.vec3_buf_copy( track.data, v, vi );
+						pose.set_bone( track.joint_idx, null, v );
+						break;
+				}
+			}
+		}
+
+		// Run animation and save results to pose object
+		update( anim, pose ){
+			let f_times	= this._frame_times( anim ),
+				q 		= new Quat(),
+				v		= [0,0,0],
+				track, frame;
+
+			for( track of anim.tracks ){
+				if( track.interp == "STEP" ) continue; //TODO, add support for this
+
+				frame = f_times[ track.time_idx ]; // [ FA_IDX, FB_IDX, NORM_TIME ]
+
+				switch( track.type ){
+					case "rot":
+						Animation.quat_buf_blend( track.data, frame[0]*4, frame[1]*4, frame[2], q );
+						pose.set_bone( track.joint_idx, q ); 
+						break;
+					case "pos":
+						Animation.vec3_buf_lerp( track.data, frame[0]*3, frame[1]*3, frame[2], v );
+						pose.set_bone( track.joint_idx, null, v );
+						break;
+				}
+			}
+
+			return this;
+		}
+
+		// Every animation can have multiple shared time tracks.
+		// So we incrmement our animation clock, then for each time
+		// track we find between which two frames does the time exist.
+		// Then we normalized the time between the two frames.
+		// Return: [ [ FA_IDX, FB_IDX, NORM_TIME ], ... ];
+		_frame_times( anim ){
+			// Find the Frames for each group time.
+			let j, i, time, fa, fb, ft,
+				times	= anim.times,
+				rtn		= new Array( anim.times.length ),
+				clock 	= this.clock % anim.time_max;
+
+			for( j=0; j < anim.times.length; j++ ){
+				time = anim.times[ j ];
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Find the first frame that is less then the clock.
+				fa = 0;
+				for( i=time.length-2; i > 0; i-- )
+					if( time[i] < clock ){ fa = i; break; }
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Normalize Time Between Frames
+				fb = fa + 1;
+				ft = ( clock - time[ fa ] ) / ( time[ fb ] - time[ fa ] );
+				//ft = ( data.clock - time[ fa ] ) * frame_inc[ fa ];
+				rtn[ j ] = [ fa, fb, ft ];
+			}
+			return rtn;
+		}
+}
+
+
+//############################################################################
+class RetargetSession{
+	constructor(){
+		this.rig_src	= null;				// Source Armature Rig
+		this.rig_tar	= null;				// Target Armature Rig
+
+		this.anim_src 	= null;				// Source Animation
+		this.anim_tar 	= null;				// Retarged Animation
+
+		this.animator 	= new Animator();	// Run Pose Animations
+		this.bone_map 	= new Array();		// Map Src Bones to Target Bones 
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// retarget cached math objects, Since we're retargeting one bone at
+		// a time, Save time & memory by reusing a few math objects.
+		this.convert	= new Quat();
+		this.rot 		= new Quat();
+		this.pos 		= new Vec3();
+		this.scale 		= new Vec3();
+		this.a			= new Vec3();
+		this.b			= new Vec3();
+	}
+
+	/////////////////////////////////////////////////////////
+	// setters / getters
+	/////////////////////////////////////////////////////////
+		// Set the Source and Target Rigs
+		set_rigs( src, tar ){
+			this.rig_src = src;
+			this.rig_tar = tar;
+			this._auto_bone_map();
+			return this;
+		}
+
+		set_src_animation( anim ){
+			this.anim_src = anim;
+			this._build_target_animation();
+			return this;
+		}
+
+	/////////////////////////////////////////////////////////
+	// Play Animations
+	/////////////////////////////////////////////////////////
+		
+		// Play Final Retargeted Animation
+		play_target( dt ){
+			this.animator
+				.tick( dt )
+				.update( this.anim_tar, this.rig_tar.pose_a );
+			this.rig_tar.apply_pose();
+			return this;
+		}
+
+		// Play Source and Retarted Animation
+		play_both( dt ){
+			this.animator
+				.tick( dt )
+				.update( this.anim_src, this.rig_src.pose_a )
+				.update( this.anim_tar, this.rig_tar.pose_a );
+			this.rig_tar.apply_pose();
+			this.rig_src.apply_pose();
+			return this;
+		}
+
+		// Realtime Retargeting
+		play_realtime( dt ){
+			this.animator
+				.tick( dt )
+				.update( this.anim_src, this.rig_src.pose_a );
+
+			this.rig_src.apply_pose();
+			this.rig_src.update_world();	// Update World Space 
+
+			// Run Retarget on Each Bone.
+			let b;
+			for( b of this.bone_map ){
+				this.retarget_bone( b.src_name, b.tar_name, ( b.src_name == "Hips" ) );
+			}
+
+			this.rig_tar.apply_pose();
+			return this;
+		}
+
+	/////////////////////////////////////////////////////////
+	// configuration
+	/////////////////////////////////////////////////////////
+		// Simple auto mapping, just matches mixamo bone names
+		_auto_bone_map(){
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Get a list of Bones from the Source Animation Rig
+			let b, m, map = {};
+			for( b of this.rig_src.bind_pose.bones ){
+				map[ b.name ] = {
+					src_idx		: b.idx,
+					src_name	: b.name,
+					tar_idx		: -1,
+					tar_name	: "",
+				};
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Loop through Target Rig and find common name with the srr rig
+			for( b of this.rig_tar.bind_pose.bones ){
+				m = map[ b.name ];
+
+				if( !m ){ console.log("Target bone has no source equivalent : ", b.name ); continue; }
+				if( m.tar_idx != -1 ){ console.log("Target bone name is duplicated : ", b.name ); continue; }
+				
+				m.tar_idx	= b.idx;
+				m.tar_name	= b.name;
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Only save map data that has a successful link between
+			// the two animation rigs
+
+			this.bone_map.length = 0;
+			for( b in map ){
+				if( map[b].tar_idx == -1 ){ 
+					//console.log("Source Bone has no target equivalent : ", b);
+					continue;
+				}
+
+				this.bone_map.push( map[b] ) ;
+				delete map[b];
+			}
+		}
+
+		// Find Bone Map by using the Bone Index of the Source Armature
+		_find_bone_map( src_idx ){
+			let b;
+			for( b of this.bone_map ){
+				if( b.src_idx == src_idx ) return b;
+			}
+			return null;
+		}
+
+		// Create Target Animation Object based on the Target Armature and Source Animation.
+		_build_target_animation(){
+			let src_tracks	= this.anim_src.tracks,
+				src_bind	= gRigSrc.bind_pose;
+			
+			this.anim_tar = new Animation();
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Set Time Arrays
+			for( let ary of this.anim_src.times ){
+				// Need to clone the data with its out arraybuffer, else saving won't work correctly because the array might be bound to a bin file
+				this.anim_tar.add_time_array( this._clone_f32( ary ) ); 
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Recreate Tracks with Empty Sized Arrays
+			let st, src_bone, b_map;
+			for( st of src_tracks ){
+				src_bone	= src_bind.bones[ st.joint_idx ];
+				b_map		= this._find_bone_map( src_bone.idx );
+
+				//console.log( st.type, st.time_idx, st.joint_idx, src_bone.idx, src_bone.name, b_map, st );
+
+				this.anim_tar.add_joint_track(
+					st.type, 
+					st.time_idx, 
+					b_map.tar_idx, 
+					st.interp, 
+					new Float32Array( st.data.length )
+				);
+			}
+		}
+
+		// Need to clone Float32Array as a new object with its own ArrayBuffer.
+		// Float32Array from GLTF bin files are attached to that arraybuffer, which
+		// is just a slice of the bin array instead of being an array of itself. This 
+		// can cause issues when trying to export the binary data.
+		_clone_f32( ary ){
+			let i, out = new Float32Array( ary.length );
+			for( i=0; i < ary.length; i++ ) out[ i ] = ary[ i ];
+			return out;
+		}
+
+
+	/////////////////////////////////////////////////////////
+	// 
+	/////////////////////////////////////////////////////////
+		
+		// Run Retargeting and save the result to the target animation object
+		build(){
+			let b, i, frame_cnt = this.anim_src.frame_cnt;
+
+			for( i=0; i < frame_cnt; i++ ){
+				this.animator.key_frame( i, this.anim_src, this.rig_src.pose_a ); // Generate Pose
+				//this.rig_src.apply_pose();
+				this.rig_src.update_world();	// Update World Space 
+
+				// Run Retarget on Each Bone.
+				for( b of this.bone_map ){
+					this.retarget_bone( b.src_name, b.tar_name, ( b.src_name == "Hips" ) );
+				}
+
+				this._save_target_frame( i );
+			}
+
+			return this;
+		}
+
+		// Save the current animated pose into a frame in the animation object.
+		_save_target_frame( i ){
+			let tk, b,
+				ri = i * 4,	// Start Index of Frame for Rotation
+				pi = i * 3;	// Start Index of frame for Position
+
+			// For every track, update the frame[i]
+			for( tk of this.anim_tar.tracks ){
+				b = this.rig_tar.pose_a.bones[ tk.joint_idx ]; // Target Bone
+
+				// Save Local Position/Rotation to the specific frame
+				switch( tk.type ){
+					case "pos":
+						tk.data[ pi ]	= b.local.pos[ 0 ];
+						tk.data[ pi+1 ]	= b.local.pos[ 1 ];
+						tk.data[ pi+2 ]	= b.local.pos[ 2 ];
+						break;
+					case "rot":
+						tk.data[ ri ]	= b.local.rot[ 0 ];
+						tk.data[ ri+1 ]	= b.local.rot[ 1 ];
+						tk.data[ ri+2 ]	= b.local.rot[ 2 ];
+						tk.data[ ri+3 ]	= b.local.rot[ 3 ];
+						break;
+				}
+			}
+		}
+
+		retarget_bone( from_name, to_name, inc_pos=false, y_only=true ){
+			// Pseudo code to retarget Rotations
+			//   shift = from_t.bone.ws.rot.invert * to_t.bone.ws.rot
+			//   dif   = from_t.parent_bone.ws.rot * src_pose.bone.ls.rot
+			//   dif   *= dot( dif, from_t.bone.ws.rot  ) >= 0 ? shift : -shift;
+			//   final_pose.bone.ls.rot = to_t.parent_bone.ws.rot.invert * Dif
+
+			// Pseudo code to retarget ip position
+			//   scale 	 = to_t.ws.pos / from_t.ws.pos;
+			//   pos_dif = ( src.ws.pos - from_t.ws.pos ) * scale;
+			//   final 	 = to_t.ls.pos + pos_dif;
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Get the Main Bones Needed.
+			let a_rig_bind = this.rig_src.bind_pose,
+				b_rig_bind = this.rig_tar.bind_pose,
+				a_rig_pose = this.rig_src.pose_a,
+				b_rig_pose = this.rig_tar.pose_a,
+
+				a_bind = a_rig_bind.get_bone( from_name ),
+				a_pose = a_rig_pose.get_bone( from_name ),
+				b_bind = b_rig_bind.get_bone( to_name ),
+				b_pose = b_rig_pose.get_bone( to_name ),
+
+				ap_bind_rot = ( a_bind.p_idx != null )?
+					a_rig_bind.bones[ a_bind.p_idx ].world.rot :
+					a_rig_bind.root_offset.rot,
+
+				bp_bind_rot = ( b_bind.p_idx != null )?
+					b_rig_bind.bones[ b_bind.p_idx ].world.rot :
+					b_rig_bind.root_offset.rot;
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Create Bind Rotation Difference from FROM -> TO
+			this.convert
+				.from_invert( a_bind.world.rot )
+				.mul( b_bind.world.rot );
+
+			// Isolate bone by using parent's world bind rotation + animated local space rot
+			this.rot.from_mul( ap_bind_rot, a_pose.local.rot );
+
+			// Do Check of the Bone's SRC WS rotation based on Src WS Bind Rotation.
+			if( Quat.dot( this.rot, a_bind.world.rot ) < 0 ) this.convert.negate();
+
+			this.rot
+				.mul( this.convert )			// Move rotation to target bones world space
+				.pmul_invert( bp_bind_rot );	// Convert down to local space
+
+			b_rig_pose.set_bone( b_pose.idx, this.rot );
+
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			if( inc_pos ){
+				// Get Scale   s = to / from
+				this.a.copy( a_bind.world.pos ).near_zero();
+				this.b.copy( b_bind.world.pos ).near_zero();
+				this.scale.from_div( this.b, this.a );
+
+				this.pos
+					.from_sub( a_pose.world.pos, a_bind.world.pos )	// Get the Animation Difference from Bind Pose
+					.mul( this.scale )								// Scale it to fit in TO
+					.add( b_bind.world.pos );						// Add Scaled Difference to TO's Bind Position
+
+				if( y_only ){
+					this.pos[ 0 ] = b_bind.world.pos[ 0 ];
+					this.pos[ 2 ] = b_bind.world.pos[ 2 ]; 
+				}
+
+				b_rig_pose.set_bone( b_pose.idx, null, this.pos );
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			return this;
+		}
+}
+
+
+//############################################################################
+// EXPORT TESTING
+	const OUT_FILE_NAME = "test";
+	let test_animator	= new Animator();
+	let test_animation	= null;
+	let test_entity 	= null;				// Entity / Armature
+	let test_pose 		= null;				// Pose object to save frame animation in.
+	let test_json_text	= null;				// Raw String
+	let test_bin		= null;				// Uint8Array ( Byte Type Array )
+
+	// Main Test Function
+	function export_test( ){
+		// Save Armature and Animation
+		let out = new GltfExport();
+		export_armature( gRigTar.entity, out );
+		export_animation( gSession.anim_tar, out );
+
+		// Save Results
+		test_json_text	= out.output_json( OUT_FILE_NAME );	//console.log( test_json_text );
+		test_bin		= out.output_bin(); // Returns back Uint8Array
+
+		// Now do Import Test on Exported Data
+		// Need an ArrayBuffer, can access it through the TypeArray.buffer
+		// The 
+		let json		= JSON.parse( test_json_text );
+		export_test_preview( json, test_bin.buffer );
+	}
+
+	// Save Armature Data to GTLF
+	function export_armature( e, out ){
+		let arm		= e.Armature,
+			bones	= arm.bones,
+			skin_i	= out.add_skin(),
+			p_idx, b;
+
+		for( b of bones ){
+			p_idx = ( b.Node.parent && b.Node.parent.Bone )? b.Node.parent.Bone.order : null;
+			out.add_joint( skin_i, b.info.name, p_idx, b.Bone.bind.rot, b.Bone.bind.pos, b.Bone.bind.scl, b.Bone.length );
+		}
+
+		out.gen_inverse_bind( skin_i );
+	}
+
+	// Save Animation Data to GLTF
+	function export_animation( anim, out ){
+		let anim_idx	= out.add_animation( anim.frame_cnt, anim.time_max ),
+			j_nodes		= out.skins[0].joints,	// the Joint to Node mapping that exists in Skins
+			time_map	= {},					// Mapping Animation Time Index to Accessor Index
+			i;
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Save Animation Time Arrays, keep track by way of mapping.
+		for( i=0; i < anim.times.length; i++ ){
+			time_map[ i ] = out.add_accessor_buffer( anim.times[i], "SCALAR", anim.times[i].length, true );
+		}
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Save the Tracks as Channels & Samples
+		let track, access_idx, time_idx, samp_idx, node_idx, elm_cnt, d_type, t_path;
+		for( track of anim.tracks ){
+			//.......................................
+			// Type Specific Information
+			switch( track.type ){
+				case "rot":
+					d_type	= "VEC4";
+					elm_cnt	= track.data.length / 4;
+					t_path 	= "rotation";
+					break;
+				case "pos": case "scl":
+					d_type	= "VEC3";
+					elm_cnt	= track.data.length / 3;
+					t_path 	= ( track.type == "pos" )? "translation" : "scale";
+					break;
+			}
+
+			//.......................................
+			// Create Accessor Buffer from Track.data, Then sample with that plus time accessor.
+			// Put then create a channel from the sample.
+			time_idx	= time_map[ track.time_idx ];
+			node_idx 	= j_nodes[ track.joint_idx ];
+			access_idx	= out.add_accessor_buffer( track.data, d_type, elm_cnt );
+			samp_idx	= out.add_anim_sample( anim_idx, time_idx, access_idx, track.interp );
+			
+			out.add_anim_channel( anim_idx, samp_idx, node_idx, t_path );
+		}
+	}
+
+	// Test exported GLTF by re importing it back in for testing.
+	function export_test_preview( json, bin ){
+		let e = FungiGLTF.$preview_bind( "export_test", "Armature", json, bin );
+		e.Node.setPos( -1, 0, 0 );
+
+		test_entity		= e;
+		test_animation	= FungiGLTF.animation( "Default", json, bin );
+		test_pose 		= new Pose( e.Armature );
+
+		e.Draw.items.push( gRigTar.entity.Draw.items[0] );
+
+		//console.log( test_animation );
+		//console.log( gAnimation );
+		//console.log( gSession.anim_tar );
+	}
+
+	window.dl_json = function( o ){
+		let blob	= new Blob( [test_json_text], {type: "octet/stream"} ); // Create a Blob
+		let url 	= window.URL.createObjectURL( blob );					// Create Url that can be used in a link
+		o.href		= url;													// Update link with Data Url
+		o.target	= "_blank";												// Set target to "open new tab"
+		o.download 	= OUT_FILE_NAME + ".gltf";								// Set file name to download as.
+	}
+
+	window.dl_bin = function( o ){
+		let blob	= new Blob( [test_bin], {type: "octet/stream"} );		// OK to use Uint8Array to keep data as Bytes
+		let url 	= window.URL.createObjectURL( blob );
+		o.href		= url;
+		o.target	= "_blank";
+		o.download 	= OUT_FILE_NAME + ".bin";
+	}
+
+</script><body>
+<div style="position:fixed; top:5px; left:5px; font-size:14px; z-index:1000; font-family:arial; font-weight:bold">
+	<a href="#" onClick="dl_json( this );" style="color:white;">Download JSON File</a> -- <a href="#" style="color:white;" onClick="dl_bin( this );">Download JSON Bin</a>
+</div>
+</body></html>

@@ -1,0 +1,440 @@
+-<!DOCTYPE html><html><head><title></title></head><script type="module">
+import App, { Shader, Material, gl }	from "./fungi/engine/App.js";
+import Maths, { Quat, Vec3 }	from "./fungi/maths/Maths.js";
+import DualQuat 				from "./fungi/maths/DualQuat.js";
+import XhrPromise				from "./fungi.misc/XhrPromise.js";
+import FungiGLTF, {Gltf} 		from "./fungi.misc/FungiGLTF.js";
+import Animation				from "./fungi.animation/Animation.js";
+import Pose 					from "./fungi.ik2/Pose.js";
+
+
+/*[[[ PROCESS ]]] ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+1. Setup a custom shader designed to read a matrix of Dual Quaternions from Data Texture.
+2. Need a material for shader, main use is to link the texture buffer
+3. Download and Setup Armature Mesh
+4. Download Animation 
+5. Convert Animation data into something usable in a Texture Buffer
+	- There is several ways to setup a pixel of a texture, but what we
+	  need is a texture to hold RGBA Pixels made up of 32 Bit Floats.
+	
+	- This means each pixel is made up for 4 Floats.
+
+	- We need to store a Dual Qaternion Matrix, each DQ is made up of
+	  8 Floats. So to save in a texture, each DQ needs 2 pixels of storage.
+
+	- The matrix grid is designed like so:
+	--- Each Pixel Row will represent a single bone animation.
+	--- We will access each row by using the Y coord of the texture.
+
+	--- Each row.y MUST... MUST equal each bone's index / order number.
+	----- Incase you dont remember. BONES exist in an array and each vertex
+	      uses a_boneIndex.xyzw to tell it which bone indices affects it, limited to 4 bones max ( XYZW )
+	
+	--- Each Pixel Column represents a pose frame from the animation
+	----- Each frame is represented as a single DQ which is stored in 2 Pixels.
+	----- We will access each column with the X Coord of the texture.
+	----- Since Each frame is a DQ that is stored as 2 Pixels, we access it as X = frame_index * 2
+	----- Each frame's DQ is the World Space offset from the Bind Pose. ws_offset = ( ws_pose * inverted_ws_bind_pose )
+
+6. Create Texture out of data and link it to material
+7. RUN !
+
+REFERENCES
+- https://webgl2fundamentals.org/webgl/lessons/webgl-skinning.html
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; */
+
+
+//#############################################################################
+App.builder()
+	.launch()
+	.load_armature()
+	.download( dl=>dl.addGrp( "shader", 
+		"./fungi/shaders/VecWColor.txt", 
+		"./fungi.armature/shaders/ArmaturePreview.txt", 
+		//"../fungi.armature/shaders/ArmatureSkinPhong.txt", 
+	) ) 
+	.load_scene( true, true, true )
+	.set_camera( -10, 10, 2.5, 0, 0.7, 0 )
+	.add( dl_files )
+	.render_loop( onDraw )
+	.build().catch( (e)=>console.error("error",e) );
+
+function onDraw( dt, ss ){ App.ecs.sys_run(); }
+
+async function dl_files(){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// SHADER & MATERIALS
+	let json	= Shader.parseInline( "inline_shader" ),
+		shader	= Shader.buildFromJson( json );
+
+	if( !shader ) return false;
+
+	let mat = Material.build( shader, json.materials[ 0 ] );
+	
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// LOAD ANIMATION / ARMATURE / MESH
+	let dl	= await XhrPromise.get( 
+		"./test.gltf", "json", "./test.bin", "arraybuffer",
+		"../shared/models/vegeta.gltf", "json", "../shared/models/vegeta.bin", "arraybuffer", //files/models/
+	);
+
+	//let e		= FungiGLTF.$debug_bind( "src_preview", dl[2], dl[3], "Armature", "SkinTexture" ); //ArmatureSkinPhong
+	let e		= FungiGLTF.$skin_bind( "src_preview", dl[2], dl[3], "Armature", "SkinTexture" ); //ArmatureSkinPhong
+	let anim	= FungiGLTF.animation( "Default", dl[0], dl[1] );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// CONVERT ANIMATION DATA TO TEXTURE DATA
+	let info	= animation_to_texture( e, anim )
+	let tex		= new_data_texture( info[0], info[1], info[2] );
+
+	mat.add_uniform( "u_tex01", tex );	// Link Texture Buffer to Shader's Uniform like any texture
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return true;
+}
+
+
+//############################################################################
+class Animator{
+	constructor(){
+		this.clock = 0;
+	}
+
+	/////////////////////////////////////////////////////////////////
+	// 
+	/////////////////////////////////////////////////////////////////
+		tick( dt ){ this.clock += dt; return this; }
+		reset( ){ this.clock = 0; return this; }
+
+		key_frame( ti, anim, pose ){
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			if( ti >= anim.frame_cnt ){ console.log("key frame index exceeds total key frames."); return this; }
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			let q		= new Quat(),
+				v		= new Vec3(),
+				qi 		= ti*4,
+				vi 		= ti*3,
+				track;
+
+			for( track of anim.tracks ){
+				if( ti >= anim.times[ track.time_idx ].length ) continue;
+
+				switch( track.type ){
+					case "rot": 
+						Animation.quat_buf_copy( track.data, q, qi );
+						pose.set_bone( track.joint_idx, q ); 
+						break;
+					case "pos": 
+						Animation.vec3_buf_copy( track.data, v, vi );
+						pose.set_bone( track.joint_idx, null, v );
+						break;
+				}
+			}
+		}
+
+		// Run animation and save results to pose object
+		update( anim, pose ){
+			let f_times	= this._frame_times( anim ),
+				q 		= new Quat(),
+				v		= [0,0,0],
+				track, frame;
+
+			for( track of anim.tracks ){
+				if( track.interp == "STEP" ) continue; //TODO, add support for this
+
+				frame = f_times[ track.time_idx ]; // [ FA_IDX, FB_IDX, NORM_TIME ]
+
+				switch( track.type ){
+					case "rot":
+						Animation.quat_buf_blend( track.data, frame[0]*4, frame[1]*4, frame[2], q );
+						pose.set_bone( track.joint_idx, q ); 
+						break;
+					case "pos":
+						Animation.vec3_buf_lerp( track.data, frame[0]*3, frame[1]*3, frame[2], v );
+						pose.set_bone( track.joint_idx, null, v );
+						break;
+				}
+			}
+
+			return this;
+		}
+
+		// Every animation can have multiple shared time tracks.
+		// So we incrmement our animation clock, then for each time
+		// track we find between which two frames does the time exist.
+		// Then we normalized the time between the two frames.
+		// Return: [ [ FA_IDX, FB_IDX, NORM_TIME ], ... ];
+		_frame_times( anim ){
+			// Find the Frames for each group time.
+			let j, i, time, fa, fb, ft,
+				times	= anim.times,
+				rtn		= new Array( anim.times.length ),
+				clock 	= this.clock % anim.time_max;
+
+			for( j=0; j < anim.times.length; j++ ){
+				time = anim.times[ j ];
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Find the first frame that is less then the clock.
+				fa = 0;
+				for( i=time.length-2; i > 0; i-- )
+					if( time[i] < clock ){ fa = i; break; }
+
+				//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				// Normalize Time Between Frames
+				fb = fa + 1;
+				ft = ( clock - time[ fa ] ) / ( time[ fb ] - time[ fa ] );
+				//ft = ( data.clock - time[ fa ] ) * frame_inc[ fa ];
+				rtn[ j ] = [ fa, fb, ft ];
+			}
+			return rtn;
+		}
+}
+
+
+//############################################################################
+
+function new_data_texture( w, h, data ){
+	let tex = gl.ctx.createTexture();
+	
+	gl.ctx.bindTexture( gl.ctx.TEXTURE_2D, tex );
+	gl.ctx.texParameteri( gl.ctx.TEXTURE_2D, gl.ctx.TEXTURE_MIN_FILTER, gl.ctx.NEAREST ); // Turn off Filtering for exact pixel selection
+	gl.ctx.texParameteri( gl.ctx.TEXTURE_2D, gl.ctx.TEXTURE_MAG_FILTER, gl.ctx.NEAREST );
+	gl.ctx.texImage2D(
+	    gl.ctx.TEXTURE_2D,
+	    0,          	// level
+	    gl.ctx.RGBA32F, 
+	    w,          	// 
+	    h,   			// 
+	    0,          	// border
+	    gl.ctx.RGBA,    // format
+	    gl.ctx.FLOAT,   // type
+	    data
+	);
+
+	gl.ctx.bindTexture( gl.ctx.TEXTURE_2D, null );
+	return tex;
+}
+
+function animation_to_texture( entity, anim ){
+	let animator	= new Animator(),
+		pose 		= new Pose( entity.Armature ),
+		bones 		= entity.Armature.bones,
+		bone_cnt 	= bones.length,
+		frame_cnt	= anim.frame_cnt,
+		pixel_w		= frame_cnt * 2,		// Each frame is Dual Quat, need 2 pixels to store.
+		pixel_h 	= bones.length,			// Each bone is a pixel row
+		f_row_len	= pixel_w * 4,			// How many floats make up one row of pixels in texture
+		dq 			= new DualQuat(),		// Calc DQ World Space Offset
+		i, ii, j, jj, b, p;
+
+	// Need to create a buffer to store all the animation data.
+	// Bone count is how many rows we need, columns are total frames times 2 (2 pixels per frame)
+	// Each Pixel requires 4 Floats (RGBA). So total Pixels * 4 floats.
+	let out = new Float32Array( pixel_w * pixel_h * 4 );
+
+	for( i=0; i < frame_cnt; i++ ){					// Loop through Every Frame in Animation
+		animator.key_frame( i, anim, pose );		// Generate Pose
+		pose.update_world();						// Update World Space 
+		ii = i * 8;									// Every Frame is 8 Floats Long, So starting index for each frame
+
+		for( j=0; j < bone_cnt; j++ ){				// Loop through all the bones, each bone is a row
+			b 	= bones[ j ].Bone;					// Get Bone Component, Need Inverse Bind Pose
+			p 	= pose.bones[ j ];					// Get Pose Bone that was just animated.
+			jj	= ii + j * f_row_len;				// Starting Index for Bone DA Frame Data
+
+			dq
+				.set( p.world.rot, p.world.pos )	// Create DQ out of Pose World Space Rot+Pos
+				.mul( b.dqBindPose );				// Mul with Inverse Bind Pose to get WS Offset
+
+			out[ jj+0 ] = dq[ 0 ];					// Save DQ Offset to Buffer
+			out[ jj+1 ] = dq[ 1 ];
+			out[ jj+2 ] = dq[ 2 ];
+			out[ jj+3 ] = dq[ 3 ];
+			out[ jj+4 ] = dq[ 4 ];
+			out[ jj+5 ] = dq[ 5 ];
+			out[ jj+6 ] = dq[ 6 ];
+			out[ jj+7 ] = dq[ 7 ];
+		}
+	}
+
+	// Return Tuple, Texture Size and Data
+	return [ pixel_w, pixel_h, out ];
+}
+
+</script><body>
+
+<script id="inline_shader" type="plain/text">
+<shader>{
+	"name"		: "SkinTexture",
+	"ubo"		: [ "UBOGlobal", "UBOModel", "UBOArmature", "UBOLighting" ],
+	"uniforms":[
+		{ "name":"uBaseColor", "type":"rgba" },
+		{ "name":"u_tex01",		"type":"sampler2D" }
+	]
+}<\shader>
+	
+<materials>[
+	{ "name":"SkinTexture",	"uniforms":[
+		{ "name":"uBaseColor", "value": "ff7f7fff" }
+	], "options":{ "cullFace": true }}
+]<\materials>
+	
+<vertex>
+#version 300 es
+	layout(location=0) in vec4 a_position;
+	layout(location=1) in vec3 a_norm;
+	layout(location=2) in vec2 a_uv;
+
+	layout(location=8) in vec4 a_boneIndex;
+	layout(location=9) in vec4 a_boneWeight;
+
+	uniform UBOGlobal{
+		mat4	projViewMatrix;
+		vec3	cameraPos;
+		float	globalTime;
+		vec2	screenSize;
+		float	deltaTime;
+	};
+
+	uniform UBOModel{
+		mat4 	modelMatrix;
+		mat3	normalMatrix;
+	};
+
+	uniform UBOArmature{
+		mat2x4[90]	bones;
+		vec3[90]	scale;
+		int 		boneCount;
+	} Arm;
+
+	uniform sampler2D u_tex01;
+
+	const float u_frame_cnt = 32.0;
+	const float u_anim_time = 1.0333333015441895;
+
+	out vec3 v_worldPos;
+	out vec3 v_cameraPos;
+
+	//#####################################################################
+
+	// Transform Vector by using a Dual Quaternion, dq * vec3
+	vec3 dq_mul_vec(mat2x4 dq, vec3 v){
+		vec4 Qr 	= dq[0].xyzw; 														// real (rot)
+		vec4 Qd 	= dq[1].xyzw; 														// dual (trans)
+		vec3 pos	= v + cross(2.0 * Qr.xyz, cross(Qr.xyz, v) + Qr.w * v);				// Rotate Vector
+		vec3 tran	= 2.0 * (Qr.w * Qd.xyz - Qd.w * Qr.xyz + cross(Qr.xyz, Qd.xyz));	// Pull out Translation from DQ
+		return pos + tran;																// Move rotated vector
+	}
+
+	// Pull out Dual Qaternion from Texture : 2 Pixel Fetches starting at specific x and y coord
+	mat2x4 get_dq_tex( sampler2D tex, int x, int y ){
+		return mat2x4( 
+			texelFetch( tex, ivec2( x, y ), 0 ), 
+			texelFetch( tex, ivec2( x+1, y ), 0 )
+		);
+	}
+
+	// Do Bone Transform, 
+	vec3 dq_bone_texture( vec3 pos, vec4 bIndex, vec4 bWeight, int x ){
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// NORMALIZE DATA FIRST
+		int a = int( bIndex.x ),	// Get all 4 possible bone indices for vertex.
+			b = int( bIndex.y ),
+			c = int( bIndex.z ),
+			d = int( bIndex.w );
+
+		// Normalize our Vertex Bone Weight - 1 Div, 4 Mul, instead of 4 Div.
+		bWeight *= 1.0 / (bWeight.x + bWeight.y + bWeight.z + bWeight.w); 
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Get the DQ for each possible bone, scale it down by weight
+		mat2x4 dq_sum =	get_dq_tex( u_tex01, x, a ) * bWeight.x +
+						get_dq_tex( u_tex01, x, b ) * bWeight.y +
+						get_dq_tex( u_tex01, x, c ) * bWeight.z +
+						get_dq_tex( u_tex01, x, d ) * bWeight.w;
+
+		// Normalize DQ by the length of the Quaternion
+		dq_sum /= length( dq_sum[0] ); 
+
+		// Apply Final DQ on vertex position
+		return dq_mul_vec( dq_sum, pos );
+	}
+
+	//#####################################################################
+
+	void main(void){
+		float time		= mod( globalTime, u_anim_time );	// Truncate Global Time between 0 and total seconds
+		float ntime		= time / u_anim_time;				// Normalize Time
+		float frame		= u_frame_cnt * ntime;				// Figure out which frame ( or between 2 frames)
+		int pixel_x		= int( floor( frame ) ) * 2; 		// Floor to get starting frame, mul by two pixels per DQ for texture x coord
+
+		vec3 pos 		= dq_bone_texture( a_position.xyz, a_boneIndex, a_boneWeight, pixel_x );
+		vec4 wpos		= vec4( pos , 1.0 );
+
+		v_worldPos		= wpos.xyz;
+		v_cameraPos		= cameraPos;
+
+		gl_Position 	= projViewMatrix * wpos;
+	}
+<\vertex>
+
+<fragment>
+	#version 300 es
+	precision mediump float;
+
+	uniform UBOLighting{
+		vec3 lightPosition;
+		vec3 lightDirection;
+		vec3 lightColor;
+	};
+
+	uniform vec4 uBaseColor;
+
+	in vec3 v_cameraPos;
+	in vec3 v_worldPos;
+
+	out vec4 oFragColor;
+
+	//const vec3 uBaseColor			= vec3(1.0, 0.498, 0.498); //ff 7f 7f
+	//const vec3 uBaseColor			= vec3(0.95, 0.95, 0.95); //ff 7f 7f
+	const float uAmbientStrength	= 0.5;
+	const float uDiffuseStrength	= 0.5;
+	const float uSpecularStrength	= 0.2f;	//0.15
+	const float uSpecularShininess	= 1.0f; //256.0
+
+	vec4 phongLight(vec3 norm, vec3 vertPos, vec3 camPos){
+		//Ambient Lighting
+		vec3 cAmbient		= lightColor * uAmbientStrength;
+		
+		//Diffuse Lighting
+		vec3 lightVector	= normalize(lightPosition - vertPos);	//light direction based on pixel world position
+		float diffuseAngle	= max( dot(norm,lightVector) ,0.0);		//Angle between Light Direction and Pixel Direction (1==90d)
+		vec3 cDiffuse		= lightColor * diffuseAngle * uDiffuseStrength;
+
+		//Specular Lighting
+		vec3 camVector		= normalize(camPos - vertPos);		//Camera Direction based on pixel world position
+		vec3 reflectVector	= reflect(-lightVector, norm);		//Reflective direction of line from pixel direction as pivot.
+		float specular		= pow( max( dot(reflectVector,camVector) ,0.0), uSpecularShininess ); //Angle of reflected light and camera eye
+		vec3 cSpecular		= lightColor * specular * uSpecularStrength;
+
+		//Final Color
+		return vec4(uBaseColor.rgb * (cAmbient + cDiffuse + cSpecular), uBaseColor.a);
+	}
+
+	vec3 lowPolyNormal(vec3 vertPos){  //Calc the Normal of the Rasterizing Pixel
+		return normalize( cross( dFdx(vertPos), dFdy(vertPos) ) );
+	}
+
+	void main(void){
+		oFragColor = phongLight( lowPolyNormal(v_worldPos) , v_worldPos, v_cameraPos);
+		//oFragColor = vec4(0.0, 0.0, 0.0, 1.0);
+	}
+<\fragment>
+</script>
+
+</body></html>
