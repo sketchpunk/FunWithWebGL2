@@ -65,8 +65,8 @@ class Downloader{
 		}
 
 		// Easier to pass in group of shaders, so first arg is the handler, then every arg after is just a file to download.
-		addGrp( handler, file ){
-			for( let i=1; i < arguments.length; i++ ) this.add( handler, arguments[ i ] );
+		addGrp( handler, ...files ){
+			files.forEach(f => this.add(handler, f));
 			return this;
 		}
 
