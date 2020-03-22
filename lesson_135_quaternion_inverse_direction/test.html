@@ -1,0 +1,48 @@
+<!DOCTYPE html><script type="module">
+import App,{Quat,Vec3,Maths}	from "./fungi/App.js";
+import FacedCube				from "./fungi/geo/FacedCube.js";
+
+//#####################################################
+App.builder( true )
+	.set_camera( 45, 10, 4, 0, 0.75, 0 )
+	.add( init )
+	.render_on_mouse()
+	.build();
+
+//#####################################################
+function init( x ){
+	App.Debug.set_depth_test( true );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let e	= FacedCube(),
+		l	= e.Node.local;
+	e.Node.set_scl( 0.8 ).set_pos( 0.0, 0.5, 0 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//e.Node.rot_by( 90 ); // Simple Test
+	e.Node.rot_by( 60 ).rot_by( -45, "x" ).rot_by( -45, "z" ); // Complex Test
+
+	let qi = Quat.invert( l.rot );
+	let alt_fwd = Vec3.transform_quat( Vec3.FORWARD, qi );
+
+	l.rot.pmul_axis_angle( [0,1,0], Maths.to_rad(90) );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	let cube_fwd = Vec3.transform_quat( Vec3.FORWARD, l.rot );
+	let cube_alt = Vec3.transform_quat( alt_fwd, l.rot );
+	App.Debug.ln( Vec3.add( l.pos, Vec3.ZERO), Vec3.add( l.pos, cube_fwd ), "yellow" );
+	App.Debug.ln( Vec3.add( l.pos, Vec3.ZERO), Vec3.add( l.pos, cube_alt ), "green" );
+
+	return true;
+}
+
+/*
+Quaternion Inverse Direction ( Lack for a Better Name )
+
+The use for it is when you need to create this universal direction, but you can not
+really change the orientation of the objects your dealing with, like bones in a tpose.
+So by creating this alternate direction, allows you to define a specific direction for
+all your objects to follow;
+*/
+
+</script><page-layout></page-layout>
