@@ -11,7 +11,7 @@ objects exist in.
 
 
 ### Links
-* [Lesson on Youtube](https://youtu.be/QF4Kk4KQoII)
+* [Lesson on Youtube](https://youtu.be/hT5asIUBoX8)
 * [Youtube Series PlayList](https://www.youtube.com/playlist?list=PLMinhigDWz6emRKVkVIEAaePW7vtIkaIF)
 * [Twitter](https://twitter.com/SketchpunkLabs)
 * [Patreon](https://www.patreon.com/sketchpunk)
