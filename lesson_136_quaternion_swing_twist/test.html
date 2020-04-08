@@ -1,0 +1,83 @@
+<!DOCTYPE html><script type="module">
+import App,{Quat,Vec3,Maths}	from "./fungi/App.js";
+import FacedCube				from "./fungi/geo/FacedCube.js";
+
+//#####################################################
+App.builder( true )
+	.set_camera( 0, 10, 4, 0, 0.75, 0 )
+	.add( init )
+	.render_on_mouse()
+	.build();
+
+/* http://allenchou.net/2018/05/game-math-swing-twist-interpolation-sterp/ */
+
+//#####################################################
+function init( x ){
+	App.Debug.set_depth_test( true );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Visualize Starting Position
+
+	//------------------------
+	// Source Item
+	let box_a	= FacedCube();
+	let la		= box_a.Node.local;	// Reference to Local Transform A
+	box_a.Node.set_scl( 0.6 ).set_pos( -1.2, 0.6, 0 );
+
+	//box_a.Node.rot_by( 90 ).rot_by( 90, "z" ); // 200 to test negative
+	box_a.Node.rot_by( 60 ).rot_by( -45, "x" ).rot_by( -45, "z" ); 
+
+	//------------------------
+	// Target Item
+	let box_b	= FacedCube();
+	let lb		= box_b.Node.local;	// Reference to Local Transform B
+	box_b.Node.set_scl( 0.6 ).set_pos( 1.2, 0.6, 0 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Step 1 - Figure out Swing Rotation - Forward is where we based swing on
+
+	let fwd_a	= Vec3.transform_quat( Vec3.FORWARD, la.rot );	// Get the Current FWD Dir of our Source
+	let fwd_b	= Vec3.transform_quat( Vec3.FORWARD, lb.rot );	// Get the Current FWD Dir of our Target
+	let swing	= Quat.unit_vecs( fwd_b, fwd_a );				// Create rotation that goes from Our Target to Source.
+	//lb.rot.pmul( swing );										// PreMultiply our swing rotation to our target's current rotation.
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Step 2 - Figure out Twist Rotation
+
+	let up_a 	= Vec3.transform_quat( Vec3.UP, la.rot );		// Get the Current UP Dir of our Source
+	let up_b	= Vec3.transform_quat( Vec3.UP, lb.rot );		// Get the Current up Dir of our Target
+	let ang 	= Vec3.angle( up_a, up_b );
+	let limit 	= 0.01 * Math.PI / 180;
+
+	if( ang <= limit ) ang = 0;
+	else{
+		let left_a = Vec3.cross( up_a, fwd_a );
+		
+		App.Debug.ln( la.pos, Vec3.add( la.pos, left_a ), "red" ).pnt( Vec3.add( la.pos, left_a ), "red", 0.1 );
+
+		if( Vec3.dot( left_a, up_b ) < 0 ) ang = -ang;
+	}
+
+	console.log( ang );
+	
+	let twist = Quat.axis_angle( fwd_a, ang );
+	//lb.rot.pmul( twist );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Visualize Direction
+	let fwda	= Vec3.transform_quat( Vec3.FORWARD, la.rot ).add( la.pos );
+	let upa		= Vec3.transform_quat( Vec3.UP, la.rot ).add( la.pos );
+	let fwdb	= Vec3.transform_quat( Vec3.FORWARD, lb.rot ).add( lb.pos );
+	let upb		= Vec3.transform_quat( Vec3.UP, lb.rot ).add( lb.pos );
+
+	App.Debug
+			.ln( la.pos, fwda, "green" ).pnt( fwda, "green", 0.1 )
+			.ln( la.pos, upa, "yellow" ).pnt( upa, "yellow", 0.1 )
+
+			.ln( lb.pos, fwdb, "green" ).pnt( fwdb, "green", 0.1 )
+			.ln( lb.pos, upb, "yellow" ).pnt( upb, "yellow", 0.1 );
+
+	return true;
+}
+
+</script><page-layout></page-layout>
