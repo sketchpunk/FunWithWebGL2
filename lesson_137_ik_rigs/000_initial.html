@@ -1,0 +1,177 @@
+<!DOCTYPE html><script type="module">
+import App							from "./fungi/App.js";
+import Maths,{Vec3,Quat,Transform}	from "./fungi/maths/Maths.js";
+
+import XhrQueue 					from "./fungi/lib/XhrQueue.js";
+import GltfUtil, {Gltf}				from "./fungi/lib/GltfUtil.js";
+import Animation					from "./fungi/lib/Animation.js";
+
+import PoseAnimator					from "./fungi.armature/PoseAnimator.js";
+import IKTarget 					from "./fungi.armature/IKTarget.js";
+import IKRig						from "./fungi.armature/IKRig.js";
+
+//#####################################################
+App.builder( true )
+	.use_armature()
+	.load_shaders( "../fungi.armature/LowPolySkin.js" )
+	.set_camera( 0, 10, 4, 0, 0.75, 0 )
+	.add( init )
+	//.render_loop( on_draw )
+	.render_on_mouse()
+	.build();
+
+/* NOTES
+1. What is an IK Rig? You can look at a rig as a collection of bone and groups (chains). IK
+is all about dynamiclly moving something, like a hand reaching out for something or a leg 
+bending correctly to have one foot stepping on a rock while the other is touching the ground.
+
+2. The way to represent IK Data can vary a bit, at its core its just a point in 3D Space that
+you want to reach. As you dive deeper, sometimes its better to represent things using Directions
+instead and in many cases you need Two Directions to determine 1 IK operation.
+
+3. One of the big things thats needed to make IK Rigs work well is to have a TPOSE. If all the
+skeletons have the same pose with bones straighten and aligned to some axis, it makes it
+very easy to share data and simplifies your system. Doesn't mean all your meshes need to have
+a Resting TPose... Just a Pose of T is enough, like you can have an resting APose, just 
+create an animation of one frame and move things to make a TPose, for example.
+*/
+
+// #region INITIALIZE
+
+let gSrc, gModelA, gModelB, gAnimate;
+function on_draw( dt, ss ){ gAnimate( dt * 1.0 ); }
+
+async function init(){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Download Resources
+	let dl = await XhrQueue.url( "../shared" )
+		.grp( "src", "anim/Walking.gltf", "json", "anim/Walking.bin", "bin" )
+		.grp( "ma", "models/vegeta.gltf", "json", "models/vegeta.bin", "bin" )
+		.grp( "mb", "models/robo_trex.gltf", "json", "models/robo_trex.bin", "bin" )
+		.then();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Load Resources
+	if( dl.src ) gAnimate = load_src( dl.src.json, dl.src.bin );
+	if( dl.ma ) load_mesh_a( dl.ma.json, dl.ma.bin );
+	if( dl.mb ) load_mesh_b( dl.mb.json, dl.mb.bin );
+	//gAnimate( 0.1 );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	return true;
+}
+
+function load_src( json, bin ){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Load Animation Armature, setup IK Rig For it.
+	// NOTE: Normally Need a TPose, but the Animation has a T Pose By Default.
+	let e		= GltfUtil.get_bone_view( "src", json, bin );
+	let rig 	= e.add_com( "IKRig" )
+		.init( null, true, IKRig.ARM_MIXAMO )
+		.recompute_from_tpose(); // Mesh requires a few bits to be recomputed because of Mixamo Scaling
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Load First Animation in GLTF, and Setup Animator
+	let anim	= new Animation( Gltf.get_animation( json, bin ), true );
+	let pm		= new PoseAnimator();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Return a Closure that will run the IK Retarget Animation
+	gSrc  = e;
+	return ( dt )=>{
+		//-----------------------------
+		// ANIMATE SOURCE POSE
+		pm.tick( dt ).update( anim, rig.pose );	// Update Pose with next frame
+		rig.apply_pose();						// Apply Pose to Armature Bones
+	}
+}
+
+function load_mesh_a( json, bin ){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Rendering Entity
+	let mat		= App.new_mat( "LowPolySkin", {color:"#ffffff"} );
+	let e		= GltfUtil.get_debug_view( "target_a", json, bin, mat );
+	//let e		= GltfUtil.get_bone_view( "target_a", json, bin );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// For IK, We need a TPose. Use custom data stored in 
+	// GLTF to load up the TPose for the Model
+	let tpose	= GltfUtil.get_pose( e, json, "tpose", true );
+	let rig 	= e.add_com( "IKRig" ).init( tpose, false );
+	tpose.apply();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Misc Settings
+	rig.points.head.idx = rig.points.neck.idx;	// Lil hack cause Head Isn't Skinned Well.
+	e.Node.set_pos( 1, 0, 0 );					// Move it to the Left, So it doesn't block src.
+	gModelA = e;								// Save for Global Access
+}
+
+function load_mesh_b( json, bin ){	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Rendering Entity
+	let mat		= App.new_mat( "LowPolySkin", {color:"#ffffff"} );
+	let e		= GltfUtil.get_debug_view( "target_b", json, bin, mat );
+	// let e		= GltfUtil.get_bone_view( "target_b", json, bin );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Robo Rex has a unique skeleton, so there is no default Rig function for it
+	// So that means we need to defined the Points and Chains of the Rig.
+	let tpose	= GltfUtil.get_pose( e, json, "tpose", true );
+	let rig 	= e
+		.add_com( "IKRig" )
+		.init( tpose, false, 0 )
+
+		.add_point( "hip", "hip" )
+		.add_point( "head", "face_joint" )
+		.add_point( "foot_l", "LeftFoot" )
+		.add_point( "foot_r", "RightFoot" )
+
+		.add_point( "wing_l", "left_wing" )
+		.add_point( "wing_r", "right_wing" )
+
+		.add_chain( "leg_r", [ "RightUpLeg", "RightKnee", "RightShin" ], "RightFoot", "three_bone" ) //"z", 
+		.add_chain( "leg_l", [ "LeftUpLeg", "LeftKnee", "LeftShin" ], "LeftFoot", "three_bone" ) // "z", 
+		.add_chain( "spine", [ "Spine", "Spine1" ] )
+		.add_chain( "tail", ["tail_1","tail_2","tail_3","tail_4","tail_5","tail_6","tail_7"] )
+		.set_leg_lmt( null, -0.1 )
+	;
+
+	// Using Quaternion Inverse Direction to set UP and FORWARD Direction
+	// Since leg bones point downward, we define Down as the IK FORWARD Direction.
+	// Then we use forward for IK UP, since thats the direction the Knees point.
+	// This follows the idea of Swing & Twist, IK FORWARD is our Swing Vector, IK UP is our Twist Vector
+	rig.chains.leg_l.set_alt( Vec3.DOWN, Vec3.FORWARD, rig.tpose ); // ( fwd, up, tpose )
+	rig.chains.leg_r.set_alt( Vec3.DOWN, Vec3.FORWARD, rig.tpose );
+	tpose.apply();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Misc Settings
+	e.Node.set_pos( -1.0, 0, 0 ); // Move it to the Left, So it doesn't block src.
+	gModelB = e;
+}
+
+// #endregion ///////////////////////////////////////////
+
+// #region IK CLASSES
+
+// Hold the IK Information, then apply it to a Rig
+class IKPose{
+	constructor(){
+	}
+
+	apply_rig( rig ){
+	}
+}
+
+// Read the current pose of a Rig then compute data to be saved to IK Pose.
+class IKCompute{
+}
+
+// How to visualize the IK Pose Informaation to get an Idea of what we're looking at.
+class IKVisualize{
+}
+
+// #endregion ///////////////////////////////////////////
+
+</script><page-layout></page-layout>

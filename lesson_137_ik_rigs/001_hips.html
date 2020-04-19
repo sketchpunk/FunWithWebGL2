@@ -1,0 +1,329 @@
+<!DOCTYPE html><script type="module">
+import App							from "./fungi/App.js";
+import Maths,{Vec3,Quat,Transform}	from "./fungi/maths/Maths.js";
+
+import XhrQueue 					from "./fungi/lib/XhrQueue.js";
+import GltfUtil, {Gltf}				from "./fungi/lib/GltfUtil.js";
+import Animation					from "./fungi/lib/Animation.js";
+
+import PoseAnimator					from "./fungi.armature/PoseAnimator.js";
+import IKTarget 					from "./fungi.armature/IKTarget.js";
+import IKRig						from "./fungi.armature/IKRig.js";
+
+//#####################################################
+App.builder( true )
+	.use_armature()
+	.load_shaders( "../fungi.armature/LowPolySkin.js" )
+	.set_camera( 0, 10, 4, 0, 0.75, 0 )
+	.add( init )
+	.render_loop( on_draw )
+	//.render_on_mouse()
+	.build();
+
+/* NOTES
+1. For pretty much all the bones, you only need to handle rotation. But
+the first bone be it root Or hips, you need to handle Position + Rotation.
+
+2. Its not easy to create IK Information related to position movement, so
+in our case, we try to borrow a page of Animation retargeting and try to
+keep the Model's WS Movement vector then scale it to fit the model that
+you are applying it to.
+*/
+
+// #region INITIALIZE
+
+let gSrc, gModelA, gModelB, gAnimate, gIKPose;
+function on_draw( dt, ss ){ gAnimate( dt * 0.2 ); }
+
+async function init(){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Download Resources
+	let dl = await XhrQueue.url( "../shared" )
+		.grp( "src", "anim/Walking.gltf", "json", "anim/Walking.bin", "bin" )
+		.grp( "ma", "models/vegeta.gltf", "json", "models/vegeta.bin", "bin" )
+		.grp( "mb", "models/robo_trex.gltf", "json", "models/robo_trex.bin", "bin" )
+		.then();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Load Resources
+	if( dl.src ) gAnimate = load_src( dl.src.json, dl.src.bin );
+	if( dl.ma ) load_mesh_a( dl.ma.json, dl.ma.bin );
+	if( dl.mb ) load_mesh_b( dl.mb.json, dl.mb.bin );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Misc
+	gIKPose = new IKPose();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	gAnimate( 0.5 );
+	//IKCompute.run( gSrc, gIKPose );
+	return true;
+}
+
+function load_src( json, bin ){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Load Animation Armature, setup IK Rig For it.
+	// NOTE: Normally Need a TPose, but the Animation has a T Pose By Default.
+	let e		= GltfUtil.get_bone_view( "src", json, bin );
+	let rig 	= e.add_com( "IKRig" )
+		.init( null, true, IKRig.ARM_MIXAMO )
+		.recompute_from_tpose(); // Mesh requires a few bits to be recomputed because of Mixamo Scaling
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Load First Animation in GLTF, and Setup Animator
+	let anim	= new Animation( Gltf.get_animation( json, bin ), true );
+	let pm		= new PoseAnimator();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Return a Closure that will run the IK Retarget Animation
+	gSrc  = e;
+	return ( dt )=>{
+		//-----------------------------
+		// ANIMATE SOURCE POSE
+		pm.tick( dt ).update( anim, rig.pose );	// Update Pose with next frame
+		rig.apply_pose();						// Apply Pose to Armature Bones
+
+		//-----------------------------
+		IKCompute.run( gSrc, gIKPose );
+		IKVisualize.run( gSrc, gIKPose );
+		
+		if( gModelA ){
+			gIKPose.apply_rig( gModelA.IKRig );
+			gModelA.IKRig.apply_pose();
+		}
+
+		if( gModelB ){
+			gIKPose.apply_rig( gModelB.IKRig );
+			gModelB.IKRig.apply_pose();
+		}
+	}
+}
+
+function load_mesh_a( json, bin ){
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Rendering Entity
+	let mat		= App.new_mat( "LowPolySkin", {color:"#ffffff"} );
+	let e		= GltfUtil.get_debug_view( "target_a", json, bin, mat );
+	//let e		= GltfUtil.get_bone_view( "target_a", json, bin );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// For IK, We need a TPose. Use custom data stored in 
+	// GLTF to load up the TPose for the Model
+	let tpose	= GltfUtil.get_pose( e, json, "tpose", true );
+	let rig 	= e.add_com( "IKRig" ).init( tpose, false );
+	tpose.apply();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Misc Settings
+	rig.points.head.idx = rig.points.neck.idx;	// Lil hack cause Head Isn't Skinned Well.
+	e.Node.set_pos( 1, 0, 0 );					// Move it to the Left, So it doesn't block src.
+	gModelA = e;								// Save for Global Access
+}
+
+function load_mesh_b( json, bin ){	
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Create Rendering Entity
+	let mat		= App.new_mat( "LowPolySkin", {color:"#ffffff"} );
+	let e		= GltfUtil.get_debug_view( "target_b", json, bin, mat );
+	// let e		= GltfUtil.get_bone_view( "target_b", json, bin );
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Robo Rex has a unique skeleton, so there is no default Rig function for it
+	// So that means we need to defined the Points and Chains of the Rig.
+	let tpose	= GltfUtil.get_pose( e, json, "tpose", true );
+	let rig 	= e
+		.add_com( "IKRig" )
+		.init( tpose, false, 0 )
+
+		.add_point( "hip", "hip" )
+		.add_point( "head", "face_joint" )
+		.add_point( "foot_l", "LeftFoot" )
+		.add_point( "foot_r", "RightFoot" )
+
+		.add_point( "wing_l", "left_wing" )
+		.add_point( "wing_r", "right_wing" )
+
+		.add_chain( "leg_r", [ "RightUpLeg", "RightKnee", "RightShin" ], "RightFoot", "three_bone" ) //"z", 
+		.add_chain( "leg_l", [ "LeftUpLeg", "LeftKnee", "LeftShin" ], "LeftFoot", "three_bone" ) // "z", 
+		.add_chain( "spine", [ "Spine", "Spine1" ] )
+		.add_chain( "tail", ["tail_1","tail_2","tail_3","tail_4","tail_5","tail_6","tail_7"] )
+		.set_leg_lmt( null, -0.1 )
+	;
+
+	// Using Quaternion Inverse Direction to set UP and FORWARD Direction
+	// Since leg bones point downward, we define Down as the IK FORWARD Direction.
+	// Then we use forward for IK UP, since thats the direction the Knees point.
+	// This follows the idea of Swing & Twist, IK FORWARD is our Swing Vector, IK UP is our Twist Vector
+	rig.chains.leg_l.set_alt( Vec3.DOWN, Vec3.FORWARD, rig.tpose ); // ( fwd, up, tpose )
+	rig.chains.leg_r.set_alt( Vec3.DOWN, Vec3.FORWARD, rig.tpose );
+	tpose.apply();
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Misc Settings
+	e.Node.set_pos( -1.0, 0, 0 ); // Move it to the Left, So it doesn't block src.
+	gModelB = e;
+}
+
+// #endregion ///////////////////////////////////////////
+
+// #region IK CLASSES
+
+// Hold the IK Information, then apply it to a Rig
+class IKPose{
+	hip = {
+		bind_height	: 0,            // Use to help Scale movement.
+		movement 	: new Vec3(),   // How Much Movement the Hip did in world space
+		dir			: new Vec3(),   
+		twist		: 0,
+	};
+
+	apply_rig( rig ){
+		this.apply_hip( rig );
+	}
+
+	apply_hip( rig ){
+		// First step is we need to get access to the Rig's TPose and Pose Hip Bone.
+		// The idea is to transform our Bind Pose into a New Pose based on IK Data
+		let b_info	= rig.points.hip,
+			bind 	= rig.tpose.bones[ b_info.idx ],	// TPose which is our Bind Pose
+			pose 	= rig.pose.bones[ b_info.idx ];		// Our Working Pose.
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Apply IK Swing & Twist ( HANDLE ROTATION )
+		// When we compute the IK Hip, We used quaternion invert direction and defined that
+		// the hip always points in the FORWARD Axis, so We can use that to quicky get Swing Rotation
+		// Take note that vegeta and roborex's Hips are completely different but by using that inverse
+		// direction trick, we are easily able to apply the same movement to both.
+		let p_rot	= rig.pose.get_parent_rot( b_info.idx );	// Incase the Hip isn't the Root bone, but in our example they are.
+		let b_rot	= Quat.mul( p_rot, bind.local.rot );		// Add LS rot of the hip to the WS Parent to get its WS Rot.
+		let q		= Quat
+			.unit_vecs( Vec3.FORWARD, this.hip.dir )	// Create Swing Rotation
+			.mul( b_rot );								// Apply it to our WS Rotation
+		
+		// If There is a Twist Value, Apply that as a PreMultiplication.
+		if( this.hip.twist != 0 ) q.pmul_axis_angle( this.hip.dir, this.hip.twist );
+
+		// In the end, we need to conver to local space. Simply premul by the inverse of the parent
+		q.pmul_invert( p_rot );
+
+		rig.pose.set_bone( b_info.idx, q ); // Save LS rotation to pose
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// TRANSLATION
+		let h_scl	= bind.world.pos.y / this.hip.bind_height;	// Create Scale value from Src's Hip Height and Target's Hip Height
+		let pos		= Vec3
+			.scale( this.hip.movement, h_scl )		// Scale the Translation Differnce to Match this Models Scale
+			.add( bind.world.pos );					// Then Add that change to the TPose Position
+
+		// MAYBE we want to keep the stride distance exact, we can reset the XZ positions
+		// BUT we need to keep the Y Movement scaled, else our leg IK won't work well since
+		// our source is taller then our targets, this will cause our target legs to always
+		// straighten out.
+		//pos.x = this.hip.movement.x;
+		//pos.z = this.hip.movement.z;
+
+		rig.pose.set_bone( b_info.idx, null, pos );	// Save Position to Pose
+	}
+}
+
+// Read the current pose of a Rig then compute data to be saved to IK Pose.
+class IKCompute{
+	static run( e, ik_pose ){
+		let rig = e.IKRig;
+		rig.pose.update_world();	// First thing, We need to compute WS Transforms for all the bones.
+		App.Debug.reset();			// For this example, Lets reset visual debug for every compute.
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		this.hip( rig, ik_pose );
+	}
+
+	static hip( rig, ik_pose ){
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// First thing we need is the Hip bone from the Animated Pose
+		// Plus what the hip's Bind Pose as well.
+		// We use these two states to determine what change the animation did to the tpose.
+		let b_info	= rig.points.hip,					// Rig Hip Info
+			pose 	= rig.pose.bones[ b_info.idx ],		// Animated Pose Bone
+			bind 	= rig.tpose.bones[ b_info.idx ];	// TPose Bone
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Lets create the Quaternion Inverse Direction based on the
+		// TBone's World Space rotation. We don't really know the orientation 
+		// of the bone's starting rotation and our targets will have their own
+		// orientation, so by doing this we can easily say no matter what the
+		// default direction of the hip, we want to say all hips bones point 
+		// at the FORWARD axis and the tail of the bone points UP.
+		let q_inv 		= Quat.invert( bind.world.rot ),				// This part can be optimized out and Saved into the Rig Hip's Data.
+			alt_fwd		= Vec3.transform_quat( Vec3.FORWARD, q_inv ),
+			alt_up		= Vec3.transform_quat( Vec3.UP, q_inv );
+
+		let pose_fwd 	= Vec3.transform_quat( alt_fwd, pose.world.rot ),
+			pose_up 	= Vec3.transform_quat( alt_up, pose.world.rot );
+
+		/* VISUAL DEBUG TPOSE AND ANIMATED POSE DIRECTIONS 
+		let pos = pose.world.pos.clone().add( [0,0,0.1] );
+		App.Debug.ln( pos, Vec3.add(pos, Vec3.FORWARD), "white" );
+		App.Debug.ln( pos, Vec3.add(pos, Vec3.UP), "white" );
+		App.Debug.ln( pos, Vec3.scale( pose_fwd, 0.8 ).add( pos ), "orange" );
+		App.Debug.ln( pos, Vec3.scale( pose_up, 0.8 ).add( pos ), "orange" );
+		*/
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// With our directions known between our TPose and Animated Pose, Next we
+		// start to calculate the Swing and Twist Values to swing our TPose into
+		// The animation direction
+
+		let swing = Quat.unit_vecs( Vec3.FORWARD, pose_fwd )	// First we create a swing rotation from one dir to the other.
+			.mul( bind.world.rot );		// Then we apply it to the TBone Rotation, this will do a FWD Swing which will create
+										// a new Up direction based on only swing.
+		let swing_up	= Vec3.transform_quat( Vec3.UP, swing ),
+			twist		= Vec3.angle( swing_up, pose_up );		// Swing + Pose have same Fwd, Use Angle between both UPs for twist
+
+		/* VISUAL DEBUG SWING AND ANIMATED POSE DIRECTIONS 
+		let pos 		= pose.world.pos.clone().add( [0,0,0.1] );
+		let swing_fwd	= Vec3.transform_quat( Vec3.FORWARD, swing );
+		App.Debug.ln( pos, Vec3.scale( pose_fwd, 1.5 ).add( pos ), "white" );	// Out Swing FWD Matches Animated Pose Forward
+		App.Debug.ln( pos, Vec3.scale( swing_fwd, 1.3 ).add( pos ), "orange" );
+		App.Debug.ln( pos, Vec3.scale( pose_up, 1.5 ).add( pos ), "white" );	// Now we see the TPose Up Direction in its Swing Rotation
+		App.Debug.ln( pos, Vec3.scale( swing_up, 1.5 ).add( pos ), "orange" );	// Both UPs share the same forward, resulting in a "Twist" Difference.
+		*/
+
+		if( twist <= (0.01 * Math.PI / 180) ){
+			twist = 0; // If Less the .01 Degree, dont bother twisting.
+		}else{
+			// The difference between Pose UP and Swing UP is what makes up our twist since they both
+			// share the same forward access. The issue is that we do not know if that twist is in the Negative direction
+			// or positive. So by computing the Swing Left Direction, we can use the Dot Product to determine
+			// if swing UP is Over 90 Degrees, if so then its a positive twist else its negative.
+			let swing_lft = Vec3.cross( swing_up, pose_fwd );
+			// App.Debug.ln( pos, Vec3.scale( swing_lft, 1.5 ).add( pos ), "orange" );
+			if( Vec3.dot( swing_lft, pose_up ) >= 0 ) twist = -twist; 
+		}
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		// Save all the info we need to our IK Pose.
+		ik_pose.hip.bind_height	= bind.world.pos.y;	// The Bind Pose Height of the Hip, Helps with scaling.
+		ik_pose.hip.movement.from_sub( pose.world.pos, bind.world.pos );	// How much movement did the hip do between Bind and Animated.
+		ik_pose.hip.dir.copy( pose_fwd );	// Pose Forward is the direction we want the Hip to Point to.
+		ik_pose.hip.twist = twist;	// How Much Twisting to Apply after pointing in the correct direction.
+	}
+}
+
+// How to visualize the IK Pose Informaation to get an Idea of what we're looking at.
+class IKVisualize{
+	static run( e, ik ){
+		let rig = e.IKRig;
+		this.hip( rig, ik );
+	}
+
+	static hip( rig, ik ){
+		let ws = rig.pose.bones[ rig.points.hip.idx ].world;
+		App.Debug
+			.pnt( ws.pos, "orange", 0.07, 6 )
+			.ln( ws.pos, Vec3.scale( ik.hip.dir, 0.20 ).add( ws.pos ), "cyan", null, true );
+	}
+}
+
+// #endregion ///////////////////////////////////////////
+
+</script><page-layout></page-layout>

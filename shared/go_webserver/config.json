@@ -1,4 +1,4 @@
 {
 	"httpPort":"1337",
-	"httpRootPath":"../../progress"
+	"httpRootPath":"../../../FunWithWebGL2"
 }
